@@ -185,7 +185,7 @@ class WifiManager:
     # Callbacks
     self._need_auth: list[Callable[[str], None]] = []
     self._activated: list[Callable[[], None]] = []
-    self._forgotten: list[Callable[[str], None]] = []
+    self._forgotten: list[Callable[[str | None], None]] = []
     self._networks_updated: list[Callable[[list[Network]], None]] = []
     self._disconnected: list[Callable[[], None]] = []
 
