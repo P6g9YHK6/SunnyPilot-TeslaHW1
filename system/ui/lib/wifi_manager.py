@@ -94,10 +94,12 @@ class Network:
   ip_address: str = ""  # TODO: implement
 
   @classmethod
-  def from_dbus(cls, ssid: str, aps: list["AccessPoint"], is_saved: bool) -> "Network":
+  def from_dbus(cls, ssid: str, aps: list["AccessPoint"], is_saved: bool, active_connection: bool) -> "Network":
     # we only want to show the strongest AP for each Network/SSID
     strongest_ap = max(aps, key=lambda ap: ap.strength)
-    is_connected = any(ap.is_connected for ap in aps)
+    # fall back to ActiveConnection during momentary AP roaming or low strength networks. matches GNOME shell behavior
+    # https://github.com/GNOME/gnome-shell/blob/3f8b174274fac7d69477523d4873ef8253e1ed49/js/ui/status/network.js#L810-L819
+    is_connected = any(ap.is_connected for ap in aps) or active_connection
     security_type = get_security_type(strongest_ap.flags, strongest_ap.wpa_flags, strongest_ap.rsn_flags)
 
     return cls(
@@ -707,7 +709,9 @@ class WifiManager:
             # catch all for parsing errors
             cloudlog.exception(f"Failed to parse AP properties for {ap_path}")
 
-        networks = [Network.from_dbus(ssid, ap_list, ssid in self._connections) for ssid, ap_list in aps.items()]
+        active_wifi_connection, _ = self._get_active_wifi_connection()
+        networks = [Network.from_dbus(ssid, ap_list, ssid in self._connections,
+                                      self._connections.get(ssid) == active_wifi_connection) for ssid, ap_list in aps.items()]
         # sort with quantized strength to reduce jumping
         networks.sort(key=lambda n: (-n.is_connected, -n.is_saved, -round(n.strength / 100 * 2), n.ssid.lower()))
         self._networks = networks
