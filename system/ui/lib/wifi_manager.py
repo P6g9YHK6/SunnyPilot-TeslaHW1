@@ -407,7 +407,26 @@ class WifiManager:
     self._connections = {ssid: path for ssid, path in self._connections.items() if path != conn_path}
 
   def _get_active_connections(self):
+    # Returns list of ActiveConnection
     return self._router_main.send_and_get_reply(Properties(self._nm).get('ActiveConnections')).body[0][1]
+
+  def _get_active_wifi_connection(self) -> tuple[str | None, dict | None]:
+    # Returns first Connection settings path and ActiveConnection props from ActiveConnections with Type 802-11-wireless
+    for active_conn in self._get_active_connections():
+      conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
+      reply = self._router_main.send_and_get_reply(Properties(conn_addr).get_all())
+
+      if reply.header.message_type == MessageType.error:
+        cloudlog.warning(f"Failed to get active connection properties for {active_conn}: {reply}")
+        continue
+
+      props = reply.body[0]
+
+      conn_path = props.get('Connection', ('o', '/'))[1]
+      if props.get('Type', ('s', ''))[1] == '802-11-wireless' and conn_path != '/':
+        return conn_path, props
+
+    return None, None
 
   def _get_connection_settings(self, conn_path: str) -> dict:
     conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
@@ -530,8 +549,8 @@ class WifiManager:
       threading.Thread(target=worker, daemon=True).start()
 
   def _deactivate_connection(self, ssid: str):
-    for conn_path in self._get_active_connections():
-      conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
+    for active_conn in self._get_active_connections():
+      conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
       specific_obj_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('SpecificObject')).body[0][1]
 
       if specific_obj_path != "/":
@@ -539,7 +558,7 @@ class WifiManager:
         ap_ssid = bytes(self._router_main.send_and_get_reply(Properties(ap_addr).get('Ssid')).body[0][1]).decode("utf-8", "replace")
 
         if ap_ssid == ssid:
-          self._router_main.send_and_get_reply(new_method_call(self._nm, 'DeactivateConnection', 'o', (conn_path,)))
+          self._router_main.send_and_get_reply(new_method_call(self._nm, 'DeactivateConnection', 'o', (active_conn,)))
           return
 
   def is_tethering_active(self) -> bool:
@@ -614,28 +633,26 @@ class WifiManager:
 
   def set_current_network_metered(self, metered: MeteredType):
     def worker():
-      for active_conn in self._get_active_connections():
-        conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
-        props = self._router_main.send_and_get_reply(Properties(conn_addr).get_all()).body[0]
+      if self.is_tethering_active():
+        return
 
-        if props.get('Type', ('s', ''))[1] == '802-11-wireless' and not self.is_tethering_active():
-          conn_path = props.get('Connection', ('o', '/'))[1]
-          if conn_path == "/":
-            continue
+      conn_path, _ = self._get_active_wifi_connection()
+      if conn_path is None:
+        cloudlog.warning('No active WiFi connection found')
+        return
 
-          settings = self._get_connection_settings(conn_path)
+      settings = self._get_connection_settings(conn_path)
 
-          if len(settings) == 0:
-            cloudlog.warning(f'Failed to get connection settings for {conn_path}')
-            return
+      if len(settings) == 0:
+        cloudlog.warning(f'Failed to get connection settings for {conn_path}')
+        return
 
-          settings['connection']['metered'] = ('i', int(metered))
+      settings['connection']['metered'] = ('i', int(metered))
 
-          conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
-          reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'Update', 'a{sa{sv}}', (settings,)))
-          if reply.header.message_type == MessageType.error:
-            cloudlog.warning(f'Failed to update tethering settings: {reply}')
-            return
+      conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
+      reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'Update', 'a{sa{sv}}', (settings,)))
+      if reply.header.message_type == MessageType.error:
+        cloudlog.warning(f'Failed to update metered settings: {reply}')
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -708,42 +725,31 @@ class WifiManager:
     ipv4_address = ""
     metered = MeteredType.UNKNOWN
 
-    for active_conn in self._get_active_connections():
-      conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
-      reply = self._router_main.send_and_get_reply(Properties(conn_addr).get_all())
+    conn_path, props = self._get_active_wifi_connection()
 
-      if reply.header.message_type == MessageType.error:
-        cloudlog.warning(f"Failed to get active connection properties for {active_conn}: {reply}")
-        continue
+    if conn_path is not None and props is not None:
+      # IPv4 address
+      ip4config_path = props.get('Ip4Config', ('o', '/'))[1]
 
-      props = reply.body[0]
+      if ip4config_path != "/":
+        ip4config_addr = DBusAddress(ip4config_path, bus_name=NM, interface=NM_IP4_CONFIG_IFACE)
+        address_data = self._router_main.send_and_get_reply(Properties(ip4config_addr).get('AddressData')).body[0][1]
 
-      if props.get('Type', ('s', ''))[1] == '802-11-wireless':
-        # IPv4 address
-        ip4config_path = props.get('Ip4Config', ('o', '/'))[1]
+        for entry in address_data:
+          if 'address' in entry:
+            ipv4_address = entry['address'][1]
+            break
 
-        if ip4config_path != "/":
-          ip4config_addr = DBusAddress(ip4config_path, bus_name=NM, interface=NM_IP4_CONFIG_IFACE)
-          address_data = self._router_main.send_and_get_reply(Properties(ip4config_addr).get('AddressData')).body[0][1]
+      # Metered status
+      settings = self._get_connection_settings(conn_path)
 
-          for entry in address_data:
-            if 'address' in entry:
-              ipv4_address = entry['address'][1]
-              break
+      if len(settings) > 0:
+        metered_prop = settings['connection'].get('metered', ('i', 0))[1]
 
-        # Metered status
-        conn_path = props.get('Connection', ('o', '/'))[1]
-        if conn_path != "/":
-          settings = self._get_connection_settings(conn_path)
-
-          if len(settings) > 0:
-            metered_prop = settings['connection'].get('metered', ('i', 0))[1]
-
-            if metered_prop == MeteredType.YES:
-              metered = MeteredType.YES
-            elif metered_prop == MeteredType.NO:
-              metered = MeteredType.NO
-        break
+        if metered_prop == MeteredType.YES:
+          metered = MeteredType.YES
+        elif metered_prop == MeteredType.NO:
+          metered = MeteredType.NO
 
     self._ipv4_address = ipv4_address
     self._current_network_metered = metered
