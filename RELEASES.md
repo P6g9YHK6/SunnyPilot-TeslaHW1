@@ -1,5 +1,6 @@
 Version 0.10.4 (2026-02-17)
 ========================
+* Kia K7 2017 support thanks to royjr!
 * Lexus LS 2018 support thanks to Hacheoy!
 
 Version 0.10.3 (2025-12-17)
