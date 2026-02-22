@@ -353,7 +353,7 @@ class Scroller(Widget):
       self._render_item(item)
 
     # Dim background if moving items, lifted items are above
-    self._overlay_filter.update(MOVE_OVERLAY_ALPHA if self.moving_items else 0.0)
+    self._overlay_filter.update(MOVE_OVERLAY_ALPHA if len(self._pending_move) else 0.0)
     if self._overlay_filter.x > 0.01:
       rl.draw_rectangle_rec(self._rect, rl.Color(0, 0, 0, int(255 * self._overlay_filter.x)))
 
