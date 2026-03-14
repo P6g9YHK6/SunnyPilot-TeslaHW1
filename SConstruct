@@ -129,7 +129,8 @@ env = Environment(
   tools=["default", "cython", "compilation_db", "rednose_filter"],
   toolpath=["#site_scons/site_tools", "#rednose_repo/site_scons/site_tools"],
 )
-env['_LIBFLAGS'] = _libflags
+if arch != "larch64":
+  env['_LIBFLAGS'] = _libflags
 
 # Arch-specific flags and paths
 if arch == "larch64":
