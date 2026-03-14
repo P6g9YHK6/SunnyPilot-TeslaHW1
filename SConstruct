@@ -8,6 +8,7 @@ import importlib
 import numpy as np
 
 import SCons.Errors
+from SCons.Defaults import _stripixes
 
 SCons.Warnings.warningAsException(True)
 
@@ -38,6 +39,44 @@ assert arch in [
 
 pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd']
 pkgs = [importlib.import_module(name) for name in pkg_names]
+
+
+# ***** enforce a whitelist of system libraries *****
+# this prevents silently relying on a 3rd party package,
+# e.g. apt-installed libusb. all libraries should either
+# be distributed with all Linux distros and macOS, or
+# vendored in commaai/dependencies.
+allowed_system_libs = {
+  "EGL", "GLESv2", "GL", "Qt5Charts", "Qt5Core", "Qt5Gui", "Qt5Widgets",
+  "crypto", "dl", "drm", "gbm", "m", "pthread", "ssl", "usb-1.0",
+}
+
+def _resolve_lib(env, name):
+  for d in env.Flatten(env.get('LIBPATH', [])):
+    p = Dir(str(d)).abspath
+    for ext in ('.a', '.so', '.dylib'):
+      f = File(os.path.join(p, f'lib{name}{ext}'))
+      if f.exists() or f.has_builder():
+        return f
+  if name in allowed_system_libs:
+    return name
+  raise SCons.Errors.UserError(f"Unexpected non-vendored library '{name}'")
+
+def _libflags(target, source, env, for_signature):
+  libs = []
+  lp = env.subst('$LIBLITERALPREFIX')
+  for lib in env.Flatten(env.get('LIBS', [])):
+    if isinstance(lib, str):
+      if os.sep in lib or lib.startswith('#'):
+        libs.append(File(lib))
+      elif lib.startswith('-') or (lp and lib.startswith(lp)):
+        libs.append(lib)
+      else:
+        libs.append(_resolve_lib(env, lib))
+    else:
+      libs.append(lib)
+  return _stripixes(env['LIBLINKPREFIX'], libs, env['LIBLINKSUFFIX'],
+                    env['LIBPREFIXES'], env['LIBSUFFIXES'], env, env['LIBLITERALPREFIX'])
 
 env = Environment(
   ENV={
@@ -90,6 +129,7 @@ env = Environment(
   tools=["default", "cython", "compilation_db", "rednose_filter"],
   toolpath=["#site_scons/site_tools", "#rednose_repo/site_scons/site_tools"],
 )
+env['_LIBFLAGS'] = _libflags
 
 # Arch-specific flags and paths
 if arch == "larch64":
