@@ -150,8 +150,8 @@ class GlossaryTreeprocessor(Treeprocessor):
           best = candidate
           continue
 
-        _, best_start, best_end = best
-        _, current_start, current_end = candidate
+        _, _, best_start, best_end = best
+        _, _, current_start, current_end = candidate
         if current_start < best_start:
           best = candidate
           continue
