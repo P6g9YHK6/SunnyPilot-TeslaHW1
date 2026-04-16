@@ -9,22 +9,16 @@ site_dir = "docs_site/"
 extra_css = ["stylesheets/extra.css"]
 
 nav = [
-  { "Getting Started" = [
-    { "What is openpilot?" = "getting-started/what-is-openpilot.md" },
-  ] },
+  { "What is openpilot?" = "index.md" },
   { "How-to" = [
     { "Turn the speed blue" = "how-to/turn-the-speed-blue.md" },
-    { "Connect to a comma 3X" = "how-to/connect-to-comma.md" },
+    { "Connect to a comma 3X or four" = "how-to/connect-to-comma.md" },
+    { "Add support for a car" = "how-to/car-port.md" },
   ] },
   { "Concepts" = [
     { "Logs" = "concepts/logs.md" },
     { "Safety" = "concepts/safety.md" },
     { "Glossary" = "concepts/glossary.md" },
-  ] },
-  { "Car Porting" = [
-    { "What is a car port?" = "car-porting/what-is-a-car-port.md" },
-    { "Porting a car brand" = "car-porting/brand-port.md" },
-    { "Porting a car model" = "car-porting/model-port.md" },
   ] },
   { "Contributing" = [
     { "Roadmap" = "contributing/roadmap.md" },
@@ -62,5 +56,25 @@ link = "https://discord.comma.ai"
 [[project.extra.social]]
 icon = "fontawesome/brands/x-twitter"
 link = "https://x.com/comma_ai"
+
+[project.markdown_extensions.attr_list]
+
+[project.markdown_extensions.admonition]
+
+[project.markdown_extensions.md_in_html]
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+
+[project.markdown_extensions.pymdownx.inlinehilite]
+
+[project.markdown_extensions.pymdownx.magiclink]
+
+[project.markdown_extensions.pymdownx.superfences]
+custom_fences = [{ name = "mermaid", class = "mermaid" }]
+
+[project.markdown_extensions.pymdownx.details]
 
 [project.markdown_extensions."ext.glossary"]
