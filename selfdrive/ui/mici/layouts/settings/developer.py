@@ -174,7 +174,7 @@ class DeveloperLayoutMici(NavScroller):
     self._joystick_toggle.set_checked(False)
     ui_state.params.put_bool("LateralManeuverMode", False)
     self._lat_maneuver_toggle.set_checked(False)
-    restart_needed_callback(state)
+    restart_needed_callback()
 
   def _on_lat_maneuver_mode(self, state: bool):
     ui_state.params.put_bool("LateralManeuverMode", state)
@@ -183,12 +183,12 @@ class DeveloperLayoutMici(NavScroller):
     self._joystick_toggle.set_checked(False)
     ui_state.params.put_bool("LongitudinalManeuverMode", False)
     self._long_maneuver_toggle.set_checked(False)
-    restart_needed_callback(state)
+    restart_needed_callback()
 
   def _on_alpha_long_enabled(self, state: bool):
     def do_toggle(_state: bool):
       ui_state.params.put_bool("AlphaLongitudinalEnabled", _state)
-      restart_needed_callback(True)
+      restart_needed_callback()
       self._update_toggles()
 
     if state:
