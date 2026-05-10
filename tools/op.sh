@@ -405,7 +405,7 @@ function op_check_fork_update() {
   local i=$1
   local d="/data/${DIRS[$i]}"
   cd "$d" 2>/dev/null || return 1
-  git fetch origin --quiet 2>/dev/null
+  GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
   [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/${BRANCHES[$i]}" 2>/dev/null)" ] && return 0
   git submodule foreach --recursive --quiet '
     git fetch origin --quiet 2>/dev/null
@@ -424,7 +424,7 @@ function op_purge_fork() {
 
 function op_list_forks() {
   for i in $(seq 1 $FORK_COUNT); do
-    [ -d "/data/${DIRS[$i]}" ] && (cd "/data/${DIRS[$i]}" && git fetch origin --quiet 2>/dev/null &)
+    [ -d "/data/${DIRS[$i]}" ] && (cd "/data/${DIRS[$i]}" && GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null &)
   done
   wait
 
