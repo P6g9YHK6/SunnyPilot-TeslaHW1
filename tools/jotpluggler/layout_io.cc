@@ -6,7 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "json11/json11.hpp"
+#include "third_party/json11/json11.hpp"
 
 namespace fs = std::filesystem;
 
