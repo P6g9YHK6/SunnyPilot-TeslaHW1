@@ -43,11 +43,31 @@ Follow [these instructions](https://docs.microsoft.com/en-us/windows/wsl/install
 ## CTF
 Learn about the openpilot ecosystem and tools by playing our [CTF](/tools/CTF.md).
 
+## op fork — Multi-Fork Manager
+
+`op fork` lets you manage multiple openpilot forks on a comma device. Forks are defined in `tools/forks.conf`.
+
+```
+op fork                 Interactive menu
+op fork list            List all forks with status
+op fork N               Switch to fork N (clone + symlink + reboot)
+op fork u N             Update fork N
+op fork p N             Purge (delete) fork N
+```
+
+### Setup
+
+Add your forks to `tools/forks.conf`:
+```
+<number> <user/repo> <branch> <local-dir>
+```
+
 ## Directory Structure
 
 ```
 ├── cabana/             # View and plot CAN messages from drives or in realtime
 ├── camerastream/       # Cameras stream over the network
+├── forks.conf          # Fork definitions for `op fork`
 ├── joystick/           # Control your car with a joystick
 ├── lib/                # Libraries to support the tools and reading openpilot logs
 ├── plotjuggler/        # A tool to plot openpilot logs
