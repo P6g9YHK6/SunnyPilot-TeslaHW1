@@ -19,6 +19,30 @@ RC_FILE="${HOME}/.$(basename ${SHELL})rc"
 if [ "$(uname)" == "Darwin" ] && [ $SHELL == "/bin/bash" ]; then
   RC_FILE="$HOME/.bash_profile"
 fi
+
+# =====================
+# FORK CONFIG
+# =====================
+declare -A FORKS REPOS BRANCHES DIRS
+FORK_COUNT=0
+
+function op_load_fork_config() {
+  local conf
+  conf="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)/forks.conf"
+  [[ ! -f "$conf" ]] && return
+  FORK_COUNT=0
+  while IFS=' ' read -r num repo branch dir; do
+    [[ -z "$num" || "$num" =~ ^# ]] && continue
+    FORKS[$num]="${repo%/*}"
+    REPOS[$num]="${repo#*/}"
+    BRANCHES[$num]="$branch"
+    DIRS[$num]="$dir"
+    FORK_COUNT=$num
+  done < "$conf"
+}
+
+op_load_fork_config
+
 function op_install() {
   echo "Installing op system-wide..."
   CMD="\nalias op='"$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )/op.sh" \"\$@\"'\n"
@@ -45,6 +69,7 @@ function op_run_command() {
   CMD="$@"
 
   echo -e "${BOLD}Running command →${NC} $CMD │"
+  local i
   for ((i=0; i<$((19 + ${#CMD})); i++)); do
     echo -n "─"
   done
@@ -344,6 +369,129 @@ function op_clip() {
   op_run_command tools/clip/run.py $@
 }
 
+# =====================
+# FORK HELPERS
+# =====================
+function op_detect_active() {
+  if [ -L /data/openpilot ]; then
+    local target
+    target=$(readlink /data/openpilot)
+    for i in $(seq 1 $FORK_COUNT); do
+      [ "/data/${DIRS[$i]}" = "$target" ] && echo "$i" && return
+    done
+  fi
+  echo "0"
+}
+
+function op_clone_fork() {
+  local i=$1
+  [ -d "/data/${DIRS[$i]}" ] && return
+  op_run_command git clone -b "${BRANCHES[$i]}" --depth 1 --single-branch \
+    --recurse-submodules --shallow-submodules \
+    "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "/data/${DIRS[$i]}"
+}
+
+function op_update_fork() {
+  local i=$1
+  local d="/data/${DIRS[$i]}"
+  [ ! -d "$d" ] && op_clone_fork $i && return
+  cd "$d" || return
+  op_run_command git fetch origin
+  op_run_command git merge --ff-only "origin/${BRANCHES[$i]}"
+  op_run_command git submodule update --init --recursive
+}
+
+function op_check_fork_update() {
+  local i=$1
+  local d="/data/${DIRS[$i]}"
+  cd "$d" 2>/dev/null || return 1
+  git fetch origin --quiet 2>/dev/null
+  [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/${BRANCHES[$i]}" 2>/dev/null)" ] && return 0
+  git submodule foreach --recursive --quiet '
+    git fetch origin --quiet 2>/dev/null
+    [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" 2>/dev/null)" ] && exit 1
+  ' 2>/dev/null
+  [ $? -eq 1 ] && return 0 || return 1
+}
+
+function op_purge_fork() {
+  local i=$1
+  local d="/data/${DIRS[$i]}"
+  [ ! -d "$d" ] && echo -e "[${RED}✗${NC}] ${DIRS[$i]} does not exist" && return
+  [ "$(readlink /data/openpilot)" = "$d" ] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
+  op_run_command rm -rf "$d"
+}
+
+function op_list_forks() {
+  for i in $(seq 1 $FORK_COUNT); do
+    [ -d "/data/${DIRS[$i]}" ] && (cd "/data/${DIRS[$i]}" && git fetch origin --quiet 2>/dev/null &)
+  done
+  wait
+
+  local active=$(op_detect_active)
+  for i in $(seq 1 $FORK_COUNT); do
+    local mark="" status=""
+    [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
+    if [ ! -d "/data/${DIRS[$i]}" ]; then
+      status=" (not downloaded)"
+    else
+      op_check_fork_update $i && status=" ${RED}(update available)${NC}"
+    fi
+    echo -e "[$i] ${FORKS[$i]}/${REPOS[$i]}:${BRANCHES[$i]}$status$mark"
+  done
+}
+
+function op_fork_menu() {
+  op_list_forks
+  echo ""
+  echo "  [1-$FORK_COUNT]  switch to fork (downloads if missing)"
+  echo "  [u N]    update fork N"
+  echo "  [p N]    purge fork N"
+  echo ""
+}
+
+function op_use_fork() {
+  local i=$1
+  op_clone_fork $i
+  op_run_command ln -sfn "/data/${DIRS[$i]}" /data/openpilot
+  cd /data/openpilot || return
+  if [ -f launch_env.sh ] && [ -f /VERSION ]; then
+    local required installed
+    required=$(grep -oP 'AGNOS_VERSION="\K[^"]+' launch_env.sh 2>/dev/null || true)
+    installed=$(cat /VERSION 2>/dev/null || true)
+    if [ -n "$required" ] && [ -n "$installed" ] && [ "$installed" != "$required" ]; then
+      echo "[OS] Versions differ ($installed vs $required), running OS update..."
+      PYTHONPATH=$(pwd) ./system/hardware/tici/agnos.py system/hardware/tici/agnos.json --swap || true
+    fi
+  fi
+  op_run_command sudo reboot
+}
+
+function op_fork() {
+  if [ $FORK_COUNT -eq 0 ]; then
+    echo -e "[${RED}✗${NC}] No forks configured. Edit tools/forks.conf."
+    return
+  fi
+
+  # sub-action mode
+  case $1 in
+    list|ls)    op_list_forks; return ;;
+    u|update)   shift; [ -n "$1" ] && op_update_fork "$1" || echo "Usage: op fork u <N>"; return ;;
+    p|purge)    shift; [ -n "$1" ] && op_purge_fork "$1" || echo "Usage: op fork p <N>"; return ;;
+    [0-9]*)     [ "$1" -ge 1 ] && [ "$1" -le $FORK_COUNT ] 2>/dev/null && op_use_fork "$1" || echo "Invalid fork number. Use 1-$FORK_COUNT."; return ;;
+  esac
+
+  # interactive menu
+  op_fork_menu
+  read -p "Select: " opt arg
+  case $opt in
+    u|U)    [ -n "$arg" ] && op_update_fork "$arg" || echo "Usage: u <N>" ;;
+    p|P)    [ -n "$arg" ] && op_purge_fork "$arg" || echo "Usage: p <N>" ;;
+    [1-9])  op_use_fork "$opt" ;;
+    *)      echo "Invalid option" ;;
+  esac
+}
+
 function op_switch() {
   REMOTE="origin"
   if [ "$#" -gt 1 ]; then
@@ -406,6 +554,7 @@ function op_default() {
   echo -e "  ${BOLD}build${NC}        Run the openpilot build system in the current working directory"
   echo -e "  ${BOLD}install${NC}      Install the 'op' tool system wide"
   echo -e "  ${BOLD}switch${NC}       Switch to a different git branch with a clean slate (nukes any changes)"
+  echo -e "  ${BOLD}fork${NC}         Manage openpilot forks (list/switch/update/purge)"
   echo -e "  ${BOLD}start${NC}        Starts (or restarts) openpilot"
   echo -e "  ${BOLD}stop${NC}         Stops openpilot"
   echo ""
@@ -472,6 +621,7 @@ function _op() {
     sim )           shift 1; op_sim "$@" ;;
     install )       shift 1; op_install "$@" ;;
     switch )        shift 1; op_switch "$@" ;;
+    fork )          shift 1; op_fork "$@" ;;
     start )         shift 1; op_start "$@" ;;
     stop )          shift 1; op_stop "$@" ;;
     restart )       shift 1; op_restart "$@" ;;
