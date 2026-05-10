@@ -1,4 +1,4 @@
-> **Fork notice:** This repository is a fork of [sunnyhaibin/sunnypilot](https://github.com/sunnyhaibin/sunnypilot), which is a fork of [commaai/openpilot](https://github.com/commaai/openpilot). Built for the purpose of adding **Tesla Hardware 1** support to sunnypilot.
+> **Fork notice:** This repository is a fork of [sunnyhaibin/sunnypilot](https://github.com/sunnyhaibin/sunnypilot), which is a fork of [commaai/openpilot](https://github.com/commaai/openpilot). Built for the purpose of adding **Tesla Hardware 1** support to sunnypilot. The HW1 work is based on [xnor](https://github.com/xnor), which is itself based on [Tinkla](https://github.com/geohot/tinkla).
 
 ![](https://user-images.githubusercontent.com/47793918/233812617-beab2e71-57b9-479e-8bff-c3931347ca40.png)
 
