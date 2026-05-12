@@ -70,7 +70,7 @@ def main() -> None:
       with Panda(s) as p:
         health = p.health()
         if p.is_internal() and health["heartbeat_lost"]:
-          Params().put_bool("PandaHeartbeatLost", True)
+          Params().put_bool("PandaHeartbeatLost", True, block=True)
           cloudlog.event("heartbeat lost", deviceState=health)
   except Exception:
     cloudlog.exception("pandad.uncaught_exception")
