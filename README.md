@@ -39,3 +39,6 @@ The following goals are in no particular order:
 - [ ] Pre-AP support
 - [ ] Local web UI independent from SunnyLink
 - [ ] Prototype replacement of Tesla app
+## Other Documentation
+- [commaai/openpilot wiki - Tesla](https://github.com/commaai/openpilot/wiki/Tesla) — Official commaai documentation on Tesla hardware compatibility, flashing, and general openpilot/Tesla usage. Useful reference for HW1/HW2 support setup and troubleshooting.
+- [CARS.md](https://github.com/commaai/openpilot/blob/master/docs/CARS.md) — Official list of supported vehicles and their feature coverage in openpilot.
