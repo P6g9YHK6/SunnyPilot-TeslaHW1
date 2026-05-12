@@ -92,7 +92,7 @@ class AbstractAlert(Widget, ABC):
     self.dismiss_callback: Callable | None = None
 
     def snooze_callback():
-      self.params.put_bool("SnoozeUpdate", True, block=True)
+      self.params.put_bool("SnoozeUpdate", True)
       if self.dismiss_callback:
         self.dismiss_callback()
 
