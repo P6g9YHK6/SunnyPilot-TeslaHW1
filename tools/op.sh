@@ -43,21 +43,6 @@ function op_load_fork_config() {
 
 op_load_fork_config
 
-FORKS_DIR="forks"
-
-function op_ensure_forks_dir() {
-  if [ -d "/data/$FORKS_DIR" ]; then
-    return 0
-  fi
-  echo -e "Fork directory /data/$FORKS_DIR does not exist."
-  echo -e "This will be used to store all fork repositories."
-  read -p "Create /data/$FORKS_DIR? [Y/n] " confirm
-  case "$confirm" in
-    n|N|no|NO) echo -e " ↳ [${RED}✗${NC}] Aborted. Edit tools/forks.conf or create /data/$FORKS_DIR manually."; return 1 ;;
-    *) op_run_command mkdir -p "/data/$FORKS_DIR" ;;
-  esac
-}
-
 function op_install() {
   echo "Installing op system-wide..."
   CMD="\nalias op='"$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )/op.sh" \"\$@\"'\n"
@@ -392,7 +377,7 @@ function op_detect_active() {
     local target
     target=$(readlink /data/openpilot)
     for i in $(seq 1 $FORK_COUNT); do
-      [[ "/data/${FORKS_DIR}/${DIRS[$i]}" = "$target" || "/data/${DIRS[$i]}" = "$target" ]] && echo "$i" && return
+      [ "/data/${DIRS[$i]}" = "$target" ] && echo "$i" && return
     done
   fi
   echo "0"
@@ -400,16 +385,15 @@ function op_detect_active() {
 
 function op_clone_fork() {
   local i=$1
-  [ -d "/data/${FORKS_DIR}/${DIRS[$i]}" ] && return
-  mkdir -p "/data/${FORKS_DIR}"
+  [ -d "/data/${DIRS[$i]}" ] && return
   op_run_command git clone -b "${BRANCHES[$i]}" --depth 1 --single-branch \
     --recurse-submodules --shallow-submodules \
-    "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "/data/${FORKS_DIR}/${DIRS[$i]}"
+    "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "/data/${DIRS[$i]}"
 }
 
 function op_update_fork() {
   local i=$1
-  local d="/data/${FORKS_DIR}/${DIRS[$i]}"
+  local d="/data/${DIRS[$i]}"
   [ ! -d "$d" ] && op_clone_fork $i && return
   cd "$d" || return
   op_run_command git fetch origin
@@ -419,7 +403,7 @@ function op_update_fork() {
 
 function op_check_fork_update() {
   local i=$1
-  local d="/data/${FORKS_DIR}/${DIRS[$i]}"
+  local d="/data/${DIRS[$i]}"
   cd "$d" 2>/dev/null || return 1
   GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
   [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/${BRANCHES[$i]}" 2>/dev/null)" ] && return 0
@@ -432,7 +416,7 @@ function op_check_fork_update() {
 
 function op_purge_fork() {
   local i=$1
-  local d="/data/${FORKS_DIR}/${DIRS[$i]}"
+  local d="/data/${DIRS[$i]}"
   [ ! -d "$d" ] && echo -e "[${RED}✗${NC}] ${DIRS[$i]} does not exist" && return
   [ "$(readlink /data/openpilot)" = "$d" ] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
   op_run_command rm -rf "$d"
@@ -440,7 +424,7 @@ function op_purge_fork() {
 
 function op_list_forks() {
   for i in $(seq 1 $FORK_COUNT); do
-    [ -d "/data/${FORKS_DIR}/${DIRS[$i]}" ] && (cd "/data/${FORKS_DIR}/${DIRS[$i]}" && GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null &)
+    [ -d "/data/${DIRS[$i]}" ] && (cd "/data/${DIRS[$i]}" && GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null &)
   done
   wait
 
@@ -448,7 +432,7 @@ function op_list_forks() {
   for i in $(seq 1 $FORK_COUNT); do
     local mark="" status=""
     [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
-    if [ ! -d "/data/${FORKS_DIR}/${DIRS[$i]}" ]; then
+    if [ ! -d "/data/${DIRS[$i]}" ]; then
       status=" (not downloaded)"
     else
       op_check_fork_update $i && status=" ${RED}(update available)${NC}"
@@ -463,14 +447,13 @@ function op_fork_menu() {
   echo "  [1-$FORK_COUNT]  switch to fork (downloads if missing)"
   echo "  [u N]    update fork N"
   echo "  [p N]    purge fork N"
-  echo "  [e]      exit"
   echo ""
 }
 
 function op_use_fork() {
   local i=$1
   op_clone_fork $i
-  op_run_command ln -sfn "/data/${FORKS_DIR}/${DIRS[$i]}" /data/openpilot
+  op_run_command ln -sfn "/data/${DIRS[$i]}" /data/openpilot
   cd /data/openpilot || return
   if [ -f launch_env.sh ] && [ -f /VERSION ]; then
     local required installed
@@ -490,8 +473,6 @@ function op_fork() {
     return
   fi
 
-  op_ensure_forks_dir || return 1
-
   # sub-action mode
   case $1 in
     list|ls)    op_list_forks; return ;;
@@ -504,7 +485,6 @@ function op_fork() {
   op_fork_menu
   read -p "Select: " opt arg
   case $opt in
-    e|E|exit|quit) return ;;
     u|U)    [ -n "$arg" ] && op_update_fork "$arg" || echo "Usage: u <N>" ;;
     p|P)    [ -n "$arg" ] && op_purge_fork "$arg" || echo "Usage: p <N>" ;;
     [1-9])  op_use_fork "$opt" ;;
