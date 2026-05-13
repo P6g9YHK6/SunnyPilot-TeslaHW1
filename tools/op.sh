@@ -641,6 +641,9 @@ function op_use_fork() {
   if [ -n "$target_agnos" ]; then
     echo "Current AGNOS: ${current_agnos:-unknown}"
     echo "Target AGNOS:  $target_agnos"
+    if [ -n "$current_agnos" ] && [ "$current_agnos" != "$target_agnos" ]; then
+      echo -e "${RED}Warning: OS will be updated from $current_agnos to $target_agnos${NC}"
+    fi
   fi
   read -p "Proceed with switch and reboot? [y/N] " confirm
   case "$confirm" in
