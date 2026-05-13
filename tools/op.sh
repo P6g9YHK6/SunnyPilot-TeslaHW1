@@ -23,7 +23,7 @@ fi
 # =====================
 # FORK CONFIG
 # =====================
-declare -A FORKS REPOS BRANCHES DIRS
+declare -A FORKS REPOS BRANCHES DIRS COMMENTS
 FORK_COUNT=0
 
 function op_load_fork_config() {
@@ -31,12 +31,13 @@ function op_load_fork_config() {
   conf="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)/forks.conf"
   [[ ! -f "$conf" ]] && return
   FORK_COUNT=0
-  while IFS=' ' read -r num repo branch dir; do
+  while IFS=' ' read -r num repo branch dir comment; do
     [[ -z "$num" || "$num" =~ ^# ]] && continue
     FORKS[$num]="${repo%/*}"
     REPOS[$num]="${repo#*/}"
     BRANCHES[$num]="$branch"
     DIRS[$num]="$dir"
+    [[ -n "$comment" ]] && COMMENTS[$num]="$comment"
     FORK_COUNT=$num
   done < "$conf"
 }
@@ -446,14 +447,15 @@ function op_list_forks() {
 
   local active=$(op_detect_active)
   for i in $(seq 1 $FORK_COUNT); do
-    local mark="" status=""
+    local mark="" status="" note=""
     [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
     if [ ! -d "/data/${FORKS_DIR}/${DIRS[$i]}" ]; then
       status=" (not downloaded)"
     else
       op_check_fork_update $i && status=" ${RED}(update available)${NC}"
     fi
-    echo -e "[$i] ${FORKS[$i]}/${REPOS[$i]}:${BRANCHES[$i]}$status$mark"
+    [[ -n "${COMMENTS[$i]}" ]] && note=" ${GREEN}(${COMMENTS[$i]})${NC}"
+    echo -e "[$i] ${FORKS[$i]}/${REPOS[$i]}:${BRANCHES[$i]}${note}$status$mark"
   done
 }
 
