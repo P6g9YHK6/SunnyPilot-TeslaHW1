@@ -659,14 +659,24 @@ function op_use_fork() {
     if [ -n "$existing_url" ] && [ -n "$existing_branch" ]; then
       existing_repo=$(echo "$existing_url" | sed 's|.*/\([^/]*/[^.]*\)\.git|\1|' | tr '/' '_')
       existing_path="/data/${FORKS_DIR}/${existing_repo}"
-      echo "Migrating existing /data/openpilot ($existing_repo/$existing_branch) into fork architecture..."
+      read -p "Migrate existing /data/openpilot ($existing_repo/$existing_branch) to $existing_path? [y/N] " confirm
+      case "$confirm" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; return ;;
+      esac
+      echo "Migrating..."
       mkdir -p "$existing_path"
       shopt -s dotglob
       mv /data/openpilot/* "$existing_path/"
       shopt -u dotglob
-      rmdir /data/openpilot
+      rmdir /data/openpilot || echo "Warning: could not remove /data/openpilot (running process?), symlinking over it"
     else
       local bak="/data/openpilot.orig.$(date +%s)"
+      read -p "Migrate unknown /data/openpilot to $bak? [y/N] " confirm
+      case "$confirm" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; return ;;
+      esac
       echo "Warning: /data/openpilot is not a symlink but origin/branch not detectable"
       echo "Moving it to $bak"
       mv /data/openpilot "$bak"
