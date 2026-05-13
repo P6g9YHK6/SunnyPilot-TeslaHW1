@@ -45,22 +45,40 @@ Learn about the openpilot ecosystem and tools by playing our [CTF](/tools/CTF.md
 
 ## op fork — Multi-Fork Manager
 
-`op fork` lets you manage multiple openpilot forks on a comma device. Forks are defined in `tools/forks.conf`.
+`op fork` manages multiple openpilot forks on a comma device. All clones live under `/data/forks/` with one clone per repository — `git checkout` switches between branches of the same repo. `/data/openpilot` is a symlink pointing to the active fork.
+
+Forks are defined in `tools/forks.conf`:
+
+```
+<number> <user/repo> <branch> [comment]
+```
+
+| Field     | Description                          | Example                  |
+|-----------|--------------------------------------|--------------------------|
+| `number`  | Index used to select this fork       | `1`                      |
+| `user/repo` | GitHub repository                 | `sunnypilot/sunnypilot`  |
+| `branch`  | Remote branch to track               | `dev`                    |
+| `comment` | Optional label (e.g. target device)  | `C4`                     |
 
 ```
 op fork                 Interactive menu
 op fork list            List all forks with status
-op fork N               Switch to fork N (clone + symlink + reboot)
-op fork u N             Update fork N
-op fork p N             Purge (delete) fork N
+op fork detect          Scan /data/forks/ for undeclared repos/branches
+op fork <N>             Switch to fork N (clone → checkout → symlink → OS update → reboot)
+op fork <UN>            Switch to untracked fork UN (symlink → reboot)
+op fork u <N|UN>        Update fork (fetch + merge --ff-only)
+op fork p <N|UN>        Purge fork (rm -rf repo if last branch, else git branch -D)
 ```
 
-### Setup
+Untracked forks (clones under `/data/forks/` not in `forks.conf`) appear in the list as `[U1]`, `[U2]`, etc. with an `(untracked)` marker, and support the same update/purge/switch operations.
 
-Add your forks to `tools/forks.conf`:
-```
-<number> <user/repo> <branch> <local-dir>
-```
+### First Setup
+
+If `/data/openpilot` is a real directory (e.g. from a README install), the first `op fork <N>` automatically migrates it into `/data/forks/`, converts `/data/openpilot` to a symlink, and switches to the selected fork. No data loss.
+
+### AGNOS Updates
+
+If the AGNOS version required by the fork differs from the installed version, `op fork <N>` runs the OS update automatically before rebooting.
 
 ## Directory Structure
 
