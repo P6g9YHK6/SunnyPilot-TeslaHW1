@@ -62,7 +62,8 @@ Forks are defined in `tools/forks.conf`:
 
 ```
 op fork                   Interactive menu (or run any action directly)
-op fork list              List all forks with ahead/behind status
+op fork list              List all forks (fast, no network)
+op fork status            List all forks with ahead/behind (fetches remote)
 op fork <N|UN>            Switch to fork (clone → checkout → symlink → OS update → reboot)
 op fork update <N|UN|all> Update fork(s) (fetch + merge --ff-only)
 op fork info <N|UN>       Show SHA, date, commit title, ahead/behind
@@ -70,7 +71,7 @@ op fork purge <N|UN>      Purge fork
 op fork help              Show usage
 ```
 
-`op fork list` shows ahead/behind counts (e.g. `↑3 ↓1`) instead of a boolean update flag. `op fork update all` iterates all downloaded declared and untracked forks.
+`op fork list` is fast (no network). Use `op fork status` to fetch and show ahead/behind counts (e.g. `↑3 ↓1`). `op fork update all` iterates all downloaded declared and untracked forks.
 
 Untracked forks (clones under `/data/forks/` not in `forks.conf`) appear in the list as `[U1]`, `[U2]`, etc. with an `(untracked)` marker, and support the same update/purge/switch operations.
 

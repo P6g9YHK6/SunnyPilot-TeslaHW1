@@ -574,8 +574,7 @@ function op_list_forks() {
     local mark="" status="" note=""
     [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
     if op_repo_downloaded $i; then
-      local diff=$(op_fork_ahead_behind $i)
-      [ -n "$diff" ] && status=" ${RED}($diff)${NC}"
+      status=" (downloaded)"
     else
       status=" (not downloaded)"
     fi
@@ -594,6 +593,41 @@ function op_list_forks() {
       mark=" ${GREEN}<-- ACTIVE${NC}"
     fi
     echo -e "[U$u] $(echo "${UNDECLARED_KEYS[$j]}" | tr '_' '/'):${UNDECLARED_BRANCHES[$j]}${note}$mark"
+  done
+}
+
+function op_fork_status() {
+  local active=$(op_detect_active)
+  for i in $(seq 1 $FORK_COUNT); do
+    local mark="" diff="" note=""
+    [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
+    if op_repo_downloaded $i; then
+      diff=$(op_fork_ahead_behind $i)
+      [ -n "$diff" ] && diff=" ${RED}($diff)${NC}" || diff=" (up to date)"
+    else
+      diff=" (not downloaded)"
+    fi
+    [[ -n "${COMMENTS[$i]}" ]] && note=" ${GREEN}(${COMMENTS[$i]})${NC}"
+    echo -e "[$i] ${FORKS[$i]}/${REPOS[$i]}:${BRANCHES[$i]}${note}${diff}$mark"
+  done
+  local active_target
+  active_target=$(readlink /data/openpilot 2>/dev/null || true)
+  for j in $(seq 0 $((UNDECLARED_COUNT - 1))); do
+    local rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$j]}"
+    local u=$((j + 1))
+    local mark="" diff=""
+    if [ -d "$rp" ]; then
+      diff=$(op_fork_ahead_behind "U$u")
+      [ -n "$diff" ] && diff=" ${RED}($diff)${NC}" || diff=" (up to date)"
+    else
+      diff=" (not downloaded)"
+    fi
+    local note=" ${RED}(untracked)${NC}"
+    if [ -n "$active_target" ] && [ "$rp" = "$active_target" ] && \
+       [ "$(git -C "$rp" branch --show-current 2>/dev/null)" = "${UNDECLARED_BRANCHES[$j]}" ]; then
+      mark=" ${GREEN}<-- ACTIVE${NC}"
+    fi
+    echo -e "[U$u] $(echo "${UNDECLARED_KEYS[$j]}" | tr '_' '/'):${UNDECLARED_BRANCHES[$j]}${note}${diff}$mark"
   done
 }
 
@@ -640,11 +674,13 @@ function op_fork_menu() {
     echo "  [u N|all]  update fork(s) (or UN for untracked)"
     echo "  [p N]      purge fork N (or UN for untracked)"
     echo "  [i N]      info fork (SHA, date, ahead/behind)"
+    echo "  [s]        status — check all forks (fetches remote)"
   else
     echo "  [1-$FORK_COUNT]  switch to fork (downloads if missing)"
     echo "  [u N]    update fork N"
     echo "  [p N]    purge fork N"
     echo "  [i N]    info fork (SHA, date, ahead/behind)"
+    echo "  [s]      status — check all forks (fetches remote)"
   fi
   echo "  [e]      exit"
   echo ""
@@ -753,6 +789,7 @@ function op_fork() {
   # sub-action mode
   case $1 in
     list|ls)    op_list_forks; return ;;
+    status|check|st) op_fork_status; return ;;
     u|update)   shift; [ -n "$1" ] && op_update_fork "$1" || echo "Usage: op fork update <N|UN|all>"; return ;;
     p|purge)    shift; [ -n "$1" ] && op_purge_fork "$1" || echo "Usage: op fork purge <N|UN>"; return ;;
     i|info)     shift; [ -n "$1" ] && op_info_fork "$1" || echo "Usage: op fork info <N|UN>"; return ;;
@@ -760,14 +797,15 @@ function op_fork() {
       echo "Usage: op fork [action]"
       echo ""
       echo "Actions:"
-      echo "  list                List all forks with ahead/behind status"
-      echo "  <N|UN>              Switch to fork (clone + checkout + symlink + reboot)"
-      echo "  update <N|UN|all>   Update fork(s) (fetch + merge --ff-only)"
-      echo "  info <N|UN>         Show SHA, date, title, ahead/behind"
-      echo "  purge <N|UN>        Purge fork"
-      echo "  help                Show this help"
+      echo "  list                    List all forks (no network)"
+      echo "  status|check            List all forks with ahead/behind (fetches)"
+      echo "  <N|UN>                  Switch to fork (clone + checkout + symlink + reboot)"
+      echo "  update <N|UN|all>       Update fork(s) (fetch + merge --ff-only)"
+      echo "  info <N|UN>             Show SHA, date, title, ahead/behind"
+      echo "  purge <N|UN>            Purge fork"
+      echo "  help                    Show this help"
       echo ""
-      echo "  (no action)         Interactive menu"
+      echo "  (no action)             Interactive menu"
       return ;;
     [0-9]*|U[0-9]*)
       if [[ "$1" =~ ^U[0-9]+$ ]]; then
@@ -789,6 +827,7 @@ function op_fork() {
     u|U)    [ -n "$arg" ] && op_update_fork "$arg" || echo "Usage: u <N|UN|all>" ;;
     p|P)    [ -n "$arg" ] && op_purge_fork "$arg" || echo "Usage: p <N|UN>" ;;
     i|I)    [ -n "$arg" ] && op_info_fork "$arg" || echo "Usage: i <N|UN>" ;;
+    s|S)    op_fork_status ;;
     [1-9][0-9]*|[1-9]|U[0-9]*|u[0-9]*) op_use_fork "${opt^^}" ;;
     *)      echo "Invalid option" ;;
   esac
