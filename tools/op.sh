@@ -579,18 +579,6 @@ function op_scan_undeclared() {
   UNDECLARED_COUNT=${#UNDECLARED_KEYS[@]}
 }
 
-function op_detect_undeclared() {
-  op_scan_undeclared
-  if [ "$UNDECLARED_COUNT" -eq 0 ]; then
-    echo "All forks under /data/${FORKS_DIR} are declared in forks.conf."
-    return
-  fi
-  echo "Undeclared forks:"
-  for j in $(seq 0 $((UNDECLARED_COUNT - 1))); do
-    echo "  [U$((j+1))] $(echo "${UNDECLARED_KEYS[$j]}" | tr '_' '/'):${UNDECLARED_BRANCHES[$j]} (untracked)"
-  done
-}
-
 function op_fork_menu() {
   op_list_forks
   echo ""
@@ -712,13 +700,11 @@ function op_fork() {
     list|ls)    op_list_forks; return ;;
     u|update)   shift; [ -n "$1" ] && op_update_fork "$1" || echo "Usage: op fork u <N|UN>"; return ;;
     p|purge)    shift; [ -n "$1" ] && op_purge_fork "$1" || echo "Usage: op fork p <N|UN>"; return ;;
-    d|detect)   op_detect_undeclared; return ;;
     help|-h|--help)
       echo "Usage: op fork [action]"
       echo ""
       echo "Actions:"
       echo "  list              List all forks with status"
-      echo "  detect            Scan /data/forks/ for undeclared repos/branches"
       echo "  <N|UN>            Switch to fork (clone + checkout + symlink + reboot)"
       echo "  u <N|UN>          Update fork (fetch + merge --ff-only)"
       echo "  p <N|UN>          Purge fork"

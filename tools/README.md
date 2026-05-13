@@ -63,7 +63,6 @@ Forks are defined in `tools/forks.conf`:
 ```
 op fork                 Interactive menu
 op fork list            List all forks with status
-op fork detect          Scan /data/forks/ for undeclared repos/branches
 op fork <N>             Switch to fork N (clone → checkout → symlink → OS update → reboot)
 op fork <UN>            Switch to untracked fork UN (symlink → reboot)
 op fork u <N|UN>        Update fork (fetch + merge --ff-only)
