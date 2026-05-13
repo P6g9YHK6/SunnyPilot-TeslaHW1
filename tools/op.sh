@@ -479,6 +479,13 @@ function op_purge_fork() {
   [ ! -d "$rp" ] && echo -e "[${RED}✗${NC}] Fork $key branch $branch not cloned" && return
   [[ "$rp" = "$(readlink /data/openpilot)" ]] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
 
+  echo "Purge $(echo "$key" | tr '_' '/'):$branch?"
+  read -p "Are you sure? [y/N] " confirm
+  case "$confirm" in
+    y|Y|yes|YES) ;;
+    *) echo "Aborted."; return ;;
+  esac
+
   if [[ "$i" =~ ^U ]]; then
     # Untracked: count undeclared branches in same repo
     local same_repo=0
@@ -627,6 +634,20 @@ function op_use_fork() {
     fi
   fi
 
+  # Show AGNOS versions and ask for confirmation
+  local target_agnos current_agnos
+  target_agnos=$(grep -oP 'AGNOS_VERSION="\K[^"]+' "$rp/launch_env.sh" 2>/dev/null || true)
+  current_agnos=$(cat /VERSION 2>/dev/null || true)
+  if [ -n "$target_agnos" ]; then
+    echo "Current AGNOS: ${current_agnos:-unknown}"
+    echo "Target AGNOS:  $target_agnos"
+  fi
+  read -p "Proceed with switch and reboot? [y/N] " confirm
+  case "$confirm" in
+    y|Y|yes|YES) ;;
+    *) echo "Aborted."; return ;;
+  esac
+
   # First setup: migrate standalone /data/openpilot into /data/forks/ architecture
   if [ -d /data/openpilot ] && [ ! -L /data/openpilot ]; then
     local existing_url existing_repo existing_branch existing_path
@@ -679,6 +700,19 @@ function op_fork() {
     u|update)   shift; [ -n "$1" ] && op_update_fork "$1" || echo "Usage: op fork u <N|UN>"; return ;;
     p|purge)    shift; [ -n "$1" ] && op_purge_fork "$1" || echo "Usage: op fork p <N|UN>"; return ;;
     d|detect)   op_detect_undeclared; return ;;
+    help|-h|--help)
+      echo "Usage: op fork [action]"
+      echo ""
+      echo "Actions:"
+      echo "  list              List all forks with status"
+      echo "  detect            Scan /data/forks/ for undeclared repos/branches"
+      echo "  <N|UN>            Switch to fork (clone + checkout + symlink + reboot)"
+      echo "  u <N|UN>          Update fork (fetch + merge --ff-only)"
+      echo "  p <N|UN>          Purge fork"
+      echo "  help              Show this help"
+      echo ""
+      echo "  (no action)       Interactive menu"
+      return ;;
     [0-9]*|U[0-9]*)
       if [[ "$1" =~ ^U[0-9]+$ ]]; then
         op_use_fork "$1"
@@ -688,17 +722,17 @@ function op_fork() {
         echo "Invalid fork number. Use 1-$FORK_COUNT or U<N>."
       fi
       return ;;
+    *)  [ -n "$1" ] && echo "Unknown action '$1'. Run 'op fork help' for usage." && return ;;
   esac
 
-  # interactive menu
+  # interactive menu (no args or unmatched)
   op_fork_menu
   read -p "Select: " opt arg
   case $opt in
     e|E|exit|quit) return ;;
     u|U)    [ -n "$arg" ] && op_update_fork "$arg" || echo "Usage: u <N|UN>" ;;
     p|P)    [ -n "$arg" ] && op_purge_fork "$arg" || echo "Usage: p <N|UN>" ;;
-    [1-9])  op_use_fork "$opt" ;;
-    U[0-9]*|u[0-9]*) op_use_fork "${opt^^}" ;;
+    [1-9][0-9]*|[1-9]|U[0-9]*|u[0-9]*) op_use_fork "${opt^^}" ;;
     *)      echo "Invalid option" ;;
   esac
 }
