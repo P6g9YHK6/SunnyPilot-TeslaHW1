@@ -502,6 +502,29 @@ function op_use_fork() {
     op_run_command git submodule update --init --recursive
   fi
 
+  # First setup: migrate standalone /data/openpilot into /data/forks/ architecture
+  if [ -d /data/openpilot ] && [ ! -L /data/openpilot ]; then
+    local existing_url existing_repo existing_branch existing_path
+    existing_url=$(git -C /data/openpilot config --get remote.origin.url 2>/dev/null)
+    existing_branch=$(git -C /data/openpilot rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -n "$existing_url" ] && [ -n "$existing_branch" ]; then
+      existing_repo=$(echo "$existing_url" | sed 's|.*/\([^/]*/[^.]*\)\.git|\1|' | tr '/' '_')
+      existing_path="/data/${FORKS_DIR}/${existing_repo}"
+      echo "Migrating existing /data/openpilot ($existing_repo/$existing_branch) into fork architecture..."
+      mkdir -p "$existing_path"
+      shopt -s dotglob
+      mv /data/openpilot/* "$existing_path/"
+      shopt -u dotglob
+      rmdir /data/openpilot
+    else
+      local bak="/data/openpilot.orig.$(date +%s)"
+      echo "Warning: /data/openpilot is not a symlink but origin/branch not detectable"
+      echo "Moving it to $bak"
+      mv /data/openpilot "$bak"
+      op_run_command ln -sfn "$rp" /data/openpilot
+      return
+    fi
+  fi
   op_run_command ln -sfn "$rp" /data/openpilot
   cd /data/openpilot || return
   if [ -f launch_env.sh ] && [ -f /VERSION ]; then
