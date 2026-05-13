@@ -45,7 +45,7 @@ Learn about the openpilot ecosystem and tools by playing our [CTF](/tools/CTF.md
 
 ## op fork — Multi-Fork Manager
 
-`op fork` manages multiple openpilot forks on a comma device. All clones live under `/data/forks/` with one clone per repository — `git checkout` switches between branches of the same repo. `/data/openpilot` is a symlink pointing to the active fork.
+`op fork` manages multiple openpilot forks on a comma device.
 
 Forks are defined in `tools/forks.conf`:
 

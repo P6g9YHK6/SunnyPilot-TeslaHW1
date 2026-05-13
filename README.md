@@ -17,7 +17,7 @@ op setup
 op build -j2 2>&1 | tee /data/build.log
 sudo reboot
 ```
-Feedback on the installation process is welcomed. If AGNOS versions differ, `op fork <N>` updates the OS automatically before reboot.
+Feedback on the installation process is welcomed. If AGNOS versions differ, `op fork <N>` updates the OS automatically before reboot. No `fork` after swap? Run `/data/forks/P6g9YHK6_SunnyPilot-TeslaHW1/tools/op.sh fork list`.
 ## Upstream Updates
 | Upstream | Branch | Last Commit |
 |----------|--------|-------------|
