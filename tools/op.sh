@@ -23,7 +23,7 @@ fi
 # =====================
 # FORK CONFIG
 # =====================
-declare -A FORKS REPOS BRANCHES DIRS COMMENTS
+declare -A FORKS REPOS BRANCHES COMMENTS
 FORK_COUNT=0
 
 function op_load_fork_config() {
@@ -31,12 +31,11 @@ function op_load_fork_config() {
   conf="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)/forks.conf"
   [[ ! -f "$conf" ]] && return
   FORK_COUNT=0
-  while IFS=' ' read -r num repo branch dir comment; do
+  while IFS=' ' read -r num repo branch comment; do
     [[ -z "$num" || "$num" =~ ^# ]] && continue
     FORKS[$num]="${repo%/*}"
     REPOS[$num]="${repo#*/}"
     BRANCHES[$num]="$branch"
-    DIRS[$num]="$dir"
     [[ -n "$comment" ]] && COMMENTS[$num]="$comment"
     FORK_COUNT=$num
   done < "$conf"
@@ -388,31 +387,35 @@ function op_clip() {
 # =====================
 # FORK HELPERS
 # =====================
+function op_repo_key() {
+  echo "${FORKS[$1]}_${REPOS[$1]}"
+}
+
+function op_repo_path() {
+  echo "/data/${FORKS_DIR}/$(op_repo_key $1)"
+}
+
 function op_detect_active() {
   if [ -L /data/openpilot ]; then
     local target
     target=$(readlink /data/openpilot)
     for i in $(seq 1 $FORK_COUNT); do
-      [[ "/data/${FORKS_DIR}/${DIRS[$i]}" = "$target" || "/data/${DIRS[$i]}" = "$target" ]] && echo "$i" && return
+      local rp=$(op_repo_path $i)
+      if [ "$rp" = "$target" ]; then
+        local cur_branch
+        cur_branch=$(git -C "$rp" branch --show-current 2>/dev/null || true)
+        [ "$cur_branch" = "${BRANCHES[$i]}" ] && echo "$i" && return
+      fi
     done
   fi
   echo "0"
 }
 
-function op_clone_fork() {
-  local i=$1
-  [ -d "/data/${FORKS_DIR}/${DIRS[$i]}" ] && return
-  mkdir -p "/data/${FORKS_DIR}"
-  op_run_command git clone -b "${BRANCHES[$i]}" --depth 1 --single-branch \
-    --recurse-submodules --shallow-submodules \
-    "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "/data/${FORKS_DIR}/${DIRS[$i]}"
-}
-
 function op_update_fork() {
   local i=$1
-  local d="/data/${FORKS_DIR}/${DIRS[$i]}"
-  [ ! -d "$d" ] && op_clone_fork $i && return
-  cd "$d" || return
+  local rp=$(op_repo_path $i)
+  [ ! -d "$rp" ] && op_use_fork "$i" && return
+  cd "$rp" || return
   op_run_command git fetch origin
   op_run_command git merge --ff-only "origin/${BRANCHES[$i]}"
   op_run_command git submodule update --init --recursive
@@ -420,9 +423,10 @@ function op_update_fork() {
 
 function op_check_fork_update() {
   local i=$1
-  local d="/data/${FORKS_DIR}/${DIRS[$i]}"
-  cd "$d" 2>/dev/null || return 1
+  local rp=$(op_repo_path $i)
+  cd "$rp" 2>/dev/null || return 1
   GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
+  git rev-parse -q --verify "origin/${BRANCHES[$i]}" >/dev/null 2>&1 || return 1
   [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/${BRANCHES[$i]}" 2>/dev/null)" ] && return 0
   git submodule foreach --recursive --quiet '
     git fetch origin --quiet 2>/dev/null
@@ -433,26 +437,38 @@ function op_check_fork_update() {
 
 function op_purge_fork() {
   local i=$1
-  local d="/data/${FORKS_DIR}/${DIRS[$i]}"
-  [ ! -d "$d" ] && echo -e "[${RED}✗${NC}] ${DIRS[$i]} does not exist" && return
-  [ "$(readlink /data/openpilot)" = "$d" ] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
-  op_run_command rm -rf "$d"
+  local rp=$(op_repo_path $i)
+  local key=$(op_repo_key $i)
+  [ ! -d "$rp" ] && echo -e "[${RED}✗${NC}] Fork $key branch ${BRANCHES[$i]} not cloned" && return
+  [[ "$rp" = "$(readlink /data/openpilot)" ]] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
+
+  local shared=0
+  for j in $(seq 1 $FORK_COUNT); do
+    [ "$(op_repo_key $j)" = "$key" ] && shared=$((shared + 1))
+  done
+
+  if [ "$shared" -le 1 ]; then
+    op_run_command rm -rf "$rp"
+  else
+    op_run_command git -C "$rp" branch -D "${BRANCHES[$i]}" 2>/dev/null || true
+  fi
+}
+
+function op_repo_downloaded() {
+  local rp=$(op_repo_path $1)
+  [ -d "$rp" ] && git -C "$rp" rev-parse -q --verify "${BRANCHES[$1]}" >/dev/null 2>&1 && return 0
+  return 1
 }
 
 function op_list_forks() {
-  for i in $(seq 1 $FORK_COUNT); do
-    [ -d "/data/${FORKS_DIR}/${DIRS[$i]}" ] && (cd "/data/${FORKS_DIR}/${DIRS[$i]}" && GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null &)
-  done
-  wait
-
   local active=$(op_detect_active)
   for i in $(seq 1 $FORK_COUNT); do
     local mark="" status="" note=""
     [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
-    if [ ! -d "/data/${FORKS_DIR}/${DIRS[$i]}" ]; then
-      status=" (not downloaded)"
-    else
+    if op_repo_downloaded $i; then
       op_check_fork_update $i && status=" ${RED}(update available)${NC}"
+    else
+      status=" (not downloaded)"
     fi
     [[ -n "${COMMENTS[$i]}" ]] && note=" ${GREEN}(${COMMENTS[$i]})${NC}"
     echo -e "[$i] ${FORKS[$i]}/${REPOS[$i]}:${BRANCHES[$i]}${note}$status$mark"
@@ -471,8 +487,22 @@ function op_fork_menu() {
 
 function op_use_fork() {
   local i=$1
-  op_clone_fork $i
-  op_run_command ln -sfn "/data/${FORKS_DIR}/${DIRS[$i]}" /data/openpilot
+  local rp=$(op_repo_path $i)
+
+  mkdir -p "/data/${FORKS_DIR}"
+
+  if [ ! -d "$rp" ]; then
+    op_run_command git clone -b "${BRANCHES[$i]}" --depth 1 --single-branch \
+      --recurse-submodules --shallow-submodules \
+      "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "$rp"
+  else
+    cd "$rp" || return
+    op_run_command git fetch origin "${BRANCHES[$i]}:${BRANCHES[$i]}" --depth 1
+    op_run_command git checkout -f "${BRANCHES[$i]}"
+    op_run_command git submodule update --init --recursive
+  fi
+
+  op_run_command ln -sfn "$rp" /data/openpilot
   cd /data/openpilot || return
   if [ -f launch_env.sh ] && [ -f /VERSION ]; then
     local required installed
