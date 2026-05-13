@@ -417,10 +417,21 @@ function op_detect_active() {
 function op_update_fork() {
   local i=$1 rp branch
 
+  if [ "$i" = "all" ]; then
+    for n in $(seq 1 $FORK_COUNT); do
+      op_repo_downloaded $n && op_update_fork $n
+    done
+    op_scan_undeclared
+    for u in $(seq 1 $UNDECLARED_COUNT); do
+      op_update_fork "U$u"
+    done
+    return
+  fi
+
   if [[ "$i" =~ ^U([0-9]+)$ ]]; then
     local idx=${BASH_REMATCH[1]}
     idx=$((idx - 1))
-    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 1; }
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 0; }
     rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
     branch="${UNDECLARED_BRANCHES[$idx]}"
   else
@@ -435,13 +446,13 @@ function op_update_fork() {
   op_run_command git submodule update --init --recursive
 }
 
-function op_check_fork_update() {
+function op_fork_ahead_behind() {
   local i=$1 rp branch
 
   if [[ "$i" =~ ^U([0-9]+)$ ]]; then
     local idx=${BASH_REMATCH[1]}
     idx=$((idx - 1))
-    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || return 1
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || return
     rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
     branch="${UNDECLARED_BRANCHES[$idx]}"
   else
@@ -449,24 +460,29 @@ function op_check_fork_update() {
     branch="${BRANCHES[$i]}"
   fi
 
-  cd "$rp" 2>/dev/null || return 1
+  cd "$rp" 2>/dev/null || return
   GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
-  git rev-parse -q --verify "origin/$branch" >/dev/null 2>&1 || return 1
-  [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/$branch" 2>/dev/null)" ] && return 0
-  git submodule foreach --recursive --quiet '
-    git fetch origin --quiet 2>/dev/null
-    [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" 2>/dev/null)" ] && exit 1
-  ' 2>/dev/null
-  [ $? -eq 1 ] && return 0 || return 1
+  git rev-parse -q --verify "origin/$branch" >/dev/null 2>&1 || return
+  local counts
+  counts=$(git rev-list --count --left-right "HEAD...origin/$branch" 2>/dev/null) || return
+  local behind="${counts%%$'\t'*}"
+  local ahead="${counts##*$'\t'}"
+  [ -z "$behind" ] && behind=0
+  [ -z "$ahead" ] && ahead=0
+  [ "$ahead" -eq 0 ] && [ "$behind" -eq 0 ] && return
+  local parts=""
+  [ "$ahead" -gt 0 ] && parts="↑$ahead"
+  [ "$behind" -gt 0 ] && parts="${parts:+$parts }↓$behind"
+  echo "$parts"
 }
 
-function op_purge_fork() {
+function op_info_fork() {
   local i=$1 rp key branch
 
   if [[ "$i" =~ ^U([0-9]+)$ ]]; then
     local idx=${BASH_REMATCH[1]}
     idx=$((idx - 1))
-    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 1; }
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 0; }
     rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
     key="${UNDECLARED_KEYS[$idx]}"
     branch="${UNDECLARED_BRANCHES[$idx]}"
@@ -476,7 +492,43 @@ function op_purge_fork() {
     branch="${BRANCHES[$i]}"
   fi
 
-  [ ! -d "$rp" ] && echo -e "[${RED}✗${NC}] Fork $key branch $branch not cloned" && return
+  [ ! -d "$rp" ] && echo "Not downloaded" && return 0
+  cd "$rp" || return
+  echo "Fork:     $(echo "$key" | tr '_' '/'):$branch"
+  echo "SHA:      $(git rev-parse HEAD 2>/dev/null || echo "N/A")"
+  echo "Date:     $(git log -1 --format='%cd' --date=short 2>/dev/null || echo "N/A")"
+  echo "Title:    $(git log -1 --format='%s' 2>/dev/null || echo "N/A")"
+  GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
+  local counts
+  counts=$(git rev-list --count --left-right "HEAD...origin/$branch" 2>/dev/null || true)
+  if [ -n "$counts" ]; then
+    local behind="${counts%%$'\t'*}"
+    local ahead="${counts##*$'\t'}"
+    [ -z "$behind" ] && behind=0
+    [ -z "$ahead" ] && ahead=0
+    echo "Ahead:    $ahead"
+    echo "Behind:   $behind"
+  fi
+  echo "Path:     $rp"
+}
+
+function op_purge_fork() {
+  local i=$1 rp key branch
+
+  if [[ "$i" =~ ^U([0-9]+)$ ]]; then
+    local idx=${BASH_REMATCH[1]}
+    idx=$((idx - 1))
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 0; }
+    rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
+    key="${UNDECLARED_KEYS[$idx]}"
+    branch="${UNDECLARED_BRANCHES[$idx]}"
+  else
+    rp=$(op_repo_path $i)
+    key=$(op_repo_key $i)
+    branch="${BRANCHES[$i]}"
+  fi
+
+  [ ! -d "$rp" ] && echo -e "[${RED}✗${NC}] Fork $key branch $branch not cloned" && return 0
   [[ "$rp" = "$(readlink /data/openpilot)" ]] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
 
   echo "Purge $(echo "$key" | tr '_' '/'):$branch?"
@@ -522,7 +574,8 @@ function op_list_forks() {
     local mark="" status="" note=""
     [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
     if op_repo_downloaded $i; then
-      op_check_fork_update $i && status=" ${RED}(update available)${NC}"
+      local diff=$(op_fork_ahead_behind $i)
+      [ -n "$diff" ] && status=" ${RED}($diff)${NC}"
     else
       status=" (not downloaded)"
     fi
@@ -584,12 +637,14 @@ function op_fork_menu() {
   echo ""
   if [ "$UNDECLARED_COUNT" -gt 0 ]; then
     echo "  [1-$FORK_COUNT, U1-U${UNDECLARED_COUNT}]  switch to fork"
-    echo "  [u N]    update fork N (or UN for untracked)"
-    echo "  [p N]    purge fork N (or UN for untracked)"
+    echo "  [u N|all]  update fork(s) (or UN for untracked)"
+    echo "  [p N]      purge fork N (or UN for untracked)"
+    echo "  [i N]      info fork (SHA, date, ahead/behind)"
   else
     echo "  [1-$FORK_COUNT]  switch to fork (downloads if missing)"
     echo "  [u N]    update fork N"
     echo "  [p N]    purge fork N"
+    echo "  [i N]    info fork (SHA, date, ahead/behind)"
   fi
   echo "  [e]      exit"
   echo ""
@@ -601,7 +656,7 @@ function op_use_fork() {
   if [[ "$i" =~ ^U([0-9]+)$ ]]; then
     local idx=${BASH_REMATCH[1]}
     idx=$((idx - 1))
-    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 1; }
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 0; }
     rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
     branch="${UNDECLARED_BRANCHES[$idx]}"
     cd "$rp" || return
@@ -698,19 +753,21 @@ function op_fork() {
   # sub-action mode
   case $1 in
     list|ls)    op_list_forks; return ;;
-    u|update)   shift; [ -n "$1" ] && op_update_fork "$1" || echo "Usage: op fork u <N|UN>"; return ;;
-    p|purge)    shift; [ -n "$1" ] && op_purge_fork "$1" || echo "Usage: op fork p <N|UN>"; return ;;
+    u|update)   shift; [ -n "$1" ] && op_update_fork "$1" || echo "Usage: op fork update <N|UN|all>"; return ;;
+    p|purge)    shift; [ -n "$1" ] && op_purge_fork "$1" || echo "Usage: op fork purge <N|UN>"; return ;;
+    i|info)     shift; [ -n "$1" ] && op_info_fork "$1" || echo "Usage: op fork info <N|UN>"; return ;;
     help|-h|--help)
       echo "Usage: op fork [action]"
       echo ""
       echo "Actions:"
-      echo "  list              List all forks with status"
-      echo "  <N|UN>            Switch to fork (clone + checkout + symlink + reboot)"
-      echo "  u <N|UN>          Update fork (fetch + merge --ff-only)"
-      echo "  p <N|UN>          Purge fork"
-      echo "  help              Show this help"
+      echo "  list                List all forks with ahead/behind status"
+      echo "  <N|UN>              Switch to fork (clone + checkout + symlink + reboot)"
+      echo "  update <N|UN|all>   Update fork(s) (fetch + merge --ff-only)"
+      echo "  info <N|UN>         Show SHA, date, title, ahead/behind"
+      echo "  purge <N|UN>        Purge fork"
+      echo "  help                Show this help"
       echo ""
-      echo "  (no action)       Interactive menu"
+      echo "  (no action)         Interactive menu"
       return ;;
     [0-9]*|U[0-9]*)
       if [[ "$1" =~ ^U[0-9]+$ ]]; then
@@ -729,8 +786,9 @@ function op_fork() {
   read -p "Select: " opt arg
   case $opt in
     e|E|exit|quit) return ;;
-    u|U)    [ -n "$arg" ] && op_update_fork "$arg" || echo "Usage: u <N|UN>" ;;
+    u|U)    [ -n "$arg" ] && op_update_fork "$arg" || echo "Usage: u <N|UN|all>" ;;
     p|P)    [ -n "$arg" ] && op_purge_fork "$arg" || echo "Usage: p <N|UN>" ;;
+    i|I)    [ -n "$arg" ] && op_info_fork "$arg" || echo "Usage: i <N|UN>" ;;
     [1-9][0-9]*|[1-9]|U[0-9]*|u[0-9]*) op_use_fork "${opt^^}" ;;
     *)      echo "Invalid option" ;;
   esac
