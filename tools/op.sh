@@ -653,7 +653,7 @@ function op_scan_undeclared() {
     [ -z "$url" ] && continue
 
     local repo_key
-    repo_key=$(echo "$url" | sed 's|.*/\([^/]*/[^.]*\)\.git|\1|' | tr '/' '_')
+    repo_key=$(echo "$url" | sed -E 's|.*[/:]([^/]*/[^.]*)\.git|\1|' | tr '/' '_')
 
     while IFS= read -r branch; do
       [ -z "$branch" ] && continue
