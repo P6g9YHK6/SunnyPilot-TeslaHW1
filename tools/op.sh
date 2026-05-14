@@ -529,7 +529,26 @@ function op_purge_fork() {
   fi
 
   [ ! -d "$rp" ] && echo -e "[${RED}✗${NC}] Fork $key branch $branch not cloned" && return 0
-  [[ "$rp" = "$(readlink /data/openpilot)" ]] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
+
+  local do_rmrf=0
+  if [[ "$i" =~ ^U ]]; then
+    local same_repo=0
+    for j in $(seq 0 $((UNDECLARED_COUNT - 1))); do
+      [ "${UNDECLARED_KEYS[$j]}" = "$key" ] && same_repo=$((same_repo + 1))
+    done
+    [ "$same_repo" -le 1 ] && do_rmrf=1
+  else
+    local shared=0
+    for j in $(seq 1 $FORK_COUNT); do
+      [ "$(op_repo_key $j)" = "$key" ] && shared=$((shared + 1))
+    done
+    [ "$shared" -le 1 ] && do_rmrf=1
+  fi
+
+  if [ "$do_rmrf" -eq 1 ] && [ "$rp" = "$(readlink /data/openpilot 2>/dev/null)" ]; then
+    echo -e "[${RED}✗${NC}] Cannot rm -rf active repo. Use branch -D manually."
+    return
+  fi
 
   echo "Purge $(echo "$key" | tr '_' '/'):$branch?"
   read -p "Are you sure? [y/N] " confirm
@@ -538,27 +557,10 @@ function op_purge_fork() {
     *) echo "Aborted."; return ;;
   esac
 
-  if [[ "$i" =~ ^U ]]; then
-    # Untracked: count undeclared branches in same repo
-    local same_repo=0
-    for j in $(seq 0 $((UNDECLARED_COUNT - 1))); do
-      [ "${UNDECLARED_KEYS[$j]}" = "$key" ] && same_repo=$((same_repo + 1))
-    done
-    if [ "$same_repo" -le 1 ]; then
-      op_run_command rm -rf "$rp"
-    else
-      op_run_command git -C "$rp" branch -D "$branch" 2>/dev/null || true
-    fi
+  if [ "$do_rmrf" -eq 1 ]; then
+    op_run_command rm -rf "$rp"
   else
-    local shared=0
-    for j in $(seq 1 $FORK_COUNT); do
-      [ "$(op_repo_key $j)" = "$key" ] && shared=$((shared + 1))
-    done
-    if [ "$shared" -le 1 ]; then
-      op_run_command rm -rf "$rp"
-    else
-      op_run_command git -C "$rp" branch -D "$branch" 2>/dev/null || true
-    fi
+    op_run_command git -C "$rp" branch -D "$branch" 2>/dev/null || true
   fi
 }
 
