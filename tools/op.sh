@@ -23,25 +23,43 @@ fi
 # =====================
 # FORK CONFIG
 # =====================
-declare -A FORKS REPOS BRANCHES DIRS
+declare -A FORKS REPOS BRANCHES COMMENTS
 FORK_COUNT=0
+UNDECLARED_COUNT=0
+UNDECLARED_KEYS=()
+UNDECLARED_BRANCHES=()
 
 function op_load_fork_config() {
   local conf
   conf="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)/forks.conf"
   [[ ! -f "$conf" ]] && return
   FORK_COUNT=0
-  while IFS=' ' read -r num repo branch dir; do
+  while IFS=' ' read -r num repo branch comment; do
     [[ -z "$num" || "$num" =~ ^# ]] && continue
     FORKS[$num]="${repo%/*}"
     REPOS[$num]="${repo#*/}"
     BRANCHES[$num]="$branch"
-    DIRS[$num]="$dir"
+    [[ -n "$comment" ]] && COMMENTS[$num]="$comment"
     FORK_COUNT=$num
   done < "$conf"
 }
 
 op_load_fork_config
+
+FORKS_DIR="forks"
+
+function op_ensure_forks_dir() {
+  if [ -d "/data/$FORKS_DIR" ]; then
+    return 0
+  fi
+  echo -e "Fork directory /data/$FORKS_DIR does not exist."
+  echo -e "This will be used to store all fork repositories."
+  read -p "Create /data/$FORKS_DIR? [Y/n] " confirm
+  case "$confirm" in
+    n|N|no|NO) echo -e " ↳ [${RED}✗${NC}] Aborted. Edit tools/forks.conf or create /data/$FORKS_DIR manually."; return 1 ;;
+    *) op_run_command mkdir -p "/data/$FORKS_DIR" ;;
+  esac
+}
 
 function op_install() {
   echo "Installing op system-wide..."
@@ -372,88 +390,380 @@ function op_clip() {
 # =====================
 # FORK HELPERS
 # =====================
+function op_repo_key() {
+  echo "${FORKS[$1]}_${REPOS[$1]}"
+}
+
+function op_repo_path() {
+  echo "/data/${FORKS_DIR}/$(op_repo_key $1)"
+}
+
 function op_detect_active() {
   if [ -L /data/openpilot ]; then
     local target
     target=$(readlink /data/openpilot)
     for i in $(seq 1 $FORK_COUNT); do
-      [ "/data/${DIRS[$i]}" = "$target" ] && echo "$i" && return
+      local rp=$(op_repo_path $i)
+      if [ "$rp" = "$target" ]; then
+        local cur_branch
+        cur_branch=$(git -C "$rp" branch --show-current 2>/dev/null || true)
+        [ "$cur_branch" = "${BRANCHES[$i]}" ] && echo "$i" && return
+      fi
     done
   fi
   echo "0"
 }
 
-function op_clone_fork() {
-  local i=$1
-  [ -d "/data/${DIRS[$i]}" ] && return
-  op_run_command git clone -b "${BRANCHES[$i]}" --depth 1 --single-branch \
-    --recurse-submodules --shallow-submodules \
-    "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "/data/${DIRS[$i]}"
-}
-
 function op_update_fork() {
-  local i=$1
-  local d="/data/${DIRS[$i]}"
-  [ ! -d "$d" ] && op_clone_fork $i && return
-  cd "$d" || return
+  local i=$1 rp branch
+
+  if [ "$i" = "all" ]; then
+    for n in $(seq 1 $FORK_COUNT); do
+      op_repo_downloaded $n && op_update_fork $n
+    done
+    op_scan_undeclared
+    for u in $(seq 1 $UNDECLARED_COUNT); do
+      op_update_fork "U$u"
+    done
+    return
+  fi
+
+  if [[ "$i" =~ ^U([0-9]+)$ ]]; then
+    local idx=${BASH_REMATCH[1]}
+    idx=$((idx - 1))
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 0; }
+    rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
+    branch="${UNDECLARED_BRANCHES[$idx]}"
+  else
+    rp=$(op_repo_path $i)
+    branch="${BRANCHES[$i]}"
+  fi
+
+  [ ! -d "$rp" ] && echo "Not downloaded" && return
+  cd "$rp" || return
   op_run_command git fetch origin
-  op_run_command git merge --ff-only "origin/${BRANCHES[$i]}"
+  op_run_command git merge --ff-only "origin/$branch"
   op_run_command git submodule update --init --recursive
 }
 
-function op_check_fork_update() {
-  local i=$1
-  local d="/data/${DIRS[$i]}"
-  cd "$d" 2>/dev/null || return 1
+function op_fork_ahead_behind() {
+  local i=$1 rp branch
+
+  if [[ "$i" =~ ^U([0-9]+)$ ]]; then
+    local idx=${BASH_REMATCH[1]}
+    idx=$((idx - 1))
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || return
+    rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
+    branch="${UNDECLARED_BRANCHES[$idx]}"
+  else
+    rp=$(op_repo_path $i)
+    branch="${BRANCHES[$i]}"
+  fi
+
+  cd "$rp" 2>/dev/null || return
   GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
-  [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/${BRANCHES[$i]}" 2>/dev/null)" ] && return 0
-  git submodule foreach --recursive --quiet '
-    git fetch origin --quiet 2>/dev/null
-    [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse "origin/$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" 2>/dev/null)" ] && exit 1
-  ' 2>/dev/null
-  [ $? -eq 1 ] && return 0 || return 1
+  git rev-parse -q --verify "origin/$branch" >/dev/null 2>&1 || return
+  local counts
+  counts=$(git rev-list --count --left-right "HEAD...origin/$branch" 2>/dev/null) || return
+  local behind="${counts%%$'\t'*}"
+  local ahead="${counts##*$'\t'}"
+  [ -z "$behind" ] && behind=0
+  [ -z "$ahead" ] && ahead=0
+  [ "$ahead" -eq 0 ] && [ "$behind" -eq 0 ] && return
+  local parts=""
+  [ "$ahead" -gt 0 ] && parts="↑$ahead"
+  [ "$behind" -gt 0 ] && parts="${parts:+$parts }↓$behind"
+  echo "$parts"
+}
+
+function op_info_fork() {
+  local i=$1 rp key branch
+
+  if [[ "$i" =~ ^U([0-9]+)$ ]]; then
+    local idx=${BASH_REMATCH[1]}
+    idx=$((idx - 1))
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 0; }
+    rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
+    key="${UNDECLARED_KEYS[$idx]}"
+    branch="${UNDECLARED_BRANCHES[$idx]}"
+  else
+    rp=$(op_repo_path $i)
+    key=$(op_repo_key $i)
+    branch="${BRANCHES[$i]}"
+  fi
+
+  [ ! -d "$rp" ] && echo "Not downloaded" && return 0
+  cd "$rp" || return
+  echo "Fork:     $(echo "$key" | tr '_' '/'):$branch"
+  echo "SHA:      $(git rev-parse HEAD 2>/dev/null || echo "N/A")"
+  echo "Date:     $(git log -1 --format='%cd' --date=short 2>/dev/null || echo "N/A")"
+  echo "Title:    $(git log -1 --format='%s' 2>/dev/null || echo "N/A")"
+  GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
+  local counts
+  counts=$(git rev-list --count --left-right "HEAD...origin/$branch" 2>/dev/null || true)
+  if [ -n "$counts" ]; then
+    local behind="${counts%%$'\t'*}"
+    local ahead="${counts##*$'\t'}"
+    [ -z "$behind" ] && behind=0
+    [ -z "$ahead" ] && ahead=0
+    echo "Ahead:    $ahead"
+    echo "Behind:   $behind"
+  fi
+  echo "Path:     $rp"
 }
 
 function op_purge_fork() {
-  local i=$1
-  local d="/data/${DIRS[$i]}"
-  [ ! -d "$d" ] && echo -e "[${RED}✗${NC}] ${DIRS[$i]} does not exist" && return
-  [ "$(readlink /data/openpilot)" = "$d" ] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
-  op_run_command rm -rf "$d"
+  local i=$1 rp key branch
+
+  if [[ "$i" =~ ^U([0-9]+)$ ]]; then
+    local idx=${BASH_REMATCH[1]}
+    idx=$((idx - 1))
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 0; }
+    rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
+    key="${UNDECLARED_KEYS[$idx]}"
+    branch="${UNDECLARED_BRANCHES[$idx]}"
+  else
+    rp=$(op_repo_path $i)
+    key=$(op_repo_key $i)
+    branch="${BRANCHES[$i]}"
+  fi
+
+  [ ! -d "$rp" ] && echo -e "[${RED}✗${NC}] Fork $key branch $branch not cloned" && return 0
+  [[ "$rp" = "$(readlink /data/openpilot)" ]] && echo -e "[${RED}✗${NC}] Cannot purge active fork" && return
+
+  echo "Purge $(echo "$key" | tr '_' '/'):$branch?"
+  read -p "Are you sure? [y/N] " confirm
+  case "$confirm" in
+    y|Y|yes|YES) ;;
+    *) echo "Aborted."; return ;;
+  esac
+
+  if [[ "$i" =~ ^U ]]; then
+    # Untracked: count undeclared branches in same repo
+    local same_repo=0
+    for j in $(seq 0 $((UNDECLARED_COUNT - 1))); do
+      [ "${UNDECLARED_KEYS[$j]}" = "$key" ] && same_repo=$((same_repo + 1))
+    done
+    if [ "$same_repo" -le 1 ]; then
+      op_run_command rm -rf "$rp"
+    else
+      op_run_command git -C "$rp" branch -D "$branch" 2>/dev/null || true
+    fi
+  else
+    local shared=0
+    for j in $(seq 1 $FORK_COUNT); do
+      [ "$(op_repo_key $j)" = "$key" ] && shared=$((shared + 1))
+    done
+    if [ "$shared" -le 1 ]; then
+      op_run_command rm -rf "$rp"
+    else
+      op_run_command git -C "$rp" branch -D "$branch" 2>/dev/null || true
+    fi
+  fi
+}
+
+function op_repo_downloaded() {
+  local rp=$(op_repo_path $1)
+  [ -d "$rp" ] && git -C "$rp" rev-parse -q --verify "${BRANCHES[$1]}" >/dev/null 2>&1 && return 0
+  return 1
 }
 
 function op_list_forks() {
-  for i in $(seq 1 $FORK_COUNT); do
-    [ -d "/data/${DIRS[$i]}" ] && (cd "/data/${DIRS[$i]}" && GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null &)
-  done
-  wait
-
   local active=$(op_detect_active)
   for i in $(seq 1 $FORK_COUNT); do
-    local mark="" status=""
+    local mark="" status="" note=""
     [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
-    if [ ! -d "/data/${DIRS[$i]}" ]; then
-      status=" (not downloaded)"
+    if op_repo_downloaded $i; then
+      status=" (downloaded)"
     else
-      op_check_fork_update $i && status=" ${RED}(update available)${NC}"
+      status=" (not downloaded)"
     fi
-    echo -e "[$i] ${FORKS[$i]}/${REPOS[$i]}:${BRANCHES[$i]}$status$mark"
+    [[ -n "${COMMENTS[$i]}" ]] && note=" ${GREEN}(${COMMENTS[$i]})${NC}"
+    echo -e "[$i] ${FORKS[$i]}/${REPOS[$i]}:${BRANCHES[$i]}${note}$status$mark"
   done
+  local active_target
+  active_target=$(readlink /data/openpilot 2>/dev/null || true)
+  for j in $(seq 0 $((UNDECLARED_COUNT - 1))); do
+    local rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$j]}"
+    local u=$((j + 1))
+    local mark=""
+    local note=" ${RED}(untracked)${NC}"
+    if [ -n "$active_target" ] && [ "$rp" = "$active_target" ] && \
+       [ "$(git -C "$rp" branch --show-current 2>/dev/null)" = "${UNDECLARED_BRANCHES[$j]}" ]; then
+      mark=" ${GREEN}<-- ACTIVE${NC}"
+    fi
+    echo -e "[U$u] $(echo "${UNDECLARED_KEYS[$j]}" | tr '_' '/'):${UNDECLARED_BRANCHES[$j]}${note}$mark"
+  done
+}
+
+function op_fork_status() {
+  local active=$(op_detect_active)
+  for i in $(seq 1 $FORK_COUNT); do
+    local mark="" diff="" note=""
+    [ "$active" = "$i" ] && mark=" ${GREEN}<-- ACTIVE${NC}"
+    if op_repo_downloaded $i; then
+      diff=$(op_fork_ahead_behind $i)
+      [ -n "$diff" ] && diff=" ${RED}($diff)${NC}" || diff=" (up to date)"
+    else
+      diff=" (not downloaded)"
+    fi
+    [[ -n "${COMMENTS[$i]}" ]] && note=" ${GREEN}(${COMMENTS[$i]})${NC}"
+    echo -e "[$i] ${FORKS[$i]}/${REPOS[$i]}:${BRANCHES[$i]}${note}${diff}$mark"
+  done
+  local active_target
+  active_target=$(readlink /data/openpilot 2>/dev/null || true)
+  for j in $(seq 0 $((UNDECLARED_COUNT - 1))); do
+    local rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$j]}"
+    local u=$((j + 1))
+    local mark="" diff=""
+    if [ -d "$rp" ]; then
+      diff=$(op_fork_ahead_behind "U$u")
+      [ -n "$diff" ] && diff=" ${RED}($diff)${NC}" || diff=" (up to date)"
+    else
+      diff=" (not downloaded)"
+    fi
+    local note=" ${RED}(untracked)${NC}"
+    if [ -n "$active_target" ] && [ "$rp" = "$active_target" ] && \
+       [ "$(git -C "$rp" branch --show-current 2>/dev/null)" = "${UNDECLARED_BRANCHES[$j]}" ]; then
+      mark=" ${GREEN}<-- ACTIVE${NC}"
+    fi
+    echo -e "[U$u] $(echo "${UNDECLARED_KEYS[$j]}" | tr '_' '/'):${UNDECLARED_BRANCHES[$j]}${note}${diff}$mark"
+  done
+}
+
+function op_scan_undeclared() {
+  UNDECLARED_COUNT=0
+  UNDECLARED_KEYS=()
+  UNDECLARED_BRANCHES=()
+
+  local forks_dir="/data/${FORKS_DIR}"
+  [ ! -d "$forks_dir" ] && return
+
+  # Build lookup of declared branches per repo_key
+  declare -A decl_branches
+  for i in $(seq 1 $FORK_COUNT); do
+    local key=$(op_repo_key $i)
+    decl_branches[$key]="${decl_branches[$key]:+${decl_branches[$key]} }${BRANCHES[$i]}"
+  done
+
+  for repo_dir in "$forks_dir"/*/; do
+    [ -d "$repo_dir/.git" ] || continue
+    local url
+    url=$(git -C "$repo_dir" config --get remote.origin.url 2>/dev/null || true)
+    [ -z "$url" ] && continue
+
+    local repo_key
+    repo_key=$(echo "$url" | sed 's|.*/\([^/]*/[^.]*\)\.git|\1|' | tr '/' '_')
+
+    while IFS= read -r branch; do
+      [ -z "$branch" ] && continue
+      if [ -z "${decl_branches[$repo_key]:-}" ] || ! echo "${decl_branches[$repo_key]}" | grep -qw "$branch"; then
+        UNDECLARED_KEYS+=("$repo_key")
+        UNDECLARED_BRANCHES+=("$branch")
+      fi
+    done < <(git -C "$repo_dir" branch --format='%(refname:short)' 2>/dev/null)
+  done
+  UNDECLARED_COUNT=${#UNDECLARED_KEYS[@]}
 }
 
 function op_fork_menu() {
   op_list_forks
   echo ""
-  echo "  [1-$FORK_COUNT]  switch to fork (downloads if missing)"
-  echo "  [u N]    update fork N"
-  echo "  [p N]    purge fork N"
+  if [ "$UNDECLARED_COUNT" -gt 0 ]; then
+    echo "  [1-$FORK_COUNT, U1-U${UNDECLARED_COUNT}]  switch to fork"
+    echo "  [u N|all]  update fork(s) (or UN for untracked)"
+    echo "  [p N]      purge fork N (or UN for untracked)"
+    echo "  [i N]      info fork (SHA, date, ahead/behind)"
+    echo "  [s]        status — check all forks (fetches remote)"
+  else
+    echo "  [1-$FORK_COUNT]  switch to fork (downloads if missing)"
+    echo "  [u N]    update fork N"
+    echo "  [p N]    purge fork N"
+    echo "  [i N]    info fork (SHA, date, ahead/behind)"
+    echo "  [s]      status — check all forks (fetches remote)"
+  fi
+  echo "  [e]      exit"
   echo ""
 }
 
 function op_use_fork() {
-  local i=$1
-  op_clone_fork $i
-  op_run_command ln -sfn "/data/${DIRS[$i]}" /data/openpilot
+  local i=$1 rp branch
+
+  if [[ "$i" =~ ^U([0-9]+)$ ]]; then
+    local idx=${BASH_REMATCH[1]}
+    idx=$((idx - 1))
+    [ "$idx" -ge 0 ] && [ "$idx" -lt "$UNDECLARED_COUNT" ] || { echo "Invalid untracked index"; return 0; }
+    rp="/data/${FORKS_DIR}/${UNDECLARED_KEYS[$idx]}"
+    branch="${UNDECLARED_BRANCHES[$idx]}"
+    cd "$rp" || return
+    op_run_command git checkout -f "$branch"
+    op_run_command git submodule update --init --recursive
+  else
+    rp=$(op_repo_path $i)
+    mkdir -p "/data/${FORKS_DIR}"
+    if [ ! -d "$rp" ]; then
+      op_run_command git clone -b "${BRANCHES[$i]}" --depth 1 --single-branch \
+        --recurse-submodules --shallow-submodules \
+        "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "$rp"
+    else
+      cd "$rp" || return
+      op_run_command git fetch origin "${BRANCHES[$i]}:${BRANCHES[$i]}" --depth 1
+      op_run_command git checkout -f "${BRANCHES[$i]}"
+      op_run_command git submodule update --init --recursive
+    fi
+  fi
+
+  # Show AGNOS versions and ask for confirmation
+  local target_agnos current_agnos
+  target_agnos=$(grep -oP 'AGNOS_VERSION="\K[^"]+' "$rp/launch_env.sh" 2>/dev/null || true)
+  current_agnos=$(cat /VERSION 2>/dev/null || true)
+  if [ -n "$target_agnos" ]; then
+    echo "Current AGNOS: ${current_agnos:-unknown}"
+    echo "Target AGNOS:  $target_agnos"
+    if [ -n "$current_agnos" ] && [ "$current_agnos" != "$target_agnos" ]; then
+      echo -e "${RED}Warning: OS will be updated from $current_agnos to $target_agnos${NC}"
+    fi
+  fi
+  read -p "Proceed with switch and reboot? [y/N] " confirm
+  case "$confirm" in
+    y|Y|yes|YES) ;;
+    *) echo "Aborted."; return ;;
+  esac
+
+  # First setup: migrate standalone /data/openpilot into /data/forks/ architecture
+  if [ -d /data/openpilot ] && [ ! -L /data/openpilot ]; then
+    local existing_url existing_repo existing_branch existing_path
+    existing_url=$(git -C /data/openpilot config --get remote.origin.url 2>/dev/null)
+    existing_branch=$(git -C /data/openpilot rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -n "$existing_url" ] && [ -n "$existing_branch" ]; then
+      existing_repo=$(echo "$existing_url" | sed 's|.*/\([^/]*/[^.]*\)\.git|\1|' | tr '/' '_')
+      existing_path="/data/${FORKS_DIR}/${existing_repo}"
+      read -p "Migrate existing /data/openpilot ($existing_repo/$existing_branch) to $existing_path? [y/N] " confirm
+      case "$confirm" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; return ;;
+      esac
+      echo "Migrating..."
+      mkdir -p "$existing_path"
+      shopt -s dotglob
+      mv /data/openpilot/* "$existing_path/"
+      shopt -u dotglob
+      rmdir /data/openpilot || echo "Warning: could not remove /data/openpilot (running process?), symlinking over it"
+    else
+      local bak="/data/openpilot.orig.$(date +%s)"
+      read -p "Migrate unknown /data/openpilot to $bak? [y/N] " confirm
+      case "$confirm" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; return ;;
+      esac
+      echo "Warning: /data/openpilot is not a symlink but origin/branch not detectable"
+      echo "Moving it to $bak"
+      mv /data/openpilot "$bak"
+      op_run_command ln -sfn "$rp" /data/openpilot
+      return
+    fi
+  fi
+  op_run_command ln -sfn "$rp" /data/openpilot
   cd /data/openpilot || return
   if [ -f launch_env.sh ] && [ -f /VERSION ]; then
     local required installed
@@ -473,21 +783,52 @@ function op_fork() {
     return
   fi
 
+  op_ensure_forks_dir || return 1
+  op_scan_undeclared
+
   # sub-action mode
   case $1 in
     list|ls)    op_list_forks; return ;;
-    u|update)   shift; [ -n "$1" ] && op_update_fork "$1" || echo "Usage: op fork u <N>"; return ;;
-    p|purge)    shift; [ -n "$1" ] && op_purge_fork "$1" || echo "Usage: op fork p <N>"; return ;;
-    [0-9]*)     [ "$1" -ge 1 ] && [ "$1" -le $FORK_COUNT ] 2>/dev/null && op_use_fork "$1" || echo "Invalid fork number. Use 1-$FORK_COUNT."; return ;;
+    status|check|st) op_fork_status; return ;;
+    u|update)   shift; [ -n "$1" ] && op_update_fork "$1" || echo "Usage: op fork update <N|UN|all>"; return ;;
+    p|purge)    shift; [ -n "$1" ] && op_purge_fork "$1" || echo "Usage: op fork purge <N|UN>"; return ;;
+    i|info)     shift; [ -n "$1" ] && op_info_fork "$1" || echo "Usage: op fork info <N|UN>"; return ;;
+    help|-h|--help)
+      echo "Usage: op fork [action]"
+      echo ""
+      echo "Actions:"
+      echo "  list                    List all forks (no network)"
+      echo "  status|check            List all forks with ahead/behind (fetches)"
+      echo "  <N|UN>                  Switch to fork (clone + checkout + symlink + reboot)"
+      echo "  update <N|UN|all>       Update fork(s) (fetch + merge --ff-only)"
+      echo "  info <N|UN>             Show SHA, date, title, ahead/behind"
+      echo "  purge <N|UN>            Purge fork"
+      echo "  help                    Show this help"
+      echo ""
+      echo "  (no action)             Interactive menu"
+      return ;;
+    [0-9]*|U[0-9]*)
+      if [[ "$1" =~ ^U[0-9]+$ ]]; then
+        op_use_fork "$1"
+      elif [ "$1" -ge 1 ] && [ "$1" -le $FORK_COUNT ] 2>/dev/null; then
+        op_use_fork "$1"
+      else
+        echo "Invalid fork number. Use 1-$FORK_COUNT or U<N>."
+      fi
+      return ;;
+    *)  [ -n "$1" ] && echo "Unknown action '$1'. Run 'op fork help' for usage." && return ;;
   esac
 
-  # interactive menu
+  # interactive menu (no args or unmatched)
   op_fork_menu
   read -p "Select: " opt arg
   case $opt in
-    u|U)    [ -n "$arg" ] && op_update_fork "$arg" || echo "Usage: u <N>" ;;
-    p|P)    [ -n "$arg" ] && op_purge_fork "$arg" || echo "Usage: p <N>" ;;
-    [1-9])  op_use_fork "$opt" ;;
+    e|E|exit|quit) return ;;
+    u|U)    [ -n "$arg" ] && op_update_fork "$arg" || echo "Usage: u <N|UN|all>" ;;
+    p|P)    [ -n "$arg" ] && op_purge_fork "$arg" || echo "Usage: p <N|UN>" ;;
+    i|I)    [ -n "$arg" ] && op_info_fork "$arg" || echo "Usage: i <N|UN>" ;;
+    s|S)    op_fork_status ;;
+    [1-9][0-9]*|[1-9]|U[0-9]*|u[0-9]*) op_use_fork "${opt^^}" ;;
     *)      echo "Invalid option" ;;
   esac
 }

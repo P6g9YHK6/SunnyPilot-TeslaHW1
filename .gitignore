@@ -95,3 +95,5 @@ SKILL.md
 !.idea/customTargets.xml
 !.idea/tools/*
 !.run/*
+notes/standstill_resume_fix.md
+tools/diagnostics/live_long.py
