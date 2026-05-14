@@ -3,11 +3,13 @@
 This project was initially meant to support StarPilot, but due to the time it took to swap between OS even with the new [`op fork`](tools/op.sh) tool, sunnypilot with its recent update [v2026.001.000](https://github.com/sunnypilot/sunnypilot/releases/tag/v2026.001.000) (2026-05-06) adding support for both comma 3 & 4 became an easy target for porting.
 ## Installation
 ### Prerequisites
-- **SSH:** Generate a key (`ssh-keygen -t ed25519`), add to GitHub, then on device go to **Settings > Developer > SSH Keys** and enter your GitHub username.
 - **Device:** comma 3 or comma 4 (same as upstream). Tested on comma 4 - feedback from other versions welcome.
-- **Harness:** [xnor harness](https://xnor.shop) - required for connecting the comma device to the Tesla HW1 (AP1) CAN bus.
+- **Harness:** [xnor harness](https://xnor.shop) - required for connecting the comma device to the tesla CAN bus.
 - **Vehicle:** Tesla HW1 (AP1) (Model S 2015 tested - feedback from other HW1 variants welcome). HW2 may work, untested. Pre-AP unsupported until AP1/AP2 reach feature parity with other cars.
 ### Install
+#### SSH
+Generate an SSH key (`ssh-keygen -t ed25519`), add it to GitHub, then on the device go to **Settings > Developer > SSH Keys** and enter your GitHub username.
+
 SSH into the device (`ssh comma@<device-ip>`) and run:
 ```bash
 cd /data && rm -rf openpilot
@@ -18,6 +20,13 @@ op build -j2 2>&1 | tee /data/build.log
 sudo reboot
 ```
 Feedback on the installation process is welcomed. If AGNOS versions differ, `op fork <N>` updates the OS automatically before reboot. No `fork` after swap? Run `/data/forks/P6g9YHK6_SunnyPilot-TeslaHW1/tools/op.sh fork list`.
+
+#### comma UI
+When requested for a custom install URL, use:
+```
+P6g9YHK6/master
+```
+(untested)
 ## Upstream Updates
 | Upstream | Branch | Last Commit |
 |----------|--------|-------------|
