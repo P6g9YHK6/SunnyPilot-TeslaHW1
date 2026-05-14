@@ -35,11 +35,10 @@ def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
           long_control_state = LongCtrlState.pid
 
     elif long_control_state == LongCtrlState.stopping:
-      if starting_condition and CP.startingState:
+      if CP.startingState and not cruise_standstill and not brake_pressed:
         long_control_state = LongCtrlState.starting
       elif starting_condition:
         long_control_state = LongCtrlState.pid
-
     elif long_control_state in [LongCtrlState.starting, LongCtrlState.pid]:
       if stopping_condition:
         long_control_state = LongCtrlState.stopping

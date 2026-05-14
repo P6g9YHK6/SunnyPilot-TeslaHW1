@@ -162,7 +162,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     if self.is_e2e(sm):
       output_a_target = min(output_a_target_e2e, output_a_target_mpc)
-      self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
+      if self.CP.startingState and output_should_stop_e2e and not output_should_stop_mpc:
+        self.output_should_stop = False
+      else:
+        self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:
         self.mpc.source = LongitudinalPlanSource.e2e
     else:
