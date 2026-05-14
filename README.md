@@ -1,11 +1,11 @@
-> **Fork notice:** This repository is a fork of [sunnypilot/sunnypilot](https://github.com/sunnypilot/sunnypilot), which is a fork of [commaai/openpilot](https://github.com/commaai/openpilot). Built for the purpose of adding **Tesla Hardware 1** support to sunnypilot. The HW1 work is based on [xnor](https://github.com/xnor-tech/openpilot), is the successor of [Tinkla (Unity)](https://github.com/BogGyver/openpilot).
+> **Fork notice:** This repository is a fork of [sunnypilot/sunnypilot](https://github.com/sunnypilot/sunnypilot), which is a fork of [commaai/openpilot](https://github.com/commaai/openpilot). Built for the purpose of adding **Tesla Hardware 1** support to sunnypilot. The HW1/AP1 work is based on [xnor](https://github.com/xnor-tech/openpilot), is the successor of [Tinkla (Unity)](https://github.com/BogGyver/openpilot).
 ## Background
 This project was initially meant to support StarPilot, but due to the time it took to swap between OS even with the new [`op fork`](tools/op.sh) tool, sunnypilot with its recent update [v2026.001.000](https://github.com/sunnypilot/sunnypilot/releases/tag/v2026.001.000) (2026-05-06) adding support for both comma 3 & 4 became an easy target for porting.
 ## Installation
 ### Prerequisites
 - **Device:** comma 3 or comma 4 (same as upstream). Tested on comma 4 - feedback from other versions welcome.
 - **Harness:** [xnor harness](https://xnor.shop) - required for connecting the comma device to the tesla CAN bus.
-- **Vehicle:** Tesla HW1 (AP1) (Model S 2015 tested - feedback from other HW1 variants welcome). HW2 may work, untested. Pre-AP unsupported until AP1/AP2 reach feature parity with other cars.
+- **Vehicle:** Tesla HW1/AP1 (Model S 2015, Model X 2016 tested). HW2 may work, untested. Pre-AP unsupported until AP1/AP2 reach feature parity with other cars.
 ### Install
 #### SSH
 Generate an SSH key (`ssh-keygen -t ed25519`), add it to GitHub, then on the device go to **Settings > Developer > SSH Keys** and enter your GitHub username.
