@@ -18,6 +18,9 @@ DESCRIPTIONS = {
     "ADB (Android Debug Bridge) allows connecting to your device over USB or over the network. " +
     "See https://docs.comma.ai/how-to/connect-to-comma for more info."
   ),
+  'enable_bridge': tr_noop(
+    "ZMQ Bridge allows connecting Cabana locally to stream CAN data."
+  ),
   'ssh_key': tr_noop(
     "Warning: This grants SSH access to all public keys in your GitHub settings. Never enter a GitHub username " +
     "other than your own. A comma employee will NEVER ask you to add their GitHub username."
@@ -55,6 +58,13 @@ class DeveloperLayout(Widget):
       callback=self._on_enable_ssh,
     )
     self._ssh_keys = ssh_key_item(lambda: tr("SSH Keys"), description=lambda: tr(DESCRIPTIONS["ssh_key"]))
+
+    self._bridge_toggle = toggle_item(
+      lambda: tr("Enable ZMQ Bridge"),
+      description=lambda: tr(DESCRIPTIONS["enable_bridge"]),
+      initial_state=self._params.get_bool("BridgeEnabled"),
+      callback=self._on_enable_bridge,
+    )
 
     self._joystick_toggle = toggle_item(
       lambda: tr("Joystick Debug Mode"),
@@ -98,6 +108,7 @@ class DeveloperLayout(Widget):
       self._adb_toggle,
       self._ssh_toggle,
       self._ssh_keys,
+      self._bridge_toggle,
       self._joystick_toggle,
       self._long_maneuver_toggle,
       self._lat_maneuver_toggle,
@@ -151,6 +162,7 @@ class DeveloperLayout(Widget):
     for key, item in (
       ("AdbEnabled", self._adb_toggle),
       ("SshEnabled", self._ssh_toggle),
+      ("BridgeEnabled", self._bridge_toggle),
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
@@ -170,6 +182,9 @@ class DeveloperLayout(Widget):
 
   def _on_enable_ssh(self, state: bool):
     self._params.put_bool("SshEnabled", state)
+
+  def _on_enable_bridge(self, state: bool):
+    self._params.put_bool("BridgeEnabled", state)
 
   def _on_joystick_debug_mode(self, state: bool):
     self._params.put_bool("JoystickDebugMode", state)
