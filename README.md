@@ -56,6 +56,8 @@ If AGNOS versions differ, `op fork <N>` updates the OS automatically before rebo
   - [ ] Local web UI independent from SunnyLink
   - [ ] Prototype replacement of Tesla app
 
+<h3>GitHub Sponsor</h3>
+
 ## Other Documentation
 - [commaai/openpilot wiki - Tesla](https://github.com/commaai/openpilot/wiki/Tesla) — Official commaai documentation on Tesla hardware compatibility, flashing, and general openpilot/Tesla usage. Useful reference for HW1/HW2 support setup and troubleshooting.
 - [CARS.md](https://github.com/commaai/openpilot/blob/master/docs/CARS.md) — Official list of supported vehicles and their feature coverage in openpilot.
