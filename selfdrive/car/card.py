@@ -97,6 +97,9 @@ class Car:
         if len(can.can) > 0:
           break
 
+      # Default-enable alpha longitudinal for autostart fix testing
+      if not self.params.get_bool("AlphaLongitudinalEnabled"):
+        self.params.put_bool("AlphaLongitudinalEnabled", True)
       alpha_long_allowed = self.params.get_bool("AlphaLongitudinalEnabled")
 
       cached_params = None
@@ -180,6 +183,10 @@ class Car:
     self.v_cruise_helper = VCruiseHelper(self.CP, self.CP_SP)
 
     self.is_metric = self.params.get_bool("IsMetric")
+
+    # Default-enable experimental mode for autostart fix testing
+    if not self.params.get_bool("ExperimentalMode"):
+      self.params.put_bool("ExperimentalMode", True)
     self.experimental_mode = self.params.get_bool("ExperimentalMode")
 
     # card is driven by can recv, expected at 100Hz
