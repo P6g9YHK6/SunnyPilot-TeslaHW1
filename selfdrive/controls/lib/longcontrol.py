@@ -78,6 +78,8 @@ class LongControl:
         output_accel = min(output_accel, 0.0)
         output_accel -= self.CP.stoppingDecelRate * DT_CTRL
       self.reset()
+      if CS.vEgo < 0.3:
+        self.pid.i = 0.3
 
     elif self.long_control_state == LongCtrlState.starting:
       output_accel = self.CP.startAccel
