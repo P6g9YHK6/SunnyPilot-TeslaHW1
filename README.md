@@ -30,14 +30,14 @@ If AGNOS versions differ, `op fork <N>` updates the OS automatically before rebo
 
 
 ## Upstream Updates
-| Upstream | Branch | Last Commit |
-|----------|--------|-------------|
-| [sunnyhaibin/sunnypilot](https://github.com/sunnyhaibin/sunnypilot) | `master` | `107a6f4c0` (2026-05-20) |
-| [sunnyhaibin/opendbc](https://github.com/sunnyhaibin/opendbc) | `master` | `4dad7b09` (2026-05-09) |
-| [sunnyhaibin/panda](https://github.com/sunnyhaibin/panda) | `master` | `0a9ef7ab` (2026-04-26) |
-| [xnor-tech/openpilot](https://github.com/xnor-tech/openpilot) | `xnor-dev` | `eae878da2` (2026-04-25) |
-| [xnor-tech/opendbc](https://github.com/xnor-tech/opendbc) | `master-xnor` | `78039539` (2026-04-25) |
-| [xnor-tech/panda](https://github.com/xnor-tech/panda) | `master-xnor` | `56920ec6` (2026-04-11) |
+| Upstream | Last Commit |
+|----------|-------------|
+| [sunnyhaibin/sunnypilot:master](https://github.com/sunnyhaibin/sunnypilot/tree/master) | `107a6f4c0` (2026-05-17) |
+| [sunnyhaibin/opendbc:master](https://github.com/sunnyhaibin/opendbc/tree/master) | `4dad7b09` (2026-05-09) |
+| [sunnyhaibin/panda:master](https://github.com/sunnyhaibin/panda/tree/master) | `0a9ef7ab` (2026-04-26) |
+| [xnor-tech/openpilot:xnor-dev](https://github.com/xnor-tech/openpilot/tree/xnor-dev) | `eae878da2` (2026-04-25) |
+| [xnor-tech/opendbc:master-xnor](https://github.com/xnor-tech/opendbc/tree/master-xnor) | `78039539` (2026-04-25) |
+| [xnor-tech/panda:master-xnor](https://github.com/xnor-tech/panda/tree/master-xnor) | `56920ec6` (2026-04-11) |
 
 ## Tesla Documentation
 | File | Purpose |
