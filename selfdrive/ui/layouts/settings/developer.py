@@ -3,6 +3,7 @@ import subprocess
 
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.widgets.ssh_key import ssh_key_item
+from openpilot.selfdrive.ui.widgets.fork_switcher import fork_switcher_item
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.list_view import toggle_item, button_item
@@ -66,20 +67,7 @@ class DeveloperLayout(Widget):
     )
     self._ssh_keys = ssh_key_item(lambda: tr("SSH Keys"), description=lambda: tr(DESCRIPTIONS["ssh_key"]))
 
-    self._bridge_toggle = toggle_item(
-      lambda: tr("Enable ZMQ Bridge"),
-      description=lambda: tr(DESCRIPTIONS["enable_bridge"]),
-      initial_state=self._params.get_bool("BridgeEnabled"),
-      callback=self._on_enable_bridge,
-    )
-
-    self._fork_btn = button_item(
-      lambda: tr("Fork"),
-      lambda: tr(self._get_current_fork_display()),
-      description=lambda: tr("Select a fork to switch to. Device will reboot."),
-      callback=self._on_select_fork,
-      enabled=lambda: ui_state.is_offroad,
-    )
+    self._fork_switcher = fork_switcher_item(enabled=ui_state.is_offroad)
 
     self._joystick_toggle = toggle_item(
       lambda: tr("Joystick Debug Mode"),
@@ -123,8 +111,7 @@ class DeveloperLayout(Widget):
       self._adb_toggle,
       self._ssh_toggle,
       self._ssh_keys,
-      self._bridge_toggle,
-      self._fork_btn,
+      self._fork_switcher,
       self._joystick_toggle,
       self._long_maneuver_toggle,
       self._lat_maneuver_toggle,
