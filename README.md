@@ -32,7 +32,7 @@ If AGNOS versions differ, `op fork <N>` updates the OS automatically before rebo
 ## Upstream Updates
 | Upstream | Branch | Last Commit |
 |----------|--------|-------------|
-| [sunnyhaibin/sunnypilot](https://github.com/sunnyhaibin/sunnypilot) | `master` | `78007e82e` (2026-05-11) |
+| [sunnyhaibin/sunnypilot](https://github.com/sunnyhaibin/sunnypilot) | `master` | `107a6f4c0` (2026-05-20) |
 | [sunnyhaibin/opendbc](https://github.com/sunnyhaibin/opendbc) | `master` | `4dad7b09` (2026-05-09) |
 | [sunnyhaibin/panda](https://github.com/sunnyhaibin/panda) | `master` | `0a9ef7ab` (2026-04-26) |
 | [xnor-tech/openpilot](https://github.com/xnor-tech/openpilot) | `xnor-dev` | `eae878da2` (2026-04-25) |
