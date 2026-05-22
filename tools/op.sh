@@ -464,7 +464,7 @@ function op_fork_ahead_behind() {
   GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
   git rev-parse -q --verify "origin/$branch" >/dev/null 2>&1 || return
   local counts
-  counts=$(git rev-list --count --left-right "HEAD...origin/$branch" 2>/dev/null) || return
+  counts=$(git rev-list --count --left-right "refs/heads/$branch...origin/$branch" 2>/dev/null) || return
   local behind="${counts%%$'\t'*}"
   local ahead="${counts##*$'\t'}"
   [ -z "$behind" ] && behind=0
@@ -500,7 +500,7 @@ function op_info_fork() {
   echo "Title:    $(git log -1 --format='%s' 2>/dev/null || echo "N/A")"
   GIT_TERMINAL_PROMPT=0 git fetch origin --quiet 2>/dev/null
   local counts
-  counts=$(git rev-list --count --left-right "HEAD...origin/$branch" 2>/dev/null || true)
+  counts=$(git rev-list --count --left-right "refs/heads/$branch...origin/$branch" 2>/dev/null || true)
   if [ -n "$counts" ]; then
     local behind="${counts%%$'\t'*}"
     local ahead="${counts##*$'\t'}"
