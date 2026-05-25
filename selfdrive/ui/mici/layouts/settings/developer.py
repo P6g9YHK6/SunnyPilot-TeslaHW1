@@ -201,12 +201,5 @@ class DeveloperLayoutMici(NavScroller):
       return "unknown"
 
   def _on_select_fork(self):
-    def handle_input(key: str):
-      if key:
-        subprocess.Popen(
-          ["bash", "/data/openpilot/tools/op.sh", "fork", key],
-          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-
-    dlg = BigInputDialog("Enter fork number (e.g. U13)", confirm_callback=handle_input)
-    gui_app.push_widget(dlg)
+    from openpilot.selfdrive.ui.mici.layouts.settings.fork_select_ui import ForkSelectUIMici
+    gui_app.push_widget(ForkSelectUIMici())
