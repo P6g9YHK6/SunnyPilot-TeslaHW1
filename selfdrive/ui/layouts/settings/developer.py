@@ -25,6 +25,9 @@ DESCRIPTIONS = {
   'enable_bridge': tr_noop(
     "ZMQ Bridge allows connecting Cabana locally to stream CAN data."
   ),
+  'enable_can_api': tr_noop(
+    "CAN API starts an HTTP server for sending known and raw CAN signals. Only available offroad."
+  ),
   'ssh_key': tr_noop(
     "Warning: This grants SSH access to all public keys in your GitHub settings. Never enter a GitHub username " +
     "other than your own. A comma employee will NEVER ask you to add their GitHub username."
@@ -71,6 +74,14 @@ class DeveloperLayout(Widget):
       description=lambda: tr(DESCRIPTIONS["enable_bridge"]),
       initial_state=self._params.get_bool("BridgeEnabled"),
       callback=self._on_enable_bridge,
+    )
+
+    self._can_api_toggle = toggle_item(
+      lambda: tr("Enable CAN API (HTTP)"),
+      description=lambda: tr(DESCRIPTIONS["enable_can_api"]),
+      initial_state=self._params.get_bool("CanApiEnabled"),
+      callback=self._on_enable_can_api,
+      enabled=ui_state.is_offroad,
     )
 
     self._fork_btn = button_item(
@@ -124,6 +135,7 @@ class DeveloperLayout(Widget):
       self._ssh_toggle,
       self._ssh_keys,
       self._bridge_toggle,
+      self._can_api_toggle,
       self._fork_btn,
       self._joystick_toggle,
       self._long_maneuver_toggle,
@@ -179,6 +191,7 @@ class DeveloperLayout(Widget):
       ("AdbEnabled", self._adb_toggle),
       ("SshEnabled", self._ssh_toggle),
       ("BridgeEnabled", self._bridge_toggle),
+      ("CanApiEnabled", self._can_api_toggle),
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
@@ -201,6 +214,9 @@ class DeveloperLayout(Widget):
 
   def _on_enable_bridge(self, state: bool):
     self._params.put_bool("BridgeEnabled", state)
+
+  def _on_enable_can_api(self, state: bool):
+    self._params.put_bool("CanApiEnabled", state)
 
   def _load_forks(self):
     forks = []
