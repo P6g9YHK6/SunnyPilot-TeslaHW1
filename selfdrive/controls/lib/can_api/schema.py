@@ -1,7 +1,7 @@
 from opendbc.can.dbc import DBC
 
 
-def generate_openapi_schema(host: str = "localhost", port: int = 8700, dbc: DBC | None = None) -> dict:
+def generate_openapi_schema(host: str = "localhost", port: int = 8700, dbc=None) -> dict:
   base_path = f"http://{host}:{port}"
   schema = {
     "openapi": "3.0.3",

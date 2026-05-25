@@ -16,7 +16,7 @@ class CanApiHandler:
     self._dbc_names = None
 
   @property
-  def dbc_names(self) -> dict | None:
+  def dbc_names(self):
     if self._dbc_names is not None:
       return self._dbc_names
     cp_raw = self.params.get("CarParamsCache")
@@ -32,7 +32,7 @@ class CanApiHandler:
     return self._dbc_names
 
   @property
-  def dbc(self) -> DBC | None:
+  def dbc(self):
     names = self.dbc_names
     if names is None:
       return None
@@ -44,7 +44,7 @@ class CanApiHandler:
     return self._dbc
 
   @property
-  def packer(self) -> CANPacker | None:
+  def packer(self):
     dbc = self.dbc
     if dbc is None:
       return None
