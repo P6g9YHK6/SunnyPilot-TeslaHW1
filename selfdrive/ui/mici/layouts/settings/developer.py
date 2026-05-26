@@ -58,7 +58,7 @@ class DeveloperLayoutMici(NavScroller):
     self._ssh_toggle = BigCircleParamControl(gui_app.texture("icons_mici/ssh_short.png", 82, 82), "SshEnabled", icon_offset=(0, 12))
     self._bridge_toggle = BigCircleParamControl(gui_app.texture("icons_mici/settings/network/cell_strength_full.png", 76, 56), "BridgeEnabled")
     self._can_api_toggle = BigToggle("can api (http)",
-                                     initial_state=os.path.isfile("/data/params/d/CanApiEnabled"),
+                                     initial_state=os.path.isfile("/data/params/can_api_enabled"),
                                      toggle_callback=self._on_enable_can_api)
     self._joystick_toggle = BigToggle("joystick debug mode",
                                       initial_state=ui_state.params.get_bool("JoystickDebugMode"),
@@ -163,7 +163,7 @@ class DeveloperLayoutMici(NavScroller):
       item.set_checked(ui_state.params.get_bool(key))
 
   def _on_enable_can_api(self, state: bool):
-    param_path = "/data/params/d/CanApiEnabled"
+    param_path = "/data/params/can_api_enabled"
     if state:
       with open(param_path, "w") as f:
         f.write("1")

@@ -79,7 +79,7 @@ class DeveloperLayout(Widget):
     self._can_api_toggle = toggle_item(
       lambda: tr("Enable CAN API (HTTP)"),
       description=lambda: tr(DESCRIPTIONS["enable_can_api"]),
-      initial_state=os.path.isfile("/data/params/d/CanApiEnabled"),
+      initial_state=os.path.isfile("/data/params/can_api_enabled"),
       callback=self._on_enable_can_api,
       enabled=ui_state.is_offroad,
     )
@@ -215,7 +215,7 @@ class DeveloperLayout(Widget):
     self._params.put_bool("BridgeEnabled", state)
 
   def _on_enable_can_api(self, state: bool):
-    param_path = "/data/params/d/CanApiEnabled"
+    param_path = "/data/params/can_api_enabled"
     if state:
       with open(param_path, "w") as f:
         f.write("1")
