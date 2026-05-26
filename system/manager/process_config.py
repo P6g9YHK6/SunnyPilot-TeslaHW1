@@ -75,7 +75,7 @@ def use_bridge(started, params, CP: car.CarParams) -> bool:
   return bool(params.get_bool("BridgeEnabled"))
 
 def use_can_api(started, params, CP: car.CarParams) -> bool:
-  return os.path.isfile("/data/params/d/CanApiEnabled")
+  return bool(params.get_bool("CanApiEnabled"))
 
 def sunnylink_ready_shim(started, params, CP: car.CarParams) -> bool:
   """Shim for sunnylink_ready to match the process manager signature."""

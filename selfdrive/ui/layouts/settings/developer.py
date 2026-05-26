@@ -79,7 +79,7 @@ class DeveloperLayout(Widget):
     self._can_api_toggle = toggle_item(
       lambda: tr("Enable CAN API (HTTP)"),
       description=lambda: tr(DESCRIPTIONS["enable_can_api"]),
-      initial_state=os.path.isfile("/data/params/d/CanApiEnabled"),
+      initial_state=self._params.get_bool("CanApiEnabled"),
       callback=self._on_enable_can_api,
       enabled=ui_state.is_offroad,
     )
@@ -191,6 +191,7 @@ class DeveloperLayout(Widget):
       ("AdbEnabled", self._adb_toggle),
       ("SshEnabled", self._ssh_toggle),
       ("BridgeEnabled", self._bridge_toggle),
+      ("CanApiEnabled", self._can_api_toggle),
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
@@ -215,15 +216,7 @@ class DeveloperLayout(Widget):
     self._params.put_bool("BridgeEnabled", state)
 
   def _on_enable_can_api(self, state: bool):
-    param_path = "/data/params/d/CanApiEnabled"
-    if state:
-      with open(param_path, "w") as f:
-        f.write("1")
-    else:
-      try:
-        os.remove(param_path)
-      except FileNotFoundError:
-        pass
+    self._params.put_bool("CanApiEnabled", state)
 
   def _load_forks(self):
     forks = []
