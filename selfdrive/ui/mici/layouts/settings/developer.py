@@ -58,7 +58,7 @@ class DeveloperLayoutMici(NavScroller):
     self._ssh_toggle = BigCircleParamControl(gui_app.texture("icons_mici/ssh_short.png", 82, 82), "SshEnabled", icon_offset=(0, 12))
     self._bridge_toggle = BigCircleParamControl(gui_app.texture("icons_mici/settings/network/cell_strength_full.png", 76, 56), "BridgeEnabled")
     self._can_api_toggle = BigToggle("can api (http)",
-                                     initial_state=ui_state.params.get_bool("CanApiEnabled"),
+                                     initial_state=os.path.isfile("/data/params/d/CanApiEnabled"),
                                      toggle_callback=self._on_enable_can_api)
     self._joystick_toggle = BigToggle("joystick debug mode",
                                       initial_state=ui_state.params.get_bool("JoystickDebugMode"),
@@ -95,7 +95,6 @@ class DeveloperLayoutMici(NavScroller):
       ("AdbEnabled", self._adb_toggle),
       ("SshEnabled", self._ssh_toggle),
       ("BridgeEnabled", self._bridge_toggle),
-      ("CanApiEnabled", self._can_api_toggle),
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
@@ -164,7 +163,16 @@ class DeveloperLayoutMici(NavScroller):
       item.set_checked(ui_state.params.get_bool(key))
 
   def _on_enable_can_api(self, state: bool):
-    ui_state.params.put_bool("CanApiEnabled", state)
+    import os
+    param_path = "/data/params/d/CanApiEnabled"
+    if state:
+      with open(param_path, "w") as f:
+        f.write("1")
+    else:
+      try:
+        os.remove(param_path)
+      except FileNotFoundError:
+        pass
 
   def _on_joystick_debug_mode(self, state: bool):
     ui_state.params.put_bool("JoystickDebugMode", state)
