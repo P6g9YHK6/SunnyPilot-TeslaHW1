@@ -8,11 +8,10 @@ import pyray as rl
 
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
-from openpilot.system.ui.widgets import DialogResult, Widget
+from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.button import Button, ButtonStyle
-from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog, alert_dialog
 from openpilot.system.ui.widgets.list_view import (
-  ItemAction, ListItem, BUTTON_HEIGHT, BUTTON_BORDER_RADIUS, BUTTON_FONT_SIZE, BUTTON_WIDTH,
+  BUTTON_BORDER_RADIUS, BUTTON_FONT_SIZE,
 )
 
 FORK_ROW_HEIGHT = 130
@@ -25,6 +24,8 @@ CLOSE_BUTTON_HEIGHT = 120
 CLOSE_BUTTON_WIDTH = 300
 HEADER_HEIGHT = 100
 HEADER_FONT_SIZE = 55
+SECTION_HEADER_HEIGHT = 50
+SECTION_HEADER_FONT_SIZE = 35
 
 
 def _find_openpilot_root() -> str | None:
@@ -42,7 +43,7 @@ def _find_openpilot_root() -> str | None:
   return None
 
 
-def _parse_forks_conf() -> list[tuple[int, str, str, str]]:
+def _parse_forks_conf() -> list[dict]:
   root = _find_openpilot_root()
   if root is None:
     return []
@@ -50,18 +51,63 @@ def _parse_forks_conf() -> list[tuple[int, str, str, str]]:
   if not os.path.isfile(conf_path):
     return []
   forks = []
-  pattern = re.compile(r'^\s*(\d+)\s+(\S+?/\S+?)\s+(\S+)\s*(.*)$')
+  pattern = re.compile(r'^\s*(\d+)\s+(\S+?)/(\S+?)\s+(\S+)\s*(.*)$')
   with open(conf_path) as f:
     for line in f:
       m = pattern.match(line)
       if m:
-        num = int(m.group(1))
-        repo = m.group(2)
-        branch = m.group(3)
-        comment = m.group(4).strip()
-        forks.append((num, repo, branch, comment))
-  forks.sort(key=lambda x: x[0])
+        forks.append({
+          "num": int(m.group(1)),
+          "org": m.group(2),
+          "repo": m.group(3),
+          "branch": m.group(4),
+          "comment": m.group(5).strip(),
+          "discovered": False,
+        })
+  forks.sort(key=lambda x: x["num"])
   return forks
+
+
+def _scan_discovered_forks() -> list[dict]:
+  forks_dir = "/data/forks"
+  if not os.path.isdir(forks_dir):
+    return []
+  declared = set()
+  root = _find_openpilot_root()
+  if root is not None:
+    conf_path = os.path.join(root, "tools", "forks.conf")
+    if os.path.isfile(conf_path):
+      pattern = re.compile(r'^\s*\d+\s+(\S+?/\S+?)\s+\S+')
+      with open(conf_path) as f:
+        for line in f:
+          m = pattern.match(line)
+          if m:
+            declared.add(m.group(1).replace("/", "_"))
+  discovered = []
+  for entry in os.listdir(forks_dir):
+    if entry in declared:
+      continue
+    rp = os.path.join(forks_dir, entry)
+    if not os.path.isdir(rp):
+      continue
+    try:
+      branch = subprocess.check_output(
+        ["git", "-C", rp, "branch", "--show-current"],
+        stderr=subprocess.DEVNULL, timeout=5,
+      ).decode().strip()
+    except Exception:
+      branch = "unknown"
+    repo_dir = entry.replace("_", "/")
+    org, repo_name = repo_dir.split("/", 1) if "/" in repo_dir else (repo_dir, "")
+    discovered.append({
+      "num": 0,
+      "org": org,
+      "repo": repo_name,
+      "branch": branch,
+      "comment": "",
+      "discovered": True,
+    })
+  return discovered
 
 
 def _exec_fork_switch(fork_num: int, repo: str, branch: str, status_callback: Callable[[str], None], done_callback: Callable[[bool, str], None]):
@@ -122,9 +168,11 @@ def _exec_fork_switch(fork_num: int, repo: str, branch: str, status_callback: Ca
 
 
 class ForkListWidget(Widget):
-  def __init__(self, forks: list[tuple[int, str, str, str]], callback: Callable[[int, str, str], None]):
+  def __init__(self, forks: list[dict], callback: Callable[[int, str, str], None]):
     super().__init__()
-    self._forks = forks
+    self._declared = [f for f in forks if not f.get("discovered")]
+    self._discovered = _scan_discovered_forks()
+    self._all_forks = self._declared + self._discovered
     self._callback = callback
     self._font = gui_app.font(FontWeight.NORMAL)
     self._sub_font = gui_app.font(FontWeight.NORMAL)
@@ -146,6 +194,12 @@ class ForkListWidget(Widget):
   def _close(self):
     gui_app.pop_widget()
 
+  def _get_total_content_height(self):
+    total = len(self._declared) * (FORK_ROW_HEIGHT + FORK_ROW_SPACING)
+    if self._discovered:
+      total += SECTION_HEADER_HEIGHT + len(self._discovered) * (FORK_ROW_HEIGHT + FORK_ROW_SPACING)
+    return total
+
   def _render(self, rect: rl.Rectangle):
     content_x = rect.x + LIST_MARGIN
     content_width = rect.width - LIST_MARGIN * 2
@@ -158,31 +212,57 @@ class ForkListWidget(Widget):
     list_bottom = rect.y + rect.height - CLOSE_BUTTON_HEIGHT - LIST_MARGIN
     list_height = list_bottom - list_top
 
-    total_content_height = len(self._forks) * (FORK_ROW_HEIGHT + FORK_ROW_SPACING)
+    total_content_height = self._get_total_content_height()
     scroll_offset = max(0, min(self._scroll_offset, max(0, total_content_height - list_height)))
 
     y = list_top - scroll_offset
     mouse_pos = rl.get_mouse_position()
-
-    for idx, (num, repo, branch, comment) in enumerate(self._forks):
+    idx = 0
+    for fork in self._declared:
       row_rect = rl.Rectangle(content_x, y, content_width, FORK_ROW_HEIGHT)
       row_bottom = y + FORK_ROW_HEIGHT
-
       if row_bottom > rect.y and y < list_bottom:
         hovered = rl.check_collision_point_rec(mouse_pos, row_rect)
         bg_color = rl.Color(57, 57, 57, 255) if not hovered else rl.Color(74, 74, 74, 255)
         rl.draw_rectangle_rounded(row_rect, 0.3, 10, bg_color)
 
-        label = f"{num}  {repo}  {branch}"
-        rl.draw_text_ex(self._font, label, rl.Vector2(content_x + 15, y + 10), FORK_ROW_FONT_SIZE, 0, rl.WHITE)
-
-        if comment:
-          rl.draw_text_ex(self._sub_font, comment, rl.Vector2(content_x + 15, y + FORK_ROW_FONT_SIZE + 15),
-                          FORK_ROW_SUB_FONT_SIZE, 0, rl.Color(170, 170, 170, 255))
+        rl.draw_text_ex(self._font, fork["org"], rl.Vector2(content_x + 15, y + 10),
+                        FORK_ROW_FONT_SIZE, 0, rl.WHITE)
+        rl.draw_text_ex(self._sub_font, fork["repo"], rl.Vector2(content_x + 15, y + FORK_ROW_FONT_SIZE + 10),
+                        FORK_ROW_SUB_FONT_SIZE, 0, rl.Color(170, 170, 170, 255))
+        rl.draw_text_ex(self._sub_font, fork["branch"], rl.Vector2(content_x + 15, y + FORK_ROW_FONT_SIZE + FORK_ROW_SUB_FONT_SIZE + 5),
+                        FORK_ROW_SUB_FONT_SIZE, 0, rl.Color(200, 200, 200, 255))
 
         self._hit_rects[idx] = row_rect
-
       y += FORK_ROW_HEIGHT + FORK_ROW_SPACING
+      idx += 1
+
+    if self._discovered:
+      if y + SECTION_HEADER_HEIGHT > rect.y and y < list_bottom:
+        rl.draw_text_ex(self._sub_font, tr("--- Discovered Forks ---"),
+                        rl.Vector2(content_x + 15, y + 10), SECTION_HEADER_FONT_SIZE, 0, rl.Color(128, 128, 128, 255))
+      y += SECTION_HEADER_HEIGHT
+
+      for fork in self._discovered:
+        row_rect = rl.Rectangle(content_x, y, content_width, FORK_ROW_HEIGHT)
+        row_bottom = y + FORK_ROW_HEIGHT
+        if row_bottom > rect.y and y < list_bottom:
+          hovered = rl.check_collision_point_rec(mouse_pos, row_rect)
+          bg_color = rl.Color(50, 50, 60, 255) if not hovered else rl.Color(65, 65, 75, 255)
+          rl.draw_rectangle_rounded(row_rect, 0.3, 10, bg_color)
+
+          rl.draw_text_ex(self._sub_font, tr("(untracked)"),
+                          rl.Vector2(content_x + 15, y + 8), FORK_ROW_SUB_FONT_SIZE - 4, 0, rl.Color(200, 150, 50, 255))
+          rl.draw_text_ex(self._font, fork["org"], rl.Vector2(content_x + 15, y + 28),
+                          FORK_ROW_FONT_SIZE, 0, rl.WHITE)
+          rl.draw_text_ex(self._sub_font, fork["repo"], rl.Vector2(content_x + 15, y + FORK_ROW_FONT_SIZE + 20),
+                          FORK_ROW_SUB_FONT_SIZE, 0, rl.Color(170, 170, 170, 255))
+          rl.draw_text_ex(self._sub_font, fork["branch"], rl.Vector2(content_x + 15, y + FORK_ROW_FONT_SIZE + FORK_ROW_SUB_FONT_SIZE + 10),
+                          FORK_ROW_SUB_FONT_SIZE, 0, rl.Color(200, 200, 200, 255))
+
+          self._hit_rects[idx] = row_rect
+        y += FORK_ROW_HEIGHT + FORK_ROW_SPACING
+        idx += 1
 
     if total_content_height > list_height:
       bar_height = max(30, list_height * list_height / total_content_height)
@@ -211,15 +291,15 @@ class ForkListWidget(Widget):
       return
     for idx, row_rect in self._hit_rects.items():
       if rl.check_collision_point_rec(mouse_pos, row_rect):
-        num, repo, branch, _ = self._forks[idx]
+        fork = self._all_forks[idx]
         gui_app.pop_widget()
-        self._callback(num, repo, branch)
+        self._callback(fork["num"], f"{fork['org']}/{fork['repo']}", fork["branch"])
         return
 
   def _handle_mouse_event(self, mouse_event):
     if self._last_mouse_y is not None:
       delta = mouse_event.pos.y - self._last_mouse_y
-      total_content = len(self._forks) * (FORK_ROW_HEIGHT + FORK_ROW_SPACING)
+      total_content = self._get_total_content_height()
       list_top = self._rect.y + HEADER_HEIGHT + 20
       list_bottom = self._rect.y + self._rect.height - CLOSE_BUTTON_HEIGHT - LIST_MARGIN
       list_height = list_bottom - list_top
@@ -237,7 +317,7 @@ class ForkSwitchExecuting(Widget):
     self._message = ""
     self._font = gui_app.font(FontWeight.NORMAL)
     self._title_font = gui_app.font(FontWeight.BOLD)
-    _exec_fork_switch(fork_num, repo, branch, self._set_status, self._on_done)
+    _exec_fork_switch(fork_num, f"{repo}", branch, self._set_status, self._on_done)
 
   def _set_status(self, status: str):
     self._status = status
@@ -273,57 +353,4 @@ class ForkSwitchExecuting(Widget):
                       rl.Vector2(center_x - 150, center_y + 20), 35, 0, rl.Color(170, 170, 170, 255))
 
 
-class ForkSwitcherAction(ItemAction):
-  def __init__(self, enabled: bool | Callable[[], bool] = True):
-    super().__init__(width=BUTTON_WIDTH, enabled=enabled)
-    self._button = Button(
-      lambda: tr("SELECT"),
-      click_callback=self._on_select,
-      font_size=BUTTON_FONT_SIZE,
-      font_weight=FontWeight.MEDIUM,
-      button_style=ButtonStyle.LIST_ACTION,
-      border_radius=BUTTON_BORDER_RADIUS,
-    )
 
-  def set_touch_valid_callback(self, touch_callback: Callable[[], bool]):
-    super().set_touch_valid_callback(touch_callback)
-    self._button.set_touch_valid_callback(touch_callback)
-
-  def _on_select(self):
-    forks = _parse_forks_conf()
-    if not forks:
-      gui_app.push_widget(alert_dialog(tr("No forks found in tools/forks.conf")))
-      return
-
-    def on_fork_selected(num, repo, branch):
-      def on_confirm(result):
-        if result == DialogResult.CONFIRM:
-          gui_app.push_widget(ForkSwitchExecuting(num, repo, branch))
-
-      title = f"Switch to {repo}:{branch}?"
-      desc = (f"<b>Fork:</b> {repo}<br>"
-              f"<b>Branch:</b> {branch}<br><br>"
-              f"{'This will reboot the device.' if os.getenv('DEVICE') != 'pc' else 'This will switch the fork.'}")
-      dlg = ConfirmDialog(desc, tr("Switch & Reboot"), rich=True, callback=on_confirm)
-      gui_app.push_widget(dlg)
-
-    gui_app.push_widget(ForkListWidget(forks, on_fork_selected))
-
-  def _render(self, rect: rl.Rectangle):
-    self._button.set_enabled(self.enabled)
-    button_rect = rl.Rectangle(
-      rect.x + rect.width - BUTTON_WIDTH,
-      rect.y + (rect.height - BUTTON_HEIGHT) / 2,
-      BUTTON_WIDTH, BUTTON_HEIGHT,
-    )
-    self._button.set_rect(button_rect)
-    self._button.render(button_rect)
-
-
-def fork_switcher_item(enabled: bool | Callable[[], bool] = True) -> ListItem:
-  action = ForkSwitcherAction(enabled=enabled)
-  return ListItem(
-    title=lambda: tr("Switch Fork"),
-    description=lambda: tr("Choose a fork to switch to. This will reboot the device."),
-    action_item=action,
-  )
