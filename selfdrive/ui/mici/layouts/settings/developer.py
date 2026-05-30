@@ -57,15 +57,10 @@ class DeveloperLayoutMici(NavScroller):
     # ******** Main Scroller ********
     self._adb_toggle = BigCircleParamControl(gui_app.texture("icons_mici/adb_short.png", 82, 82), "AdbEnabled", icon_offset=(0, 12))
     self._ssh_toggle = BigCircleParamControl(gui_app.texture("icons_mici/ssh_short.png", 82, 82), "SshEnabled", icon_offset=(0, 12))
-    self._bridge_toggle = BigCircleParamControl(
-      gui_app.texture("icons_mici/settings/network/cell_strength_full.png", 82, 82), "BridgeEnabled",
-      icon_offset=(0, 12),
-    )
-    self._can_api_toggle = BigCircleToggle(
-      gui_app.texture("icons_mici/settings/network/tethering.png", 82, 82),
-      toggle_callback=self._on_enable_can_api, icon_offset=(0, 12),
-    )
-    self._can_api_toggle.set_checked(os.path.isfile("/data/params/can_api_enabled"))
+    self._bridge_toggle = BigParamControl("enable zmq bridge", "BridgeEnabled")
+    self._can_api_toggle = BigToggle("enable can api (http)",
+                                     initial_state=ui_state.params.get_bool("CanApiEnabled"),
+                                     toggle_callback=self._on_enable_can_api)
     self._joystick_toggle = BigToggle("joystick debug mode",
                                       initial_state=ui_state.params.get_bool("JoystickDebugMode"),
                                       toggle_callback=self._on_joystick_debug_mode)
@@ -101,6 +96,7 @@ class DeveloperLayoutMici(NavScroller):
       ("AdbEnabled", self._adb_toggle),
       ("SshEnabled", self._ssh_toggle),
       ("BridgeEnabled", self._bridge_toggle),
+      ("CanApiEnabled", self._can_api_toggle),
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
@@ -168,19 +164,9 @@ class DeveloperLayoutMici(NavScroller):
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
 
-    # can_api uses file-based state
-    self._can_api_toggle.set_checked(os.path.isfile("/data/params/can_api_enabled"))
 
   def _on_enable_can_api(self, state: bool):
-    param_path = "/data/params/can_api_enabled"
-    if state:
-      with open(param_path, "w") as f:
-        f.write("1")
-    else:
-      try:
-        os.remove(param_path)
-      except FileNotFoundError:
-        pass
+    ui_state.params.put_bool("CanApiEnabled", state)
 
   def _on_joystick_debug_mode(self, state: bool):
     ui_state.params.put_bool("JoystickDebugMode", state)
