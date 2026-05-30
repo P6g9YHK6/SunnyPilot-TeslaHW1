@@ -212,6 +212,9 @@ class DeveloperLayoutMici(NavScroller):
     restart_needed_callback(state)
     self._update_toggles()
 
+  def _on_select_fork(self):
+    gui_app.push_widget(ForkSelectUIMici())
+
   def _get_current_fork_display(self):
     try:
       target = os.readlink("/data/openpilot")
