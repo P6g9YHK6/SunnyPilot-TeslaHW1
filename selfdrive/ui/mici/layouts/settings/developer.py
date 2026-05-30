@@ -3,7 +3,7 @@ import subprocess
 
 from openpilot.common.time_helpers import system_time_valid
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, BigParamControl, BigCircleParamControl
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, BigParamControl, BigCircleParamControl, BigCircleToggle
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigInputDialog
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
