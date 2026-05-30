@@ -48,11 +48,24 @@ class DeveloperLayoutSP(DeveloperLayout):
                                                      "and even make some edits on some files from your browser. " +
                                                      "Requires you to connect to your comma locally via its IP address."), param="EnableCopyparty")
 
+    self.enable_sunnyweb_toggle = toggle_item_sp(tr("SunnyWeb Service"),
+                                                 tr("SunnyWeb is a local web UI for managing sunnypilot settings, " +
+                                                    "viewing device info, browsing params, and creating backups. " +
+                                                    "Accessible at http://<device-ip>:8800 from any browser on your local network."),
+                                                 param="SunnyWebEnabled")
+
     self.prebuilt_toggle = toggle_item_sp(tr("Quickboot Mode"), "", param="QuickBootToggle", callback=self._on_prebuilt_toggled)
 
     self.error_log_btn = button_item(tr("Error Log"), tr("VIEW"), tr("View the error log for sunnypilot crashes."), callback=self._on_error_log_clicked)
 
-    self.items: list = [self.show_advanced_controls, self.enable_github_runner_toggle, self.enable_copyparty_toggle, self.prebuilt_toggle, self.error_log_btn,]
+    self.items: list = [
+      self.show_advanced_controls,
+      self.enable_github_runner_toggle,
+      self.enable_copyparty_toggle,
+      self.enable_sunnyweb_toggle,
+      self.prebuilt_toggle,
+      self.error_log_btn,
+    ]
 
   @staticmethod
   def _on_prebuilt_toggled(state):

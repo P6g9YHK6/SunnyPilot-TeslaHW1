@@ -74,6 +74,9 @@ def use_copyparty(started, params, CP: car.CarParams) -> bool:
 def use_bridge(started, params, CP: car.CarParams) -> bool:
   return bool(params.get_bool("BridgeEnabled"))
 
+def use_sunnyweb(started, params, CP: car.CarParams) -> bool:
+  return bool(params.get_bool("SunnyWebEnabled"))
+
 def use_can_api(started, params, CP: car.CarParams) -> bool:
   return bool(params.get_bool("CanApiEnabled"))
 
@@ -171,6 +174,9 @@ procs = [
   DaemonProcess("manage_sunnylinkd", "sunnypilot.sunnylink.athena.manage_sunnylinkd", "SunnylinkdPid"),
   PythonProcess("sunnylink_registration_manager", "sunnypilot.sunnylink.registration_manager", sunnylink_need_register_shim),
   PythonProcess("statsd_sp", "sunnypilot.sunnylink.statsd", and_(always_run, sunnylink_ready_shim)),
+
+  # sunnyweb
+  PythonProcess("sunnyweb", "sunnyweb.server", use_sunnyweb),
 ]
 
 # sunnypilot

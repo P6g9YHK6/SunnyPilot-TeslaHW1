@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SunnyWeb</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="nav">
+    <div class="nav-brand">SunnyWeb</div>
+    <div class="nav-links">
+      <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="settings">Settings</button>
+      <button class="nav-btn" data-page="params">Params</button>
+      <button class="nav-btn" data-page="backup">Backup</button>
+    </div>
+  </nav>
+
+  <main id="main">
+    <div id="page-dashboard" class="page active">
+      <h1>Dashboard</h1>
+      <div class="cards">
+        <div class="card" id="card-device">
+          <h3>Device</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-capabilities">
+          <h3>Capabilities</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-status">
+          <h3>Status</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-settings" class="page">
+      <h1>Settings</h1>
+      <div id="settings-panels">Loading settings...</div>
+    </div>
+
+    <div id="page-params" class="page">
+      <h1>Parameter Explorer</h1>
+      <div class="param-toolbar">
+        <input type="text" id="param-search" placeholder="Search params..." oninput="filterParams()">
+        <span id="param-count"></span>
+      </div>
+      <div id="params-list">Loading params...</div>
+    </div>
+
+    <div id="page-backup" class="page">
+      <h1>Backup & Restore</h1>
+      <div class="backup-actions">
+        <button class="btn btn-primary" onclick="createBackup()">Create Backup</button>
+      </div>
+      <div id="backup-list">Loading backups...</div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

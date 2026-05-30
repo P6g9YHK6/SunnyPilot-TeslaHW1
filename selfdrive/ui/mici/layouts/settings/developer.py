@@ -61,6 +61,9 @@ class DeveloperLayoutMici(NavScroller):
     self._can_api_toggle = BigToggle("enable can api (http)",
                                      initial_state=ui_state.params.get_bool("CanApiEnabled"),
                                      toggle_callback=self._on_enable_can_api)
+    self._sunnyweb_toggle = BigToggle("sunnyweb (http local ui)",
+                                      initial_state=ui_state.params.get_bool("SunnyWebEnabled"),
+                                      toggle_callback=self._on_enable_sunnyweb)
     self._joystick_toggle = BigToggle("joystick debug mode",
                                       initial_state=ui_state.params.get_bool("JoystickDebugMode"),
                                       toggle_callback=self._on_joystick_debug_mode)
@@ -83,6 +86,7 @@ class DeveloperLayoutMici(NavScroller):
       self._ssh_keys_btn,
       self._bridge_toggle,
       self._can_api_toggle,
+      self._sunnyweb_toggle,
       self._fork_btn,
       self._joystick_toggle,
       self._long_maneuver_toggle,
@@ -97,13 +101,14 @@ class DeveloperLayoutMici(NavScroller):
       ("SshEnabled", self._ssh_toggle),
       ("BridgeEnabled", self._bridge_toggle),
       ("CanApiEnabled", self._can_api_toggle),
+      ("SunnyWebEnabled", self._sunnyweb_toggle),
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ShowDebugInfo", self._debug_mode_toggle),
     )
-    onroad_blocked_toggles = (self._adb_toggle, self._can_api_toggle, self._joystick_toggle)
+    onroad_blocked_toggles = (self._adb_toggle, self._can_api_toggle, self._sunnyweb_toggle, self._joystick_toggle)
     release_blocked_toggles = (self._joystick_toggle, self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
     engaged_blocked_toggles = (self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
 
@@ -167,6 +172,9 @@ class DeveloperLayoutMici(NavScroller):
 
   def _on_enable_can_api(self, state: bool):
     ui_state.params.put_bool("CanApiEnabled", state)
+
+  def _on_enable_sunnyweb(self, state: bool):
+    ui_state.params.put_bool("SunnyWebEnabled", state)
 
   def _on_joystick_debug_mode(self, state: bool):
     ui_state.params.put_bool("JoystickDebugMode", state)
