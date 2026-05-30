@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import threading
+import time
 
 from aiohttp import web
 
@@ -8,6 +10,12 @@ from openpilot.common.params import Params, ParamKeyType
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.version import get_build_metadata
 from openpilot.sunnypilot.sunnylink.capabilities import generate_capabilities
+from openpilot.sunnypilot.sunnylink.tools.generate_settings_schema import generate_schema
+from openpilot.sunnypilot.models.fetcher import ModelFetcher
+from openpilot.sunnypilot.models.helpers import get_active_bundle
+from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL
+
+from cereal import messaging, custom
 
 logger = logging.getLogger("sunnyweb")
 
@@ -15,18 +23,33 @@ HOST = "0.0.0.0"
 PORT = 8800
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-SETTINGS_UI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sunnypilot", "sunnylink", "settings_ui.json")
 PARAMS_METADATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sunnypilot", "sunnylink", "params_metadata.json")
+BACKUP_DIR_NAME = "sunnyweb_backups"
 
 
 class SunnyWebServer:
   def __init__(self):
     self.params = Params()
+    self._running = True
+    self._model_state = None
+    self._model_thread = threading.Thread(target=self._model_manager_loop, daemon=True)
+    self._model_thread.start()
+
+  def _model_manager_loop(self):
+    try:
+      sock = messaging.sub_sock('modelManagerSP', conflate=True, timeout=1000)
+      while self._running:
+        msg = messaging.recv_one_or_none(sock)
+        if msg is not None:
+          self._model_state = msg.modelManagerSP
+    except Exception:
+      logger.warning("modelManagerSP subscriber not available (no cereal context)")
 
   async def handle_status(self, request):
-    enabled = self.params.get_bool("SunnyWebEnabled")
     return web.json_response({
-      "enabled": enabled,
+      "enabled": self.params.get_bool("SunnyWebEnabled"),
+      "is_offroad": self.params.get_bool("IsOffroad"),
+      "is_metric": self.params.get_bool("IsMetric"),
       "version": 1,
     })
 
@@ -127,8 +150,7 @@ class SunnyWebServer:
 
   async def handle_settings_schema(self, request):
     try:
-      with open(SETTINGS_UI_PATH) as f:
-        schema = json.load(f)
+      schema = generate_schema()
     except FileNotFoundError:
       raise web.HTTPNotFound(text="settings_ui.json not found") from None
     return web.json_response(schema)
@@ -138,7 +160,7 @@ class SunnyWebServer:
     return web.json_response(caps)
 
   async def handle_backup_list(self, request):
-    backup_dir = os.path.join(Paths.comma_home(), "sunnyweb_backups")
+    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
     backups = []
     if os.path.isdir(backup_dir):
       for fname in sorted(os.listdir(backup_dir)):
@@ -152,8 +174,7 @@ class SunnyWebServer:
     return web.json_response(backups)
 
   async def handle_backup_create(self, request):
-    import time
-    backup_dir = os.path.join(Paths.comma_home(), "sunnyweb_backups")
+    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
     os.makedirs(backup_dir, exist_ok=True)
     config = {}
     for k in self.params.all_keys(ParamKeyType.PERSISTENT):
@@ -176,7 +197,7 @@ class SunnyWebServer:
     name = body.get("name")
     if not name:
       raise web.HTTPBadRequest(text="Missing 'name'")
-    backup_dir = os.path.join(Paths.comma_home(), "sunnyweb_backups")
+    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
     fpath = os.path.normpath(os.path.join(backup_dir, name))
     if not fpath.startswith(backup_dir):
       raise web.HTTPBadRequest(text="Invalid backup name")
@@ -192,6 +213,80 @@ class SunnyWebServer:
       except Exception:
         logger.exception(f"Failed to restore param {key}")
     return web.json_response({"restored": restored, "status": "ok"})
+
+  # ---- Model downloader endpoints ----
+
+  async def handle_models_list(self, request):
+    try:
+      fetcher = ModelFetcher(self.params)
+      bundles = fetcher.get_available_bundles()
+      raw = []
+      for b in bundles:
+        raw.append(b.to_dict())
+      return web.json_response(raw)
+    except Exception as e:
+      logger.exception("Failed to list models")
+      return web.json_response({"error": str(e)}, status=500)
+
+  async def handle_models_active(self, request):
+    active = get_active_bundle(self.params)
+    if active is not None:
+      return web.json_response(active.to_dict())
+    return web.json_response({"internalName": DEFAULT_MODEL, "displayName": DEFAULT_MODEL, "isDefault": True})
+
+  async def handle_models_select(self, request):
+    try:
+      body = await request.json()
+    except Exception:
+      raise web.HTTPBadRequest(text="Invalid JSON") from None
+    index = body.get("index")
+    if index is None:
+      raise web.HTTPBadRequest(text="Missing 'index'")
+    self.params.put("ModelManager_DownloadIndex", str(index))
+    return web.json_response({"status": "ok", "index": index})
+
+  async def handle_models_select_default(self, request):
+    self.params.remove("ModelManager_ActiveBundle")
+    return web.json_response({"status": "ok"})
+
+  async def handle_models_progress(self, request):
+    if self._model_state is None:
+      return web.json_response({"status": "no_data"})
+    state = self._model_state.to_dict()
+    selected = state.get("selectedBundle")
+    active = state.get("activeBundle")
+    available = state.get("availableBundles", [])
+    return web.json_response({
+      "selectedBundle": selected,
+      "activeBundle": active,
+      "availableBundles": available,
+    })
+
+  async def handle_models_cancel(self, request):
+    self.params.remove("ModelManager_DownloadIndex")
+    return web.json_response({"status": "ok"})
+
+  async def handle_models_refresh(self, request):
+    self.params.remove("ModelManager_LastSyncTime")
+    return web.json_response({"status": "ok"})
+
+  async def handle_models_cache_clear(self, request):
+    self.params.put_bool("ModelManager_ClearCache", True)
+    return web.json_response({"status": "ok"})
+
+  async def handle_models_favorites(self, request):
+    if request.method == "GET":
+      raw = self.params.get("ModelManager_Favs", encoding="utf-8") or ""
+      refs = [r for r in raw.split(";") if r] if raw else []
+      return web.json_response(refs)
+    else:
+      try:
+        body = await request.json()
+      except Exception:
+        raise web.HTTPBadRequest(text="Invalid JSON") from None
+      refs = body.get("refs", [])
+      self.params.put("ModelManager_Favs", ";".join(refs))
+      return web.json_response({"status": "ok", "count": len(refs)})
 
   async def handle_static(self, request):
     filename = request.match_info.get("filename", "index.html")
@@ -222,6 +317,17 @@ class SunnyWebServer:
     app.router.add_post("/api/backup/create", self.handle_backup_create)
     app.router.add_post("/api/backup/restore", self.handle_backup_restore)
 
+    app.router.add_get("/api/models", self.handle_models_list)
+    app.router.add_get("/api/models/active", self.handle_models_active)
+    app.router.add_post("/api/models/select", self.handle_models_select)
+    app.router.add_post("/api/models/select/default", self.handle_models_select_default)
+    app.router.add_get("/api/models/progress", self.handle_models_progress)
+    app.router.add_post("/api/models/cancel", self.handle_models_cancel)
+    app.router.add_post("/api/models/refresh", self.handle_models_refresh)
+    app.router.add_delete("/api/models/cache", self.handle_models_cache_clear)
+    app.router.add_get("/api/models/favorites", self.handle_models_favorites)
+    app.router.add_post("/api/models/favorites", self.handle_models_favorites)
+
     app.router.add_get("/{filename:.*}", self.handle_static)
 
     return app
@@ -234,7 +340,7 @@ def main():
   server = SunnyWebServer()
   app = server.build_app()
   logger.info(f"SunnyWeb starting on {HOST}:{PORT}")
-  web.run_app(app, host=HOST, port=PORT)
+  web.run_app(app, host=HOST, port=PORT, print=lambda *a: None)
 
 
 if __name__ == "__main__":
