@@ -12,6 +12,7 @@
     <div class="nav-links">
       <button class="nav-btn active" data-page="dashboard">Dashboard</button>
       <button class="nav-btn" data-page="settings">Settings</button>
+      <button class="nav-btn" data-page="models">Models</button>
       <button class="nav-btn" data-page="params">Params</button>
       <button class="nav-btn" data-page="backup">Backup</button>
     </div>
@@ -33,12 +34,46 @@
           <h3>Status</h3>
           <div class="card-body">Loading...</div>
         </div>
+        <div class="card" id="card-model">
+          <h3>Active Model</h3>
+          <div class="card-body">Loading...</div>
+        </div>
       </div>
     </div>
 
     <div id="page-settings" class="page">
       <h1>Settings</h1>
       <div id="settings-panels">Loading settings...</div>
+    </div>
+
+    <div id="page-models" class="page">
+      <h1>Model Manager</h1>
+
+      <div class="model-active-card" id="model-active">
+        <div class="row"><span class="label">Active Model</span><span class="value" id="active-model-name">—</span></div>
+        <div class="row"><span class="label">Runner</span><span class="value" id="active-model-runner">—</span></div>
+        <div class="row"><span class="label">Generation</span><span class="value" id="active-model-gen">—</span></div>
+        <div class="row"><span class="label">Environment</span><span class="value" id="active-model-env">—</span></div>
+      </div>
+
+      <div class="model-download-progress hidden" id="model-dl-progress">
+        <h3>Downloading: <span id="dl-bundle-name">...</span></h3>
+        <div id="dl-progress-items"></div>
+        <div class="dl-actions">
+          <button class="btn btn-danger btn-sm" onclick="cancelDownload()">Cancel</button>
+        </div>
+      </div>
+
+      <div class="model-toolbar">
+        <button class="btn btn-sm" onclick="refreshModelList()">Refresh</button>
+        <button class="btn btn-sm btn-danger" onclick="clearModelCache()">Clear Cache</button>
+        <button class="btn btn-sm" onclick="selectDefaultModel()">Use Default</button>
+        <span id="model-cache-size"></span>
+      </div>
+
+      <input type="text" id="model-search" placeholder="Search models..." oninput="filterModels()" style="width:100%;padding:0.6rem 1rem;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:0.9rem;outline:none;margin-bottom:1rem;">
+
+      <div id="model-list"></div>
     </div>
 
     <div id="page-params" class="page">
@@ -60,6 +95,7 @@
   </main>
 
   <div id="toast" class="toast hidden"></div>
+  <div id="modal-container"></div>
 
   <script src="app.js"></script>
 </body>
