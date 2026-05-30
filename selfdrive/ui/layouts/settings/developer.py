@@ -71,7 +71,7 @@ class DeveloperLayout(Widget):
     self._ssh_keys = ssh_key_item(lambda: tr("SSH Keys"), description=lambda: tr(DESCRIPTIONS["ssh_key"]))
 
     self._bridge_toggle = toggle_item(
-      lambda: tr("ZMQ"),
+      lambda: tr("Enable ZMQ Bridge"),
       description=lambda: tr(DESCRIPTIONS["enable_bridge"]),
       initial_state=self._params.get_bool("BridgeEnabled"),
       callback=self._on_enable_bridge,
@@ -261,7 +261,7 @@ class DeveloperLayout(Widget):
         ["git", "-C", target, "branch", "--show-current"],
         stderr=subprocess.DEVNULL, timeout=5,
       ).decode().strip()
-      return f"{repo_dir}:{branch}" if branch else repo_dir
+      return f"{repo_dir}\n{branch}" if branch else repo_dir
     except Exception:
       return "unknown"
 

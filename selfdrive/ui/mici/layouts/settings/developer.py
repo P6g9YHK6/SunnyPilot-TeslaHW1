@@ -57,10 +57,15 @@ class DeveloperLayoutMici(NavScroller):
     # ******** Main Scroller ********
     self._adb_toggle = BigCircleParamControl(gui_app.texture("icons_mici/adb_short.png", 82, 82), "AdbEnabled", icon_offset=(0, 12))
     self._ssh_toggle = BigCircleParamControl(gui_app.texture("icons_mici/ssh_short.png", 82, 82), "SshEnabled", icon_offset=(0, 12))
-    self._bridge_toggle = BigCircleParamControl(gui_app.texture("icons_mici/settings/network/cell_strength_full.png", 76, 56), "BridgeEnabled")
-    self._can_api_toggle = BigToggle("can api (http)",
-                                     initial_state=os.path.isfile("/data/params/can_api_enabled"),
-                                     toggle_callback=self._on_enable_can_api)
+    self._bridge_toggle = BigCircleParamControl(
+      gui_app.texture("icons_mici/settings/network/cell_strength_full.png", 82, 82), "BridgeEnabled",
+      icon_offset=(0, 12),
+    )
+    self._can_api_toggle = BigCircleToggle(
+      gui_app.texture("icons_mici/settings/network/tethering.png", 82, 82),
+      toggle_callback=self._on_enable_can_api, icon_offset=(0, 12),
+    )
+    self._can_api_toggle.set_checked(os.path.isfile("/data/params/can_api_enabled"))
     self._joystick_toggle = BigToggle("joystick debug mode",
                                       initial_state=ui_state.params.get_bool("JoystickDebugMode"),
                                       toggle_callback=self._on_joystick_debug_mode)
@@ -230,10 +235,6 @@ class DeveloperLayoutMici(NavScroller):
         ["git", "-C", target, "branch", "--show-current"],
         stderr=subprocess.DEVNULL, timeout=5,
       ).decode().strip()
-      return f"{repo_dir}:{branch}" if branch else repo_dir
+      return f"{repo_dir}\n{branch}" if branch else repo_dir
     except Exception:
       return "unknown"
-
-  def _on_select_fork(self):
-    from openpilot.selfdrive.ui.mici.layouts.settings.fork_select_ui import ForkSelectUIMici
-    gui_app.push_widget(ForkSelectUIMici())
