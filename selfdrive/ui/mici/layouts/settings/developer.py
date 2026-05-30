@@ -171,21 +171,6 @@ class DeveloperLayoutMici(NavScroller):
     # can_api uses file-based state
     self._can_api_toggle.set_checked(os.path.isfile("/data/params/can_api_enabled"))
 
-  def _get_current_fork_display(self):
-    try:
-      target = os.readlink("/data/openpilot")
-      repo_dir = os.path.basename(target).replace("_", "/")
-      branch = subprocess.check_output(
-        ["git", "-C", target, "branch", "--show-current"],
-        stderr=subprocess.DEVNULL, timeout=5,
-      ).decode().strip()
-      return f"{repo_dir}:{branch}" if branch else repo_dir
-    except Exception:
-      return "unknown"
-
-  def _on_select_fork(self):
-    gui_app.push_widget(ForkSelectUIMici())
-
   def _on_enable_can_api(self, state: bool):
     param_path = "/data/params/can_api_enabled"
     if state:
