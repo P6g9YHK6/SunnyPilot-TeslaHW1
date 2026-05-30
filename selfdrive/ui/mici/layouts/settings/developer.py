@@ -50,7 +50,7 @@ class DeveloperLayoutMici(NavScroller):
     self._ssh_keys_btn.set_click_callback(ssh_keys_callback)
 
     # Fork switch button
-    self._fork_btn = BigButton("Fork", self._get_current_fork_display())
+    self._fork_btn = BigButton("Fork", self._get_current_fork_display(), sub_wrap_text=False, sub_elide=True)
     self._fork_btn.set_click_callback(self._on_select_fork)
 
     # adb, ssh, ssh keys, zmq, can api, fork, debug mode, joystick debug mode, etc.

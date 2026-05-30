@@ -9,7 +9,7 @@ from openpilot.system.ui.lib.application import gui_app
 
 class ForkButton(BigButton):
   def __init__(self, key: str, org: str, repo: str, branch: str, discovered: bool = False):
-    super().__init__(org, f"{repo}  {branch}", scroll=True)
+    super().__init__(org, f"{repo}\n{branch}", sub_wrap_text=False, sub_elide=True)
     self.fork_key = key
     self._discovered = discovered
 
