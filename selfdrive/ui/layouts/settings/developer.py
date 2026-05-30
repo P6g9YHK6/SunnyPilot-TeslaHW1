@@ -3,7 +3,6 @@ import subprocess
 
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.widgets.ssh_key import ssh_key_item
-from openpilot.selfdrive.ui.widgets.fork_switcher import fork_switcher_item
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.list_view import toggle_item, button_item
@@ -12,8 +11,6 @@ from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.widgets import DialogResult
-from openpilot.system.ui.widgets.option_dialog import MultiOptionDialog
-
 if gui_app.sunnypilot_ui():
   from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp as toggle_item
 
@@ -25,6 +22,9 @@ DESCRIPTIONS = {
   ),
   'enable_bridge': tr_noop(
     "ZMQ Bridge allows connecting Cabana locally to stream CAN data."
+  ),
+  'enable_can_api': tr_noop(
+    "CAN API starts an HTTP server for sending known and raw CAN signals. Only available offroad."
   ),
   'ssh_key': tr_noop(
     "Warning: This grants SSH access to all public keys in your GitHub settings. Never enter a GitHub username " +
@@ -44,7 +44,10 @@ class DeveloperLayout(Widget):
   def __init__(self):
     super().__init__()
     self._params = Params()
-    self._is_release = False  # self._params.get_bool("IsReleaseBranch")
+    self._is_release = False
+
+    # Load fork list from config
+    self._fork_list = self._load_forks()
 
     # Load fork list from config
     self._fork_list = self._load_forks()
@@ -67,13 +70,27 @@ class DeveloperLayout(Widget):
     )
     self._ssh_keys = ssh_key_item(lambda: tr("SSH Keys"), description=lambda: tr(DESCRIPTIONS["ssh_key"]))
 
-    self._fork_switcher = fork_switcher_item(enabled=ui_state.is_offroad)
-
     self._bridge_toggle = toggle_item(
-      lambda: tr("Enable ZMQ Bridge"),
+      lambda: tr("ZMQ"),
       description=lambda: tr(DESCRIPTIONS["enable_bridge"]),
       initial_state=self._params.get_bool("BridgeEnabled"),
       callback=self._on_enable_bridge,
+    )
+
+    self._can_api_toggle = toggle_item(
+      lambda: tr("Enable CAN API (HTTP)"),
+      description=lambda: tr(DESCRIPTIONS["enable_can_api"]),
+      initial_state=os.path.isfile("/data/params/can_api_enabled"),
+      callback=self._on_enable_can_api,
+      enabled=ui_state.is_offroad,
+    )
+
+    self._fork_btn = button_item(
+      lambda: tr("Fork"),
+      lambda: self._get_current_fork_display(),
+      description=lambda: tr("Select a fork to switch to. Device will reboot."),
+      callback=self._on_select_fork,
+      enabled=lambda: ui_state.is_offroad,
     )
 
     self._joystick_toggle = toggle_item(
@@ -118,8 +135,9 @@ class DeveloperLayout(Widget):
       self._adb_toggle,
       self._ssh_toggle,
       self._ssh_keys,
-      self._fork_switcher,
       self._bridge_toggle,
+      self._can_api_toggle,
+      self._fork_btn,
       self._joystick_toggle,
       self._long_maneuver_toggle,
       self._lat_maneuver_toggle,
@@ -136,6 +154,7 @@ class DeveloperLayout(Widget):
   def show_event(self):
     super().show_event()
     self._scroller.show_event()
+    self._fork_btn.action_item.set_text(self._get_current_fork_display())
     self._update_toggles()
 
   def _update_toggles(self):
@@ -182,6 +201,8 @@ class DeveloperLayout(Widget):
     ):
       item.action_item.set_state(self._params.get_bool(key))
 
+    self._can_api_toggle.action_item.set_state(os.path.isfile("/data/params/can_api_enabled"))
+
   def _on_enable_ui_debug(self, state: bool):
     self._params.put_bool("ShowDebugInfo", state)
     gui_app.set_show_touches(state)
@@ -196,6 +217,75 @@ class DeveloperLayout(Widget):
 
   def _on_enable_bridge(self, state: bool):
     self._params.put_bool("BridgeEnabled", state)
+
+  def _on_enable_can_api(self, state: bool):
+    param_path = "/data/params/can_api_enabled"
+    if state:
+      with open(param_path, "w") as f:
+        f.write("1")
+    else:
+      try:
+        os.remove(param_path)
+      except FileNotFoundError:
+        pass
+
+  def _load_forks(self):
+    forks = []
+    try:
+      with open("/data/openpilot/tools/forks.conf") as f:
+        for line in f:
+          line = line.strip()
+          if not line or line.startswith("#"):
+            continue
+          parts = line.split()
+          if len(parts) >= 3:
+            repo_full = parts[1]
+            org, repo_name = repo_full.split("/", 1) if "/" in repo_full else (repo_full, "")
+            forks.append({
+              "num": int(parts[0]),
+              "org": org,
+              "repo": repo_name,
+              "branch": parts[2],
+              "comment": " ".join(parts[3:]) if len(parts) > 3 else "",
+              "discovered": False,
+            })
+    except Exception:
+      pass
+    return forks
+
+  def _get_current_fork_display(self):
+    try:
+      target = os.readlink("/data/openpilot")
+      repo_dir = os.path.basename(target).replace("_", "/")
+      branch = subprocess.check_output(
+        ["git", "-C", target, "branch", "--show-current"],
+        stderr=subprocess.DEVNULL, timeout=5,
+      ).decode().strip()
+      return f"{repo_dir}:{branch}" if branch else repo_dir
+    except Exception:
+      return "unknown"
+
+  def _on_select_fork(self):
+    from openpilot.selfdrive.ui.widgets.fork_switcher import ForkListWidget, ForkSwitchExecuting
+
+    forks = self._load_forks()
+    if not forks:
+      from openpilot.system.ui.widgets.confirm_dialog import alert_dialog
+      gui_app.push_widget(alert_dialog(tr("No forks found in tools/forks.conf")))
+      return
+
+    def on_fork_selected(num, repo, branch):
+      def on_confirm(result):
+        if result == DialogResult.CONFIRM:
+          gui_app.push_widget(ForkSwitchExecuting(num, repo, branch))
+
+      desc = (f"<b>Fork:</b> {repo}<br>"
+              f"<b>Branch:</b> {branch}<br><br>"
+              f"{'This will reboot the device.' if os.getenv('DEVICE') != 'pc' else 'This will switch the fork.'}")
+      dlg = ConfirmDialog(desc, tr("Switch & Reboot"), rich=True, callback=on_confirm)
+      gui_app.push_widget(dlg)
+
+    gui_app.push_widget(ForkListWidget(forks, on_fork_selected))
 
   def _on_joystick_debug_mode(self, state: bool):
     self._params.put_bool("JoystickDebugMode", state)

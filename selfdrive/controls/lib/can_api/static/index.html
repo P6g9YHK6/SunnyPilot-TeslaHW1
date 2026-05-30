@@ -1,0 +1,7 @@
+<!DOCTYPE html>
+<html><head><title>CAN API</title></head>
+<body><h1>CAN API</h1>
+<p>Swagger UI not bundled. Download from <a href="https://github.com/swagger-api/swagger-ui">swagger-ui</a> and place in static/</p>
+<pre id="spec"></pre>
+<script>fetch('/openapi.json').then(r=>r.json()).then(d=>document.getElementById('spec').textContent=JSON.stringify(d,null,2))</script>
+</body></html>
