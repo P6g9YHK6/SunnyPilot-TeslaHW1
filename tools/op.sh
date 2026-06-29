@@ -773,13 +773,25 @@ function op_use_fork() {
   fi
   op_run_command ln -sfn "$rp" /data/openpilot
   cd /data/openpilot || return
+  # Persist the target branch so the updater doesn't revert after reboot
+  local active_branch
+  active_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [ -n "$active_branch" ]; then
+    printf "%s" "$active_branch" > /data/params/d/UpdaterTargetBranch 2>/dev/null || true
+  fi
   if [ -f launch_env.sh ] && [ -f /VERSION ]; then
     local required installed
     required=$(grep -oP 'AGNOS_VERSION="\K[^"]+' launch_env.sh 2>/dev/null || true)
     installed=$(cat /VERSION 2>/dev/null || true)
     if [ -n "$required" ] && [ -n "$installed" ] && [ "$installed" != "$required" ]; then
       echo "[OS] Versions differ ($installed vs $required), running OS update..."
-      PYTHONPATH=$(pwd) ./system/hardware/tici/agnos.py system/hardware/tici/agnos.json --swap || true
+      # Prefer system venv which has required packages (e.g. pycryptodome) across AGNOS versions
+      local py
+      for py in /usr/local/venv/bin/python3 .venv/bin/python3 python3; do
+        "$py" -c "from Crypto.Hash import SHA512" 2>/dev/null && break
+        py=""
+      done
+      PYTHONPATH=$(pwd) "${py:-python3}" system/hardware/tici/agnos.py system/hardware/tici/agnos.json --swap || true
     fi
   fi
   op_run_command sudo reboot
