@@ -64,7 +64,6 @@ class PitStopServer:
     self._device_state = None
     for target in (
       self._model_manager_loop,
-      self._car_state_loop,
       self._car_params_loop,
       self._device_state_loop,
     ):
