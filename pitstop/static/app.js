@@ -1018,32 +1018,36 @@ async function checkDownloadProgress() {
     document.getElementById('dl-bundle-name').textContent = sel.displayName || sel.internalName || '';
 
     const allModels = sel.models || [];
+    const MODEL_TYPES = ['Supercombo','Navigation','Vision','Policy','Off-Policy','On-Policy'];
     let html = '';
     let allDone = true;
     allModels.forEach(m => {
       const dp = m.artifact && m.artifact.downloadProgress;
       const mp = m.metadata && m.metadata.downloadProgress;
-      [dp, mp].forEach((p, i) => {
-        if (!p) return;
-        const type = i === 0 ? 'Artifact' : 'Metadata';
-        const pct = p.progress || 0;
-        const eta = p.eta || 0;
-        const status = p.status;
-        const statusText = fmtDownloadStatus(status);
-        const isFailed = status === 4;
-        const isDone = status >= 2;
-        const isCached = status === 3;
-        if (!isDone) allDone = false;
-        let fillCls = '';
-        if (isDone) fillCls = isCached ? ' cached' : (isFailed ? ' failed' : ' done');
-        html += `<div class="progress-item">
-          <div class="progress-header">
-            <span class="progress-type">${m.type !== undefined ? ['Supercombo','Navigation','Vision','Policy','Off-Policy','On-Policy'][m.type]||'Model' : 'Model'} ${i === 0 ? '(model)' : '(meta)'}</span>
-            <span class="progress-status">${statusText}${!isDone && !isFailed ? ' ' + pct.toFixed(0) + '% ETA ' + eta + 's' : ''}</span>
-          </div>
-          <div class="progress-bar"><div class="progress-fill${fillCls}" style="width:${Math.max(pct,2)}%"></div></div>
-        </div>`;
-      });
+      if (!dp) return;
+      /* Combine artifact + metadata into one bar; metadata is a small JSON so weight 90/10 */
+      const artifactPct = dp.progress || 0;
+      const metaPct     = (mp && mp.progress) || 0;
+      const pct         = mp ? artifactPct * 0.9 + metaPct * 0.1 : artifactPct;
+      const status      = dp.status; // drive status from artifact (the large file)
+      const metaStatus  = mp ? mp.status : status;
+      const combinedStatus = (status >= 2 && metaStatus >= 2) ? Math.max(status, metaStatus) : Math.min(status, metaStatus);
+      const eta = dp.eta || 0;
+      const statusText = fmtDownloadStatus(combinedStatus);
+      const isFailed = combinedStatus === 4;
+      const isDone = combinedStatus >= 2;
+      const isCached = combinedStatus === 3;
+      if (!isDone) allDone = false;
+      let fillCls = '';
+      if (isDone) fillCls = isCached ? ' cached' : (isFailed ? ' failed' : ' done');
+      const typeLabel = m.type !== undefined ? (MODEL_TYPES[m.type] || 'Model') : 'Model';
+      html += `<div class="progress-item">
+        <div class="progress-header">
+          <span class="progress-type">${typeLabel}</span>
+          <span class="progress-status">${statusText}${!isDone && !isFailed ? ' ' + pct.toFixed(0) + '%' + (eta ? ' ETA ' + eta + 's' : '') : ''}</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill${fillCls}" style="width:${Math.max(pct,2)}%"></div></div>
+      </div>`;
     });
     document.getElementById('dl-progress-items').innerHTML = html;
 
