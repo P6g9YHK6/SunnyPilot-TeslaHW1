@@ -490,7 +490,7 @@ h1 {
 .offroad-banner-off { background: var(--orange-dim); color: var(--orange); border: 1px solid rgba(251,146,60,0.3); }
 
 /* ─── Badges ────────────────────────────────────────────────────── */
-.badge-offroad, .badge-restart, .badge-blocked {
+.badge-offroad, .badge-restart, .badge-blocked, .badge-reason {
   display: inline-flex;
   align-items: center;
   font-size: 0.57rem;
@@ -505,6 +505,7 @@ h1 {
 .badge-offroad  { background: var(--accent-dim);   color: var(--accent);   border: 1px solid rgba(91,157,248,0.3); }
 .badge-restart  { background: var(--orange-dim);   color: var(--orange);   border: 1px solid rgba(251,146,60,0.3); }
 .badge-blocked  { background: var(--surface3);     color: var(--text-muted); border: 1px solid var(--border-mid); }
+.badge-reason   { background: var(--red-dim);      color: var(--red);        border: 1px solid rgba(248,113,113,0.25); text-transform: none; font-weight: 600; font-size: 0.6rem; }
 
 /* ─── Ignition badge ────────────────────────────────────────────── */
 .badge-ign {

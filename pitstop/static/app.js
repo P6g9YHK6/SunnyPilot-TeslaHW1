@@ -528,7 +528,8 @@ function renderSettingItem(item, caps, paramCache, status, depth, forceDisabled 
 
   const disabledReason = (!enabled || isBlocked) ? getDisabledReason(item, caps, paramCache, status, forceDisabled) : '';
   const extraClasses = `${!enabled && !isBlocked ? 'disabled' : ''} ${isBlocked ? 'blocked' : ''}`;
-  const reasonAttr = disabledReason ? ` title="${escHtml(disabledReason)}"` : '';
+  const reasonBadge = (disabledReason && !isBlocked && !hasOffroadOnly(item.enablement || []))
+    ? `<span class="badge-reason">${escHtml(disabledReason)}</span>` : '';
   const indentStyle = depth > 0 ? ` style="padding-left:${1.25 + depth * 1.25}rem"` : '';
 
   /* Collapsible description: show first 100 chars, expand on click */
@@ -554,8 +555,8 @@ function renderSettingItem(item, caps, paramCache, status, depth, forceDisabled 
     detailBtn = `<button class="item-detail-btn" onclick="showModal('${safeTitle}','<p>${safeDetails}</p>',[{label:'Close',action:'',cls:'btn-primary'}])" title="More info">i</button>`;
   }
 
-  let html = `<div class="section-item ${extraClasses}"${indentStyle}${reasonAttr}>`;
-  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}${offroadOnly}${blockedBadge}</div>${descHtml}</div>`;
+  let html = `<div class="section-item ${extraClasses}"${indentStyle}>`;
+  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}${offroadOnly}${blockedBadge}${reasonBadge}</div>${descHtml}</div>`;
   html += `<div class="item-control">${controlHtml}</div>`;
   html += `</div>`;
 
