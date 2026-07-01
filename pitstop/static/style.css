@@ -637,7 +637,7 @@ select.setting-select:focus { outline: 1px solid var(--accent); }
 /* ---- Toast ---- */
 .toast {
   position: fixed;
-  bottom: 1.5rem;
+  bottom: 5rem;
   right: 1rem;
   left: 1rem;
   max-width: 400px;
@@ -690,3 +690,137 @@ select.setting-select:focus { outline: 1px solid var(--accent); }
 @media (max-width: 400px) {
   .nav-btn { padding: 0.35rem 0.55rem; font-size: 0.8rem; }
 }
+
+/* ---- Pending changes bar ---- */
+.pending-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface2);
+  border-top: 1px solid var(--accent);
+  z-index: 150;
+  padding: 0.65rem 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pending-summary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+
+.pending-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.pending-warn {
+  font-size: 0.78rem;
+  color: var(--orange);
+  white-space: nowrap;
+}
+
+.pending-list {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.2rem;
+}
+
+.pending-entry {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.pending-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+/* Add bottom padding to main when bar is visible so content isn't hidden */
+body:has(.pending-bar:not(.hidden)) main {
+  padding-bottom: 5rem;
+}
+
+/* ---- Numeric stepper button ---- */
+.num-edit-btn {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.8rem;
+  color: var(--accent);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: 0.15s;
+  white-space: nowrap;
+  min-width: 48px;
+  text-align: center;
+}
+.num-edit-btn:hover { border-color: var(--accent); background: var(--accent-dim); }
+.num-edit-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* ---- Number modal ---- */
+.num-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+}
+
+.num-display {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 2.2rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 1.5rem;
+  min-width: 160px;
+  text-align: center;
+}
+
+.num-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.num-btns .btn {
+  justify-content: center;
+  font-size: 1rem;
+  padding: 0.65rem 0;
+  font-weight: 600;
+}
+
+/* ---- Ignition badge (telemetry card) ---- */
+.badge-ign {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+.badge-ign-on { background: var(--green-dim); color: var(--green); border: 1px solid var(--green); }
+.badge-ign-off { background: var(--surface3); color: var(--text-muted); border: 1px solid var(--border); }
+.badge-ign-unknown { background: var(--surface3); color: var(--text-muted); border: 1px solid var(--border); }
