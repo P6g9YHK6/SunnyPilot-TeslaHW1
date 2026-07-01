@@ -1,11 +1,16 @@
 /* ---------- Navigation ---------- */
-document.querySelectorAll('.nav-btn').forEach(btn => {
+let currentPage = 'dashboard';
+let autoRefreshTimer = null;
+
+document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-' + btn.dataset.page).classList.add('active');
-    loadPage(btn.dataset.page);
+    currentPage = btn.dataset.page;
+    loadPage(currentPage);
+    restartAutoRefresh();
   });
 });
 
@@ -17,6 +22,27 @@ function loadPage(name) {
   if (name === 'models') loadModels();
   if (name === 'params') loadParams();
   if (name === 'backup') loadBackups();
+}
+
+function refreshNow() {
+  const btn = document.getElementById('refresh-now-btn');
+  btn.classList.add('spinning');
+  setTimeout(() => btn.classList.remove('spinning'), 600);
+  loadPage(currentPage);
+}
+
+function setAutoRefresh(seconds) {
+  clearInterval(autoRefreshTimer);
+  autoRefreshTimer = null;
+  const s = parseInt(seconds, 10);
+  if (s > 0) {
+    autoRefreshTimer = setInterval(() => loadPage(currentPage), s * 1000);
+  }
+}
+
+function restartAutoRefresh() {
+  const sel = document.getElementById('refresh-interval-select');
+  if (sel) setAutoRefresh(sel.value);
 }
 
 /* ---------- API helper ---------- */
