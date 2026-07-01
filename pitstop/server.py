@@ -83,8 +83,12 @@ class PitStopServer:
     })
 
   async def handle_device(self, request):
-    dongle_id = self.params.get("DongleId", encoding="utf-8")
-    hardware_serial = self.params.get("HardwareSerial", encoding="utf-8")
+    def _getstr(key):
+      v = self.params.get(key)
+      return v.decode("utf-8", errors="replace") if isinstance(v, bytes) else (v or "")
+
+    dongle_id = _getstr("DongleId")
+    hardware_serial = _getstr("HardwareSerial")
     try:
       build = get_build_metadata()
       version = build.openpilot.version
@@ -93,7 +97,7 @@ class PitStopServer:
       git_commit_date = build.openpilot.git_commit_date
       is_dirty = build.openpilot.is_dirty
     except Exception:
-      version = self.params.get("Version", encoding="utf-8")
+      version = _getstr("Version")
       branch = None
       git_commit = None
       git_commit_date = None
@@ -118,6 +122,39 @@ class PitStopServer:
     except Exception:
       return web.json_response({})
 
+  def _param_to_str(self, raw) -> str:
+    """Normalize any params.get() return value to a string the UI can use."""
+    if isinstance(raw, bool):
+      return "1" if raw else "0"
+    if isinstance(raw, bytes):
+      return raw.decode("utf-8", errors="replace")
+    if isinstance(raw, (int, float)):
+      return str(raw)
+    if isinstance(raw, (dict, list)):
+      return json.dumps(raw)
+    return str(raw) if raw is not None else ""
+
+  def _smart_put(self, key: str, str_value: str):
+    """Write str_value into a param, converting to the right Python type."""
+    try:
+      current = self.params.get(key)
+    except Exception as e:
+      raise ValueError(f"Unknown param '{key}'") from e
+
+    sv = str(str_value)
+    if isinstance(current, bool) or (current is None and sv in ("0", "1")):
+      self.params.put_bool(key, sv in ("1", "true", "yes"))
+    elif isinstance(current, int):
+      self.params.put(key, int(sv))
+    elif isinstance(current, float):
+      self.params.put(key, float(sv))
+    elif isinstance(current, (dict, list)):
+      self.params.put(key, json.loads(sv))
+    elif isinstance(current, bytes):
+      self.params.put(key, sv.encode("utf-8"))
+    else:
+      self.params.put(key, sv)
+
   async def handle_param_get(self, request):
     key = request.match_info.get("key")
     try:
@@ -126,8 +163,7 @@ class PitStopServer:
       raise web.HTTPNotFound(text=f"Unknown param '{key}'") from None
     if raw is None:
       return web.json_response({"key": key, "value": None})
-    value = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
-    return web.json_response({"key": key, "value": value})
+    return web.json_response({"key": key, "value": self._param_to_str(raw)})
 
   async def handle_param_set(self, request):
     key = request.match_info.get("key")
@@ -139,9 +175,9 @@ class PitStopServer:
     if value is None:
       raise web.HTTPBadRequest(text="Missing 'value'")
     try:
-      self.params.put(key, str(value))
-    except Exception as e:
-      raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
+      self._smart_put(key, str(value))
+    except (ValueError, TypeError) as e:
+      raise web.HTTPBadRequest(text=str(e)) from None
     return web.json_response({"key": key, "status": "ok"})
 
   async def handle_param_put_bool(self, request):
@@ -169,7 +205,7 @@ class PitStopServer:
     if not isinstance(value, (int, float)):
       raise web.HTTPBadRequest(text="'value' must be a number")
     try:
-      self.params.put(key, str(int(value)))
+      self.params.put(key, int(value))
     except Exception as e:
       raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
     return web.json_response({"key": key, "value": int(value), "status": "ok"})
@@ -184,7 +220,7 @@ class PitStopServer:
     if not isinstance(value, (int, float)):
       raise web.HTTPBadRequest(text="'value' must be a number")
     try:
-      self.params.put(key, str(float(value)))
+      self.params.put(key, float(value))
     except Exception as e:
       raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
     return web.json_response({"key": key, "value": float(value), "status": "ok"})
@@ -315,7 +351,8 @@ class PitStopServer:
 
   async def handle_models_favorites(self, request):
     if request.method == "GET":
-      raw = self.params.get("ModelManager_Favs", encoding="utf-8") or ""
+      raw_b = self.params.get("ModelManager_Favs")
+      raw = raw_b.decode("utf-8", errors="replace") if isinstance(raw_b, bytes) else ""
       refs = [r for r in raw.split(";") if r] if raw else []
       return web.json_response(refs)
     else:
