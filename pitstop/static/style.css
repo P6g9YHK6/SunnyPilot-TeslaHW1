@@ -71,6 +71,52 @@ nav {
 
 .nav-links::-webkit-scrollbar { display: none; }
 
+/* ---- Nav refresh control ---- */
+.nav-refresh {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 0.5rem;
+}
+
+.nav-refresh-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius);
+  font-size: 1.05rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+  line-height: 1;
+}
+.nav-refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
+.nav-refresh-btn.spinning { animation: spin 0.5s linear; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+#refresh-interval-select {
+  background: var(--surface2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.3rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  height: 30px;
+}
+#refresh-interval-select:focus { outline: 1px solid var(--accent); }
+#refresh-interval-select option { background: var(--surface2); }
+
 .nav-btn {
   background: none;
   border: none;

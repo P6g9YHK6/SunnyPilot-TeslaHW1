@@ -17,6 +17,18 @@
       <button class="nav-btn" data-page="backup">Backup</button>
       <a class="nav-btn" href="/docs" target="_blank">API Docs</a>
     </div>
+    <div class="nav-refresh">
+      <button class="nav-refresh-btn" id="refresh-now-btn" onclick="refreshNow()" title="Refresh now">&#8635;</button>
+      <select id="refresh-interval-select" onchange="setAutoRefresh(this.value)">
+        <option value="0">Off</option>
+        <option value="1">1s</option>
+        <option value="2">2s</option>
+        <option value="5">5s</option>
+        <option value="10">10s</option>
+        <option value="15">15s</option>
+        <option value="20">20s</option>
+      </select>
+    </div>
   </nav>
 
   <main id="main">
