@@ -35,6 +35,7 @@ function setAutoRefresh(seconds) {
   clearInterval(autoRefreshTimer);
   autoRefreshTimer = null;
   const s = parseInt(seconds, 10);
+  localStorage.setItem('pitstop_refresh', s);
   if (s > 0) {
     autoRefreshTimer = setInterval(() => loadPage(currentPage), s * 1000);
   }
@@ -994,4 +995,11 @@ async function restoreBackup(name) {
 }
 
 /* ---------- Init ---------- */
+(function restoreRefreshSetting() {
+  const saved = localStorage.getItem('pitstop_refresh');
+  if (saved && saved !== '0') {
+    const sel = document.getElementById('refresh-interval-select');
+    if (sel) { sel.value = saved; setAutoRefresh(saved); }
+  }
+})();
 loadDashboard();
