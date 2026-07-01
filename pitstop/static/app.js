@@ -1,22 +1,45 @@
+/* ---------- Utilities ---------- */
+function debounce(fn, ms) {
+  let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+function fmtSize(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
 /* ---------- Navigation ---------- */
 let currentPage = 'dashboard';
 let autoRefreshTimer = null;
 
+function navigateTo(page) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.nav-btn[data-page="${page}"]`)?.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + page)?.classList.add('active');
+  currentPage = page;
+  loadPage(page);
+  restartAutoRefresh();
+}
+
 document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById('page-' + btn.dataset.page).classList.add('active');
-    currentPage = btn.dataset.page;
-    loadPage(currentPage);
-    restartAutoRefresh();
+    const target = btn.dataset.page;
+    if (currentPage === 'settings' && Object.keys(pendingChanges).length) {
+      showModal('Unsaved Changes', '<p>You have unsaved settings changes. Discard them and leave?</p>', [
+        { label: 'Stay', action: '', cls: '' },
+        { label: 'Discard & Leave', action: `navigateTo('${target}')`, cls: 'btn-danger' },
+      ]);
+      return;
+    }
+    navigateTo(target);
   });
 });
 
 function loadPage(name) {
-  if (name !== 'settings') { stopSettingsStatusPoll(); if (Object.keys(pendingChanges).length) discardPendingChanges(); }
+  if (name !== 'settings') { stopSettingsStatusPoll(); discardPendingChanges(); }
   if (name !== 'dashboard') stopDashboardPoll();
+  if (name !== 'models') stopModelsProgressPoll();
   if (name === 'dashboard') loadDashboard();
   if (name === 'settings') loadSettings();
   if (name === 'models') loadModels();
@@ -86,7 +109,7 @@ function showModal(title, body, buttons) {
       <div class="modal-content">
         <h3>${title}</h3>
         ${body}
-        <div class="modal-actions">${(buttons||[]).map(b => `<button class="btn ${b.cls||''} btn-sm" onclick="(${b.action})();closeModal()">${b.label}</button>`).join('')}</div>
+        <div class="modal-actions">${(buttons||[]).map(b => `<button class="btn ${b.cls||''} btn-sm" onclick="${b.action ? `(${b.action})();` : ''}closeModal()">${b.label}</button>`).join('')}</div>
       </div>
     </div>`;
   document.getElementById('modal-container').innerHTML = html;
@@ -139,16 +162,20 @@ function renderTelemetryCard(t) {
   const car = t.car || {};
   const motion = t.motion || {};
   const dev = t.device || {};
+  const standstillBadge = motion.standstill === true ? ' <span class="badge-ign badge-ign-off">STOPPED</span>' : '';
   document.getElementById('card-telemetry').querySelector('.card-body').innerHTML = `
     <div class="row"><span class="label">Ignition</span><span class="value">${ignBadge}</span></div>
     <div class="row"><span class="label">Car</span><span class="value">${car.brand || '—'}</span></div>
     <div class="row"><span class="label">Fingerprint</span><span class="value" style="font-size:0.72rem">${car.fingerprint || '—'}</span></div>
-    <div class="row"><span class="label">Speed</span><span class="value">${fmtMps(motion.speed_ms)}</span></div>
+    ${car.vin ? `<div class="row"><span class="label">VIN</span><span class="value" style="font-size:0.72rem">${car.vin}</span></div>` : ''}
+    <div class="row"><span class="label">Speed</span><span class="value">${fmtMps(motion.speed_ms)}${standstillBadge}</span></div>
     <div class="row"><span class="label">Gear</span><span class="value">${motion.gear || '—'}</span></div>
     <div class="row"><span class="label">CPU</span><span class="value">${fmtPct(dev.cpu_pct)}</span></div>
     <div class="row"><span class="label">RAM</span><span class="value">${fmtPct(dev.memory_pct)}</span></div>
     <div class="row"><span class="label">Temp</span><span class="value">${fmtTemp(dev.temp_c)}</span></div>
     <div class="row"><span class="label">Free</span><span class="value">${fmtPct(dev.free_space_pct)}</span></div>
+    ${dev.network_type ? `<div class="row"><span class="label">Network</span><span class="value">${dev.network_type}</span></div>` : ''}
+    ${dev.thermal_status ? `<div class="row"><span class="label">Thermal</span><span class="value">${dev.thermal_status}</span></div>` : ''}
   `;
 }
 
@@ -354,14 +381,20 @@ function openNumModal(key, val, min, max, step, label, needsCycle) {
   _nmLabel = label;
   _nmNeedsCycle = !!needsCycle;
 
+  const precision = String(_nmStep).includes('.') ? String(_nmStep).split('.')[1].length : 0;
+  const fmtD = v => parseFloat(v.toFixed(precision));
+  const d1 = fmtD(_nmStep), d10 = fmtD(_nmStep * 10);
+  const minAttr = isFinite(_nmMin) ? `min="${_nmMin}"` : '';
+  const maxAttr = isFinite(_nmMax) ? `max="${_nmMax}"` : '';
+
   const body = `
     <div class="num-modal">
-      <div class="num-display" id="nm-display">${_nmVal}</div>
+      <input type="number" id="nm-input" class="num-input" value="${_nmVal}" step="${_nmStep}" ${minAttr} ${maxAttr} oninput="nmInputChange(this.value)">
       <div class="num-btns">
-        <button class="btn btn-sm" onclick="nmStep(-10)">&#8722;10</button>
-        <button class="btn btn-sm" onclick="nmStep(-1)">&#8722;1</button>
-        <button class="btn btn-sm" onclick="nmStep(1)">+1</button>
-        <button class="btn btn-sm" onclick="nmStep(10)">+10</button>
+        <button class="btn btn-sm" onclick="nmStep(-10)">&#8722;${d10}</button>
+        <button class="btn btn-sm" onclick="nmStep(-1)">&#8722;${d1}</button>
+        <button class="btn btn-sm" onclick="nmStep(1)">+${d1}</button>
+        <button class="btn btn-sm" onclick="nmStep(10)">+${d10}</button>
       </div>
     </div>`;
 
@@ -369,15 +402,19 @@ function openNumModal(key, val, min, max, step, label, needsCycle) {
     { label: 'Cancel', action: '', cls: '' },
     { label: 'OK', action: 'nmConfirm', cls: 'btn-primary' },
   ]);
+  setTimeout(() => document.getElementById('nm-input')?.select(), 50);
+}
+
+function nmInputChange(v) {
+  const p = String(_nmStep).includes('.') ? String(_nmStep).split('.')[1].length : 0;
+  _nmVal = parseFloat(parseFloat(v).toFixed(p)) || 0;
 }
 
 function nmStep(n) {
-  _nmVal = Math.min(_nmMax, Math.max(_nmMin, _nmVal + n * _nmStep));
-  // Round to avoid floating point noise
   const precision = String(_nmStep).includes('.') ? String(_nmStep).split('.')[1].length : 0;
-  _nmVal = parseFloat(_nmVal.toFixed(precision));
-  const el = document.getElementById('nm-display');
-  if (el) el.textContent = _nmVal;
+  _nmVal = parseFloat(Math.min(_nmMax, Math.max(_nmMin, _nmVal + n * _nmStep)).toFixed(precision));
+  const inp = document.getElementById('nm-input');
+  if (inp) inp.value = _nmVal;
 }
 
 function nmConfirm() {
@@ -407,16 +444,18 @@ function buildUnit(item, isMetric) {
 
 /* ---- Render a single setting item ---- */
 let _descId = 0;
-function renderSettingItem(item, caps, paramCache, status, depth) {
+function renderSettingItem(item, caps, paramCache, status, depth, forceDisabled = false) {
   const key = item.key || '';
   const title = buildTitle(item, paramCache);
   const desc = item.description || '';
   const widget = item.widget || 'toggle';
-  const needsCycle  = item.needs_onroad_cycle ? '<span class="badge-restart">Restart</span>' : '';
-  const offroadOnly = hasOffroadOnly(item.enablement) ? '<span class="badge-offroad">Offroad</span>' : '';
-  const isBlocked = !!item.blocked;
+  const needsCycle   = item.needs_onroad_cycle ? '<span class="badge-restart">Restart</span>' : '';
+  const offroadOnly  = hasOffroadOnly(item.enablement) ? '<span class="badge-offroad">Offroad</span>' : '';
+  const isBlocked    = !!item.blocked;
+  const blockedBadge = isBlocked ? '<span class="badge-blocked" title="This setting can only be changed on the device itself">Device only</span>' : '';
+  const needsAttest  = !!item.requires_attestation;
   const vis = evaluateRules(item.visibility, caps, paramCache, status);
-  const enabled = !isBlocked && evaluateRules(item.enablement, caps, paramCache, status);
+  const enabled = !isBlocked && !forceDisabled && evaluateRules(item.enablement, caps, paramCache, status);
   const parentChecked = paramCache[key];
 
   if (!vis) return '';
@@ -428,7 +467,7 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
     const sv = String(parentChecked || '');
     const checked = sv === '1' || sv.toLowerCase() === 'true';
     controlHtml = `<label class="toggle">
-      <input type="checkbox" id="${idAttr}" data-param="${key}" ${checked ? 'checked' : ''} ${!enabled ? 'disabled' : ''}>
+      <input type="checkbox" id="${idAttr}" data-param="${key}" data-attestation="${needsAttest ? '1' : ''}" ${checked ? 'checked' : ''} ${!enabled ? 'disabled' : ''}>
       <span class="slider"></span>
     </label>`;
 
@@ -437,7 +476,7 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
     const opts = item.options || [];
     const currentVal = String(paramCache[key] ?? '');
     if (opts.length) {
-      controlHtml = `<select class="setting-select" data-param="${key}" data-widget="${widget}" ${!enabled ? 'disabled' : ''}>`;
+      controlHtml = `<select class="setting-select" data-param="${key}" data-widget="${widget}" data-attestation="${needsAttest ? '1' : ''}" ${!enabled ? 'disabled' : ''}>`;
       opts.forEach(o => {
         const optEnabled = enabled && (widget === 'option' || evaluateRules(o.enablement, caps, paramCache, status));
         controlHtml += `<option value="${o.value}" ${currentVal === String(o.value) ? 'selected' : ''} ${!optEnabled ? 'disabled' : ''}>${o.label}</option>`;
@@ -494,7 +533,7 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
   }
 
   let html = `<div class="section-item ${extraClasses}"${indentStyle}>`;
-  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}${offroadOnly}</div>${descHtml}</div>`;
+  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}${offroadOnly}${blockedBadge}</div>${descHtml}</div>`;
   html += `<div class="item-control">${controlHtml}</div>`;
   html += `</div>`;
 
@@ -515,17 +554,15 @@ function collapseDesc(id) {
 }
 
 /* ---- Render sub_items recursively ---- */
-function renderSubItems(items, caps, paramCache, status, depth) {
+function renderSubItems(items, caps, paramCache, status, depth, forceDisabled = false) {
   if (!items) return '';
   let html = '';
   items.forEach(item => {
-    html += renderSettingItem(item, caps, paramCache, status, depth);
+    html += renderSettingItem(item, caps, paramCache, status, depth, forceDisabled);
     const parentVal = paramCache[item.key];
-    const parentOn = parentVal === '1' || parentVal === 'true';
+    const parentOn = parentVal === '1' || String(parentVal).toLowerCase() === 'true';
     if (item.sub_items && parentOn) {
-      item.sub_items.forEach(sub => {
-        html += renderSettingItem(sub, caps, paramCache, status, depth + 1);
-      });
+      html += renderSubItems(item.sub_items, caps, paramCache, status, depth + 1, forceDisabled);
     }
   });
   return html;
@@ -633,6 +670,15 @@ function renderSettingsUI() {
     offroadBanner.innerHTML = '&#128664; Onroad &mdash; <span class="badge-offroad">Offroad</span> settings are locked';
   }
 
+  function subPanelVisible(sub) {
+    if (!sub.trigger_key) return true;
+    const val = pc[sub.trigger_key];
+    if (sub.trigger_condition === undefined) return val === '1' || val === true;
+    if (sub.trigger_condition && typeof sub.trigger_condition === 'object')
+      return evaluateRule(sub.trigger_condition, caps, pc, st);
+    return String(val) === String(sub.trigger_condition);
+  }
+
   let html = '';
   for (const panel of schema.panels || []) {
     if (!evaluateRules(panel.visibility, caps, pc, st)) continue;
@@ -642,20 +688,40 @@ function renderSettingsUI() {
       const sectionEnabled = evaluateRules(section.enablement, caps, pc, st);
       html += `<div class="panel-section">`;
       if (section.title) html += `<div class="section-title">${section.title}</div>`;
-      html += renderSubItems(section.items, caps, pc, st, 0);
+      if (section.description) html += `<div class="section-desc">${section.description}</div>`;
+      html += renderSubItems(section.items, caps, pc, st, 0, !sectionEnabled);
       for (const sub of section.sub_panels || []) {
-        if (sub.title) html += `<div class="section-title">${sub.title}</div>`;
-        html += renderSubItems(sub.items, caps, pc, st, 0);
+        if (!subPanelVisible(sub)) continue;
+        if (sub.title || sub.label) html += `<div class="section-title">${sub.title || sub.label}</div>`;
+        html += renderSubItems(sub.items, caps, pc, st, 0, !sectionEnabled);
       }
       html += `</div>`;
     }
     html += `</div>`;
   }
+
+  /* vehicle_settings: filter by current car brand if capability data available */
+  const carBrand = (caps.brand || '').toLowerCase();
+  for (const [brand, vs] of Object.entries(schema.vehicle_settings || {})) {
+    if (carBrand && brand.toLowerCase() !== carBrand) continue;
+    const items = vs.items || vs;
+    if (!items || !items.length) continue;
+    html += `<div class="panel"><div class="panel-header">Vehicle Settings: ${brand}</div>`;
+    html += `<div class="panel-section">`;
+    html += renderSubItems(items, caps, pc, st, 0);
+    html += `</div></div>`;
+  }
+
   container.innerHTML = html;
 
   /* Wire up toggle events — queue change, don't apply immediately */
   container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
     cb.addEventListener('change', (e) => {
+      if (e.target.dataset.attestation === '1') {
+        e.target.checked = !e.target.checked; // revert
+        toast('This setting can only be changed on the device itself', 'error');
+        return;
+      }
       const key = e.target.dataset.param;
       const val = e.target.checked ? '1' : '0';
       const labelEl = e.target.closest('.section-item')?.querySelector('.item-title');
@@ -668,6 +734,10 @@ function renderSettingsUI() {
   /* Wire up all <select> controls — queue change */
   container.querySelectorAll('select.setting-select').forEach(sel => {
     sel.addEventListener('change', (e) => {
+      if (e.target.dataset.attestation === '1') {
+        toast('This setting can only be changed on the device itself', 'error');
+        return;
+      }
       const key = e.target.dataset.param;
       const val = e.target.value;
       const labelEl = e.target.closest('.section-item')?.querySelector('.item-title');
@@ -717,6 +787,10 @@ function maybeReEval() {
 /* ============ MODELS ============ */
 let modelsData = null;
 let modelsProgressInterval = null;
+
+function stopModelsProgressPoll() {
+  if (modelsProgressInterval) { clearInterval(modelsProgressInterval); modelsProgressInterval = null; }
+}
 
 async function loadModels() {
   try {
@@ -784,7 +858,7 @@ function renderBundleList(bundles, active, favorites) {
         </div>
         <div class="model-item-actions">
           <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFav('${b.ref}', this)" title="Favorite">${isFav ? '★' : '☆'}</button>
-          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm btn-primary" onclick="selectModel(${b.index}, '${(b.displayName || b.internalName).replace(/'/g,"\\'")}')">Download</button>`}
+          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm btn-primary" onclick="selectModel(${b.index}, '${(b.displayName || b.internalName).replace(/'/g,"\\'")}')">Select</button>`}
         </div>
       </div>`;
     });
@@ -794,7 +868,7 @@ function renderBundleList(bundles, active, favorites) {
   container.innerHTML = html;
 }
 
-function filterModels() {
+const filterModels = debounce(() => {
   if (!modelsData) return;
   const query = document.getElementById('model-search').value.toLowerCase();
   const bundles = (modelsData.bundles || []).filter(b =>
@@ -802,18 +876,30 @@ function filterModels() {
     (b.internalName || '').toLowerCase().includes(query)
   );
   renderBundleList(bundles, modelsData.active, modelsData.favorites);
-}
+}, 200);
 
 async function refreshModelList() {
   await api('/api/models/refresh', { method: 'POST' });
-  toast('Model list refresh triggered', 'info');
-  setTimeout(loadModels, 2000);
+  toast('Refreshing model list…', 'info');
+  let attempts = 0;
+  const poll = setInterval(async () => {
+    attempts++;
+    try {
+      const bundles = await api('/api/models');
+      if (bundles && bundles.length) {
+        clearInterval(poll);
+        await loadModels();
+        toast('Model list updated', 'success');
+      }
+    } catch {}
+    if (attempts >= 15) clearInterval(poll);
+  }, 1000);
 }
 
 async function selectModel(index, name) {
-  showModal('Download Model', `<p>Download "${name}"? This may take a few minutes.</p>`, [
+  showModal('Select Model', `<p>Select "${name}"? If not cached, a download will start.</p>`, [
     { label: 'Cancel', action: '', cls: '' },
-    { label: 'Download', action: `api('/api/models/select',{method:'POST',body:JSON.stringify({index:${index}})})&&toast('Downloading ${name}','info')`, cls: 'btn-primary' },
+    { label: 'Select', action: `api('/api/models/select',{method:'POST',body:JSON.stringify({index:${index}})}).then(()=>{toast('Model selected: ${name}','info');loadModels();})`, cls: 'btn-primary' },
   ]);
 }
 
@@ -859,7 +945,7 @@ async function checkCacheSize() {
       api('/api/models'),
     ]);
     /* Count models in bundle to estimate - real size would need disk check */
-    document.getElementById('model-cache-size').textContent = `${bundles.length} bundles available`;
+    document.getElementById('model-cache-size').textContent = `${bundles.length} model${bundles.length !== 1 ? 's' : ''} available`;
   } catch {}
 }
 
@@ -958,20 +1044,32 @@ function renderParams() {
   }
 }
 
-function filterParams() { renderParams(); }
+const filterParams = debounce(() => renderParams(), 200);
 
 async function showParamEditor(key) {
   try {
     const p = await api(`/api/params/${key}`);
-    const newVal = prompt(`Edit param: ${key}\nCurrent value:`, p.value);
-    if (newVal === null) return;
-    await api(`/api/params/${key}`, {
-      method: 'POST',
-      body: JSON.stringify({ value: newVal }),
-    });
+    showModal(`Edit: ${key}`,
+      `<div class="param-editor-body">
+        <div class="param-editor-key">${key}</div>
+        <textarea id="param-edit-input" class="param-edit-input" rows="4">${p.value || ''}</textarea>
+      </div>`,
+      [
+        { label: 'Cancel', cls: '' },
+        { label: 'Save', action: `saveParamFromModal('${key}')`, cls: 'btn-primary' },
+      ]
+    );
+  } catch (e) {}
+}
+
+async function saveParamFromModal(key) {
+  const inp = document.getElementById('param-edit-input');
+  if (!inp) return;
+  try {
+    await api(`/api/params/${key}`, { method: 'POST', body: JSON.stringify({ value: inp.value }) });
     toast(`Updated ${key}`, 'success');
     renderParams();
-  } catch (e) {}
+  } catch (e) { toast(`Failed to update ${key}`, 'error'); }
 }
 
 /* ============ BACKUP ============ */
@@ -986,14 +1084,17 @@ async function loadBackups() {
     let html = '';
     for (const b of backups) {
       const date = new Date(b.mtime * 1000).toLocaleString();
-      const size = b.size > 1024 ? (b.size / 1024).toFixed(1) + ' KB' : b.size + ' B';
+      const size = fmtSize(b.size);
       html += `
         <div class="backup-item">
           <div class="info">
             <div class="name">${b.name}</div>
             <div class="meta">${date} &middot; ${size}</div>
           </div>
-          <button class="btn btn-primary" onclick="restoreBackup('${b.name}')">Restore</button>
+          <div class="backup-actions-row">
+            <button class="btn btn-primary btn-sm" onclick="restoreBackup('${b.name}')">Restore</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteBackup('${b.name}')">Delete</button>
+          </div>
         </div>`;
     }
     container.innerHTML = html;
@@ -1011,14 +1112,33 @@ async function createBackup() {
 }
 
 async function restoreBackup(name) {
-  if (!confirm(`Restore backup "${name}"? This will overwrite current settings.`)) return;
+  showModal('Restore Backup', `<p>Restore "<b>${name}</b>"?<br>This will overwrite current settings.</p>`, [
+    { label: 'Cancel', cls: '' },
+    { label: 'Restore', action: `doRestoreBackup('${name}')`, cls: 'btn-primary' },
+  ]);
+}
+
+async function doRestoreBackup(name) {
   try {
-    const res = await api('/api/backup/restore', {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    });
+    const res = await api('/api/backup/restore', { method: 'POST', body: JSON.stringify({ name }) });
     toast(`Restored ${res.restored} params`, 'success');
-  } catch (e) {}
+    loadBackups();
+  } catch (e) { toast('Restore failed', 'error'); }
+}
+
+async function deleteBackup(name) {
+  showModal('Delete Backup', `<p>Delete "<b>${name}</b>"? This cannot be undone.</p>`, [
+    { label: 'Cancel', cls: '' },
+    { label: 'Delete', action: `doDeleteBackup('${name}')`, cls: 'btn-danger' },
+  ]);
+}
+
+async function doDeleteBackup(name) {
+  try {
+    await api(`/api/backup/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    toast(`Deleted ${name}`, 'success');
+    loadBackups();
+  } catch (e) { toast('Delete failed', 'error'); }
 }
 
 /* ---------- Init ---------- */

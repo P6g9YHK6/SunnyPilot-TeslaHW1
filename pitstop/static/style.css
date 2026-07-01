@@ -897,3 +897,45 @@ body:has(.pending-bar:not(.hidden)) main {
 .badge-ign-on { background: var(--green-dim); color: var(--green); border: 1px solid var(--green); }
 .badge-ign-off { background: var(--surface3); color: var(--text-muted); border: 1px solid var(--border); }
 .badge-ign-unknown { background: var(--surface3); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* ---- Blocked badge (device-only settings) ---- */
+.badge-blocked {
+  display: inline-block;
+  font-size: 0.6rem;
+  background: var(--surface3);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  margin-left: 0.35rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* ---- Section description ---- */
+.section-desc {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin: -0.25rem 0 0.5rem 0;
+  padding: 0 0.25rem;
+  line-height: 1.4;
+}
+
+/* ---- Param editor modal ---- */
+.param-editor-body { display: flex; flex-direction: column; gap: 0.5rem; }
+.param-editor-key { font-family: monospace; font-size: 0.85rem; color: var(--accent); word-break: break-all; }
+.param-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+/* ---- Backup actions row ---- */
+.backup-actions-row { display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; }
