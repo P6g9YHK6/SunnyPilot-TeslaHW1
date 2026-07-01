@@ -54,6 +54,13 @@ SwaggerUIBundle({
 
 
 class PitStopServer:
+  # Key services selfdrived monitors (subset — excludes sensors/GPS/ignored)
+  _WATCHED_SERVICES = [
+    'liveCalibration', 'livePose', 'liveParameters', 'longitudinalPlan',
+    'modelV2', 'cameraOdometry', 'driverMonitoringState',
+    'liveTorqueParameters', 'radarState', 'liveDelay',
+  ]
+
   def __init__(self):
     self.params = Params()
     self._can_handler = CanApiHandler()
@@ -62,10 +69,12 @@ class PitStopServer:
     self._car_state = None
     self._car_params = None
     self._device_state = None
+    self._diag = None   # cached diagnostic snapshot
     for target in (
       self._model_manager_loop,
       self._car_params_loop,
       self._device_state_loop,
+      self._diag_loop,
     ):
       threading.Thread(target=target, daemon=True).start()
 
@@ -90,6 +99,59 @@ class PitStopServer:
 
   def _device_state_loop(self):
     self._subscriber_loop('deviceState', '_device_state', 'deviceState')
+
+  def _diag_loop(self):
+    """Single background thread for service health, active alert, and process list."""
+    try:
+      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState'])
+      while self._running:
+        sm.update(2000)
+        services = []
+        for s in self._WATCHED_SERVICES:
+          readers = self._msgq_readers(s)
+          services.append({
+            'name': s,
+            'valid': bool(sm.valid[s]),
+            'alive': bool(sm.alive[s]),
+            'freq_ok': bool(sm.freq_ok[s]),
+            'readers': readers,
+          })
+        sd = sm['selfdriveState']
+        alert = {
+          'text1': str(sd.alertText1),
+          'text2': str(sd.alertText2),
+          'status': str(sd.alertStatus).split('.')[-1],
+          'type': str(sd.alertType),
+        } if sm.seen['selfdriveState'] else None
+        processes = []
+        if sm.seen['managerState']:
+          for p in sm['managerState'].processes:
+            processes.append({
+              'name': str(p.name),
+              'running': bool(p.running),
+              'should_run': bool(p.shouldBeRunning),
+            })
+        self._diag = {
+          'services': services,
+          'services_ok': all(s['valid'] and s['alive'] and s['freq_ok'] for s in services),
+          'alert': alert,
+          'processes': processes,
+        }
+    except Exception:
+      logger.warning("diag loop error", exc_info=True)
+
+  @staticmethod
+  def _msgq_readers(name):
+    """Read num_readers from msgq shared memory (first 8 bytes, uint64 LE)."""
+    try:
+      import struct
+      with open(f'/dev/shm/msgq_{name}', 'rb') as f:
+        return struct.unpack('<Q', f.read(8))[0]
+    except Exception:
+      return None
+
+  async def handle_diag(self, request):
+    return web.json_response(self._diag or {})
 
   # ---- System ----
 
@@ -765,6 +827,7 @@ class PitStopServer:
     app.router.add_get("/api/status", self.handle_status)
     app.router.add_get("/api/device", self.handle_device)
     app.router.add_get("/api/telemetry", self.handle_telemetry)
+    app.router.add_get("/api/diag", self.handle_diag)
 
     # Params
     app.router.add_get("/api/params", self.handle_params_list)

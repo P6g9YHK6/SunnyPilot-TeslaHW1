@@ -181,16 +181,72 @@ function renderTelemetryCard(t) {
   `;
 }
 
+/* ── Diagnostic card (services / alert / processes / error badge) ── */
+function renderDiagCard(d) {
+  const body = document.getElementById('card-diag').querySelector('.card-body');
+  const badge = document.getElementById('diag-summary-badge');
+  if (!d || !d.services) { body.textContent = 'No data'; return; }
+
+  const ok = d.services_ok;
+  badge.className = ok ? 'diag-badge diag-ok' : 'diag-badge diag-fail';
+  badge.textContent = ok ? 'OK' : 'ISSUES';
+
+  let alertHtml = '';
+  if (d.alert && d.alert.text1) {
+    const cls = d.alert.status === 'critical' ? 'diag-alert-crit' : 'diag-alert-warn';
+    alertHtml = `<div class="diag-alert ${cls}">${escHtml(d.alert.text1)}${d.alert.text2 ? ' — ' + escHtml(d.alert.text2) : ''}</div>`;
+  }
+
+  const svcRows = d.services.map(s => {
+    const rowCls = !s.alive ? 'diag-row-dead' : (!s.valid || !s.freq_ok) ? 'diag-row-warn' : '';
+    const readers = s.readers != null
+      ? `<span class="diag-readers${s.readers >= 14 ? ' diag-readers-hi' : ''}">${s.readers}/15</span>` : '';
+    return `<div class="diag-row ${rowCls}">
+      <span class="diag-svc-name">${s.name}</span>
+      <span class="diag-dots">
+        <span class="diag-dot ${s.valid?'dot-ok':'dot-fail'}" title="valid">V</span>
+        <span class="diag-dot ${s.alive?'dot-ok':'dot-fail'}" title="alive">A</span>
+        <span class="diag-dot ${s.freq_ok?'dot-ok':'dot-fail'}" title="freq">F</span>
+      </span>
+      ${readers}
+    </div>`;
+  }).join('');
+
+  const badProcs = (d.processes || []).filter(p => p.should_run && !p.running);
+  const procsHtml = badProcs.length
+    ? '<div class="diag-section-title">Dead processes</div>' +
+      badProcs.map(p => `<div class="diag-row diag-row-dead"><span class="diag-svc-name">${escHtml(p.name)}</span><span class="diag-dot dot-fail" style="font-size:0.65rem;padding:1px 4px">DEAD</span></div>`).join('')
+    : '';
+
+  body.innerHTML = alertHtml + svcRows + procsHtml;
+  updateLogsErrorBadge();
+}
+
+async function updateLogsErrorBadge() {
+  try {
+    const entries = await api('/api/logs?source=swaglog&level=40&limit=50', { silent: true });
+    const badge = document.getElementById('nav-logs-badge');
+    if (!badge) return;
+    if (entries && entries.length > 0) {
+      badge.textContent = entries.length >= 50 ? '50+' : String(entries.length);
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch (_) {}
+}
+
 function stopDashboardPoll() {}   // kept for loadPage() call-site compatibility
 
 async function loadDashboard() {
   try {
-    const [device, caps, status, activeModel, telemetry] = await Promise.all([
+    const [device, caps, status, activeModel, telemetry, diag] = await Promise.all([
       api('/api/device'),
       api('/api/capabilities'),
       api('/api/status'),
       api('/api/models/active'),
       api('/api/telemetry', { silent: true }).catch(() => null),
+      api('/api/diag', { silent: true }).catch(() => null),
     ]);
 
     document.getElementById('card-device').querySelector('.card-body').innerHTML = `
@@ -223,6 +279,7 @@ async function loadDashboard() {
     `;
 
     renderTelemetryCard(telemetry);
+    renderDiagCard(diag);
   } catch (e) {
     document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-status .card-body, #card-model .card-body')
       .forEach(el => el.textContent = 'Failed to load.');

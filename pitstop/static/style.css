@@ -1379,3 +1379,61 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
   .log-src-btn, .log-lvl-btn { font-size: 0.75rem; padding: 0.3rem 0.45rem; }
   #log-proc-wrap select { max-width: 120px; }
 }
+
+/* ─── Diagnostics card ───────────────────────────────────────── */
+.card-wide { grid-column: 1 / -1; }
+
+.diag-badge {
+  display: inline-block; font-size: 0.6rem; font-weight: 700;
+  padding: 0.1rem 0.45rem; border-radius: 99px; vertical-align: middle;
+  text-transform: uppercase; letter-spacing: 0.05em; margin-left: 0.4rem;
+}
+.diag-ok   { background: rgba(76,175,80,.18); color: #4caf50; }
+.diag-fail { background: var(--red-dim); color: var(--red); }
+
+.diag-alert {
+  font-size: 0.78rem; font-weight: 600; padding: 0.35rem 0.6rem;
+  border-radius: var(--radius); margin-bottom: 0.5rem;
+}
+.diag-alert-crit { background: var(--red-dim); color: var(--red); }
+.diag-alert-warn { background: var(--orange-dim,rgba(255,152,0,.15)); color: var(--orange,#ff9800); }
+
+.diag-row {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.18rem 0; border-bottom: 1px solid var(--border-soft);
+  font-size: 0.78rem;
+}
+.diag-row:last-child { border-bottom: none; }
+.diag-row-dead { background: rgba(255,60,60,.07); }
+.diag-row-warn { background: rgba(255,152,0,.07); }
+
+.diag-svc-name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diag-dots { display: flex; gap: 2px; flex-shrink: 0; }
+.diag-dot {
+  font-size: 0.6rem; font-weight: 700; padding: 0.1rem 0.3rem;
+  border-radius: 3px; letter-spacing: 0;
+}
+.dot-ok   { background: rgba(76,175,80,.18); color: #4caf50; }
+.dot-fail { background: var(--red-dim); color: var(--red); }
+
+.diag-readers {
+  font-size: 0.65rem; color: var(--text-muted); flex-shrink: 0;
+  font-family: 'SF Mono','Fira Code','Consolas',monospace;
+}
+.diag-readers-hi { color: var(--orange,#ff9800); font-weight: 600; }
+
+.diag-section-title {
+  font-size: 0.68rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 0.4rem 0 0.15rem; margin-top: 0.3rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Logs nav error badge */
+.nav-err-badge {
+  display: inline-block; background: var(--red); color: #fff;
+  font-size: 0.55rem; font-weight: 700; padding: 0.05rem 0.3rem;
+  border-radius: 99px; vertical-align: middle; margin-left: 3px;
+  letter-spacing: 0;
+}
+.nav-err-badge.hidden { display: none; }
