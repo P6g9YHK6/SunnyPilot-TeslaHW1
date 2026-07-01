@@ -15,6 +15,7 @@
       <button class="nav-btn" data-page="models">Models</button>
       <button class="nav-btn" data-page="params">Params</button>
       <button class="nav-btn" data-page="backup">Backup</button>
+      <button class="nav-btn" data-page="logs">Logs</button>
       <a class="nav-btn" href="/docs" target="_blank">API Docs</a>
     </div>
     <div class="nav-refresh">
@@ -109,6 +110,36 @@
         <button class="btn btn-primary" onclick="createBackup()">Create Backup</button>
       </div>
       <div id="backup-list">Loading backups...</div>
+    </div>
+
+    <div id="page-logs" class="page">
+      <h1>Logs</h1>
+      <div class="log-toolbar">
+        <div class="log-sources" id="log-sources">
+          <button class="log-src-btn active" data-src="swaglog">Swaglog</button>
+          <button class="log-src-btn" data-src="journal">Services</button>
+          <button class="log-src-btn" data-src="kernel">Kernel</button>
+          <button class="log-src-btn" data-src="crash">Crashes</button>
+        </div>
+        <div class="log-levels" id="log-levels">
+          <button class="log-lvl-btn active" data-level="0">All</button>
+          <button class="log-lvl-btn" data-level="10">Debug</button>
+          <button class="log-lvl-btn" data-level="20">Info</button>
+          <button class="log-lvl-btn" data-level="30">Warn</button>
+          <button class="log-lvl-btn" data-level="40">Error</button>
+        </div>
+        <div id="log-proc-wrap">
+          <select id="log-proc-select" onchange="onLogProcChange()">
+            <option value="">All services</option>
+          </select>
+        </div>
+        <input type="text" id="log-search" placeholder="Search logs…" oninput="onLogSearch()">
+        <div class="log-toolbar-right">
+          <span id="log-count"></span>
+          <button class="btn btn-sm" onclick="loadLogs()" title="Refresh">&#8635;</button>
+        </div>
+      </div>
+      <div id="logs-list" class="logs-list"></div>
     </div>
   </main>
 
