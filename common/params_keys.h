@@ -17,7 +17,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"AthenadRecentlyViewedRoutes", {PERSISTENT, STRING}},
     {"BootCount", {PERSISTENT, INT}},
     {"BridgeEnabled", {PERSISTENT | BACKUP, BOOL}},
-    {"CanApiEnabled", {PERSISTENT | BACKUP, BOOL}},
     {"CalibrationParams", {PERSISTENT, BYTES}},
     {"CameraDebugExpGain", {CLEAR_ON_MANAGER_START, STRING}},
     {"CameraDebugExpTime", {CLEAR_ON_MANAGER_START, STRING}},
@@ -229,8 +228,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
 
-    // sunnyweb params
-    {"SunnyWebEnabled", {PERSISTENT | BACKUP, BOOL}},
+    // pitstop params
+    {"PitStopEnabled", {PERSISTENT | BACKUP, BOOL}},
 
     // sunnypilot model params
     {"CameraOffset", {PERSISTENT | BACKUP, FLOAT, "0.0"}},

@@ -48,11 +48,11 @@ class DeveloperLayoutSP(DeveloperLayout):
                                                      "and even make some edits on some files from your browser. " +
                                                      "Requires you to connect to your comma locally via its IP address."), param="EnableCopyparty")
 
-    self.enable_sunnyweb_toggle = toggle_item_sp(tr("SunnyWeb Service"),
-                                                 tr("SunnyWeb is a local web UI for managing sunnypilot settings, " +
-                                                    "viewing device info, browsing params, and creating backups. " +
-                                                    "Accessible at http://<device-ip>:8800 from any browser on your local network."),
-                                                 param="SunnyWebEnabled")
+    self.enable_pitstop_toggle = toggle_item_sp(tr("PitStop Service"),
+                                                tr("PitStop is a local web UI for managing openpilot settings, " +
+                                                   "viewing device info, browsing params, creating backups, and sending CAN signals. " +
+                                                   "Accessible at http://<device-ip>/ from any browser on your local network."),
+                                                param="PitStopEnabled")
 
     self.prebuilt_toggle = toggle_item_sp(tr("Quickboot Mode"), "", param="QuickBootToggle", callback=self._on_prebuilt_toggled)
 
@@ -62,7 +62,7 @@ class DeveloperLayoutSP(DeveloperLayout):
       self.show_advanced_controls,
       self.enable_github_runner_toggle,
       self.enable_copyparty_toggle,
-      self.enable_sunnyweb_toggle,
+      self.enable_pitstop_toggle,
       self.prebuilt_toggle,
       self.error_log_btn,
     ]
