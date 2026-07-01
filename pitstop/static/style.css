@@ -936,6 +936,7 @@ html[data-theme="hc"] .btn-download { border-width: 2px; }
 }
 .fav-btn:hover { transform: scale(1.2); }
 .fav-btn.active { color: var(--orange); }
+.model-delete-btn { padding: 0.25rem 0.5rem; font-size: 0.85rem; min-height: 34px; }
 
 .model-badge {
   font-size: 0.64rem;

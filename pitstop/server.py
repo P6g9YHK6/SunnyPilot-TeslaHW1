@@ -390,6 +390,22 @@ class PitStopServer:
 
   # ---- Models ----
 
+  @staticmethod
+  def _model_file_cached(model_dir, fname):
+    """Return True if fname or its chunked equivalent exists on disk."""
+    return (os.path.isfile(os.path.join(model_dir, fname)) or
+            os.path.isfile(os.path.join(model_dir, fname + '.chunkmanifest')))
+
+  @staticmethod
+  def _bundle_files(bundle) -> set:
+    files = set()
+    for m in getattr(bundle, 'models', []):
+      if getattr(getattr(m, 'artifact', None), 'fileName', None):
+        files.add(m.artifact.fileName)
+      if getattr(getattr(m, 'metadata', None), 'fileName', None):
+        files.add(m.metadata.fileName)
+    return files
+
   async def handle_models_list(self, request):
     try:
       fetcher = ModelFetcher(self.params)
@@ -398,20 +414,53 @@ class PitStopServer:
       result = []
       for b in bundles:
         d = b.to_dict()
-        files = set()
-        for m in b.models:
-          if hasattr(m, 'artifact') and m.artifact.fileName:
-            files.add(m.artifact.fileName)
-          if hasattr(m, 'metadata') and m.metadata.fileName:
-            files.add(m.metadata.fileName)
+        files = self._bundle_files(b)
         d['isCached'] = bool(files) and all(
-          os.path.isfile(os.path.join(model_dir, f)) for f in files
+          self._model_file_cached(model_dir, f) for f in files
         )
+        d['cachedFiles'] = [f for f in files if self._model_file_cached(model_dir, f)]
         result.append(d)
       return web.json_response(result)
     except Exception as e:
       logger.exception("Failed to list models")
       return web.json_response({"error": str(e)}, status=500)
+
+  async def handle_models_delete(self, request):
+    name = request.match_info.get("name", "")
+    if not name:
+      raise web.HTTPBadRequest(text="Missing bundle name")
+    try:
+      fetcher = ModelFetcher(self.params)
+      bundles = fetcher.get_available_bundles()
+    except Exception as e:
+      raise web.HTTPInternalServerError(text=str(e)) from e
+    bundle = next((b for b in bundles if b.internalName == name), None)
+    if bundle is None:
+      raise web.HTTPNotFound(text=f"Bundle '{name}' not found")
+    model_dir = Paths.model_root()
+    files = self._bundle_files(bundle)
+    deleted = []
+    for fname in files:
+      base = os.path.join(model_dir, fname)
+      # Remove direct file
+      if os.path.isfile(base):
+        os.remove(base)
+        deleted.append(fname)
+      # Remove chunked files
+      manifest = base + '.chunkmanifest'
+      if os.path.isfile(manifest):
+        try:
+          num_chunks = int(open(manifest).read().strip())
+        except Exception:
+          num_chunks = 0
+        os.remove(manifest)
+        deleted.append(fname + '.chunkmanifest')
+        for i in range(num_chunks):
+          chunk = f"{base}.chunk{i+1:02d}of{num_chunks:02d}"
+          if os.path.isfile(chunk):
+            os.remove(chunk)
+            deleted.append(os.path.basename(chunk))
+    return web.json_response({"status": "ok", "deleted": deleted, "bundle": name})
 
   async def handle_models_active(self, request):
     active = get_active_bundle(self.params)
@@ -765,6 +814,7 @@ class PitStopServer:
     app.router.add_delete("/api/models/cache", self.handle_models_cache_clear)
     app.router.add_get("/api/models/favorites", self.handle_models_favorites)
     app.router.add_post("/api/models/favorites", self.handle_models_favorites)
+    app.router.add_delete("/api/models/{name}", self.handle_models_delete)
 
     # CAN API (fused)
     app.router.add_get("/api/v1/status", self.handle_can_status)
