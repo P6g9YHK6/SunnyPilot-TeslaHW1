@@ -59,7 +59,7 @@ function setAutoRefresh(seconds) {
   clearInterval(autoRefreshTimer);
   autoRefreshTimer = null;
   const s = parseInt(seconds, 10);
-  localStorage.setItem('pitstop_refresh', s);
+  localStorage.setItem('pitstop_refresh_v2', s);
   if (s > 0) {
     autoRefreshTimer = setInterval(() => loadPage(currentPage), s * 1000);
   }
@@ -140,8 +140,6 @@ function fmtDownloadStatus(s) {
 }
 
 /* ============ DASHBOARD ============ */
-let dashboardPollInterval = null;
-
 function fmtMps(v) {
   if (v === null || v === undefined) return '—';
   return (v * 3.6).toFixed(1) + ' km/h';
@@ -183,13 +181,9 @@ function renderTelemetryCard(t) {
   `;
 }
 
-function stopDashboardPoll() {
-  clearInterval(dashboardPollInterval);
-  dashboardPollInterval = null;
-}
+function stopDashboardPoll() {}   // kept for loadPage() call-site compatibility
 
 async function loadDashboard() {
-  stopDashboardPoll();
   try {
     const [device, caps, status, activeModel, telemetry] = await Promise.all([
       api('/api/device'),
@@ -229,13 +223,6 @@ async function loadDashboard() {
     `;
 
     renderTelemetryCard(telemetry);
-
-    dashboardPollInterval = setInterval(async () => {
-      try {
-        const t = await api('/api/telemetry', { silent: true });
-        renderTelemetryCard(t);
-      } catch {}
-    }, 2000);
   } catch (e) {
     document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-status .card-body, #card-model .card-body')
       .forEach(el => el.textContent = 'Failed to load.');
@@ -1357,10 +1344,12 @@ function cycleTheme() {
   const theme = localStorage.getItem('pitstop_theme') || 'dark';
   applyTheme(theme);
 
-  const saved = localStorage.getItem('pitstop_refresh');
-  if (saved && saved !== '0') {
-    const sel = document.getElementById('refresh-interval-select');
-    if (sel) { sel.value = saved; setAutoRefresh(saved); }
+  /* Auto-refresh defaults to Off; only restore if explicitly saved */
+  const saved = localStorage.getItem('pitstop_refresh_v2');
+  const sel = document.getElementById('refresh-interval-select');
+  if (sel && saved && saved !== '0') {
+    sel.value = saved;
+    setAutoRefresh(saved);
   }
 })();
 loadDashboard();

@@ -70,45 +70,27 @@ class PitStopServer:
     ):
       threading.Thread(target=target, daemon=True).start()
 
-  def _model_manager_loop(self):
+  def _subscriber_loop(self, topic, attr, field):
     try:
-      sock = messaging.sub_sock('modelManagerSP', conflate=True, timeout=1000)
+      sock = messaging.sub_sock(topic, conflate=True, timeout=1000)
       while self._running:
-        msg = messaging.recv_one_or_none(sock)
+        msg = messaging.recv_one(sock)   # blocks up to 1s — zero CPU when idle
         if msg is not None:
-          self._model_state = msg.modelManagerSP
+          setattr(self, attr, getattr(msg, field))
     except Exception:
-      logger.warning("modelManagerSP subscriber not available (no cereal context)")
+      logger.warning(f"{topic} subscriber not available")
+
+  def _model_manager_loop(self):
+    self._subscriber_loop('modelManagerSP', '_model_state', 'modelManagerSP')
 
   def _car_state_loop(self):
-    try:
-      sock = messaging.sub_sock('carState', conflate=True, timeout=1000)
-      while self._running:
-        msg = messaging.recv_one_or_none(sock)
-        if msg is not None:
-          self._car_state = msg.carState
-    except Exception:
-      logger.warning("carState subscriber not available")
+    self._subscriber_loop('carState', '_car_state', 'carState')
 
   def _car_params_loop(self):
-    try:
-      sock = messaging.sub_sock('carParams', conflate=True, timeout=1000)
-      while self._running:
-        msg = messaging.recv_one_or_none(sock)
-        if msg is not None:
-          self._car_params = msg.carParams
-    except Exception:
-      logger.warning("carParams subscriber not available")
+    self._subscriber_loop('carParams', '_car_params', 'carParams')
 
   def _device_state_loop(self):
-    try:
-      sock = messaging.sub_sock('deviceState', conflate=True, timeout=1000)
-      while self._running:
-        msg = messaging.recv_one_or_none(sock)
-        if msg is not None:
-          self._device_state = msg.deviceState
-    except Exception:
-      logger.warning("deviceState subscriber not available")
+    self._subscriber_loop('deviceState', '_device_state', 'deviceState')
 
   # ---- System ----
 
