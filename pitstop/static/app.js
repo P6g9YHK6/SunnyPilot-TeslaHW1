@@ -10,7 +10,8 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 });
 
 function loadPage(name) {
-  if (name !== 'settings') stopSettingsStatusPoll();
+  if (name !== 'settings') { stopSettingsStatusPoll(); if (Object.keys(pendingChanges).length) discardPendingChanges(); }
+  if (name !== 'dashboard') stopDashboardPoll();
   if (name === 'dashboard') loadDashboard();
   if (name === 'settings') loadSettings();
   if (name === 'models') loadModels();
@@ -85,13 +86,59 @@ function fmtDownloadStatus(s) {
 }
 
 /* ============ DASHBOARD ============ */
+let dashboardPollInterval = null;
+
+function fmtMps(v) {
+  if (v === null || v === undefined) return '—';
+  return (v * 3.6).toFixed(1) + ' km/h';
+}
+function fmtPct(v) {
+  if (v === null || v === undefined) return '—';
+  return v.toFixed(1) + '%';
+}
+function fmtTemp(v) {
+  if (v === null || v === undefined) return '—';
+  return v.toFixed(1) + ' °C';
+}
+
+function renderTelemetryCard(t) {
+  if (!t) { document.getElementById('card-telemetry').querySelector('.card-body').textContent = 'No data'; return; }
+  const ign = t.ignition;
+  const ignBadge = ign === null
+    ? '<span class="badge-ign badge-ign-unknown">—</span>'
+    : ign
+      ? '<span class="badge-ign badge-ign-on">ON</span>'
+      : '<span class="badge-ign badge-ign-off">OFF</span>';
+  const car = t.car || {};
+  const motion = t.motion || {};
+  const dev = t.device || {};
+  document.getElementById('card-telemetry').querySelector('.card-body').innerHTML = `
+    <div class="row"><span class="label">Ignition</span><span class="value">${ignBadge}</span></div>
+    <div class="row"><span class="label">Car</span><span class="value">${car.brand || '—'}</span></div>
+    <div class="row"><span class="label">Fingerprint</span><span class="value" style="font-size:0.72rem">${car.fingerprint || '—'}</span></div>
+    <div class="row"><span class="label">Speed</span><span class="value">${fmtMps(motion.speed_ms)}</span></div>
+    <div class="row"><span class="label">Gear</span><span class="value">${motion.gear || '—'}</span></div>
+    <div class="row"><span class="label">CPU</span><span class="value">${fmtPct(dev.cpu_pct)}</span></div>
+    <div class="row"><span class="label">RAM</span><span class="value">${fmtPct(dev.memory_pct)}</span></div>
+    <div class="row"><span class="label">Temp</span><span class="value">${fmtTemp(dev.temp_c)}</span></div>
+    <div class="row"><span class="label">Free</span><span class="value">${fmtPct(dev.free_space_pct)}</span></div>
+  `;
+}
+
+function stopDashboardPoll() {
+  clearInterval(dashboardPollInterval);
+  dashboardPollInterval = null;
+}
+
 async function loadDashboard() {
+  stopDashboardPoll();
   try {
-    const [device, caps, status, activeModel] = await Promise.all([
+    const [device, caps, status, activeModel, telemetry] = await Promise.all([
       api('/api/device'),
       api('/api/capabilities'),
       api('/api/status'),
       api('/api/models/active'),
+      api('/api/telemetry', { silent: true }).catch(() => null),
     ]);
 
     document.getElementById('card-device').querySelector('.card-body').innerHTML = `
@@ -122,6 +169,15 @@ async function loadDashboard() {
       <div class="row"><span class="label">Model</span><span class="value">${activeModel.displayName || activeModel.internalName || '—'}</span></div>
       <div class="row"><span class="label">Runner</span><span class="value">${activeModel.runner !== undefined ? fmtRunner(activeModel.runner) : 'Stock'}</span></div>
     `;
+
+    renderTelemetryCard(telemetry);
+
+    dashboardPollInterval = setInterval(async () => {
+      try {
+        const t = await api('/api/telemetry', { silent: true });
+        renderTelemetryCard(t);
+      } catch {}
+    }, 2000);
   } catch (e) {
     document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-status .card-body, #card-model .card-body')
       .forEach(el => el.textContent = 'Failed to load.');
@@ -135,6 +191,85 @@ let settingsParamCache = {};
 let settingsStatus = { is_offroad: true, is_metric: false };
 let reEvalPending = false;
 let settingsStatusInterval = null;
+
+/* ---- Pending changes queue ---- */
+let pendingChanges = {};
+// shape: { [key]: { oldValue, newValue, label, needsCycle } }
+
+function fmtPendingVal(v) {
+  if (v === null || v === undefined) return '—';
+  if (v === '1' || v === true) return 'On';
+  if (v === '0' || v === false) return 'Off';
+  return String(v);
+}
+
+function renderPendingBar() {
+  const bar = document.getElementById('pending-bar');
+  const entries = Object.entries(pendingChanges);
+  if (!entries.length) { bar.classList.add('hidden'); return; }
+
+  const cycleCount = entries.filter(([, e]) => e.needsCycle).length;
+  const warningHtml = cycleCount
+    ? `<span class="pending-warn">&#9888; ${cycleCount} require${cycleCount === 1 ? 's' : ''} a drive cycle</span>`
+    : '';
+
+  const listHtml = entries.map(([key, e]) =>
+    `<span class="pending-entry">${e.label || key}: <b>${fmtPendingVal(e.oldValue)}</b> &#8594; <b>${fmtPendingVal(e.newValue)}</b></span>`
+  ).join('');
+
+  bar.innerHTML = `
+    <div class="pending-summary">
+      <span class="pending-count">${entries.length} unsaved change${entries.length !== 1 ? 's' : ''}</span>
+      ${warningHtml}
+      <div class="pending-list">${listHtml}</div>
+    </div>
+    <div class="pending-actions">
+      <button class="btn btn-sm" onclick="discardPendingChanges()">Discard</button>
+      <button class="btn btn-sm btn-primary" onclick="applyPendingChanges()">Apply</button>
+    </div>
+  `;
+  bar.classList.remove('hidden');
+}
+
+async function applyPendingChanges() {
+  const entries = Object.entries(pendingChanges);
+  if (!entries.length) return;
+  const results = await Promise.allSettled(entries.map(async ([key, e]) => {
+    await api(`/api/params/${key}`, { method: 'POST', body: JSON.stringify({ value: e.newValue }) });
+    return key;
+  }));
+  const failed = results.filter(r => r.status === 'rejected').length;
+  const succeeded = results.filter(r => r.status === 'fulfilled');
+  succeeded.forEach(r => { delete pendingChanges[r.value]; });
+  if (failed) {
+    toast(`${failed} setting${failed !== 1 ? 's' : ''} failed to save`, 'error');
+  } else {
+    toast(`${entries.length} setting${entries.length !== 1 ? 's' : ''} saved`, 'success');
+  }
+  renderPendingBar();
+  maybeReEval();
+}
+
+function discardPendingChanges() {
+  Object.entries(pendingChanges).forEach(([key, e]) => {
+    settingsParamCache[key] = e.oldValue;
+  });
+  pendingChanges = {};
+  renderPendingBar();
+  maybeReEval();
+}
+
+function queueChange(key, newValue, label, needsCycle) {
+  if (!(key in pendingChanges)) {
+    pendingChanges[key] = { oldValue: settingsParamCache[key], newValue, label, needsCycle: !!needsCycle };
+  } else {
+    pendingChanges[key].newValue = newValue;
+    pendingChanges[key].needsCycle = !!needsCycle;
+  }
+  settingsParamCache[key] = newValue;
+  renderPendingBar();
+  maybeReEval();
+}
 
 /* ---- Rule evaluator ---- */
 function evaluateRule(rule, caps, paramCache, status) {
@@ -167,6 +302,51 @@ function evaluateRule(rule, caps, paramCache, status) {
 function evaluateRules(rules, caps, paramCache, status) {
   if (!rules || !rules.length) return true;
   return rules.every(r => evaluateRule(r, caps, paramCache, status));
+}
+
+/* ---- Number selector modal ---- */
+let _nmKey = null, _nmVal = 0, _nmMin = -Infinity, _nmMax = Infinity, _nmStep = 1;
+let _nmLabel = '', _nmNeedsCycle = false;
+
+function openNumModal(key, val, min, max, step, label, needsCycle) {
+  _nmKey = key;
+  _nmVal = parseFloat(val) || 0;
+  _nmMin = min !== '' && min !== undefined ? parseFloat(min) : -Infinity;
+  _nmMax = max !== '' && max !== undefined ? parseFloat(max) : Infinity;
+  _nmStep = parseFloat(step) || 1;
+  _nmLabel = label;
+  _nmNeedsCycle = !!needsCycle;
+
+  const body = `
+    <div class="num-modal">
+      <div class="num-display" id="nm-display">${_nmVal}</div>
+      <div class="num-btns">
+        <button class="btn btn-sm" onclick="nmStep(-10)">&#8722;10</button>
+        <button class="btn btn-sm" onclick="nmStep(-1)">&#8722;1</button>
+        <button class="btn btn-sm" onclick="nmStep(1)">+1</button>
+        <button class="btn btn-sm" onclick="nmStep(10)">+10</button>
+      </div>
+    </div>`;
+
+  showModal(label, body, [
+    { label: 'Cancel', action: '', cls: '' },
+    { label: 'OK', action: 'nmConfirm', cls: 'btn-primary' },
+  ]);
+}
+
+function nmStep(n) {
+  _nmVal = Math.min(_nmMax, Math.max(_nmMin, _nmVal + n * _nmStep));
+  // Round to avoid floating point noise
+  const precision = String(_nmStep).includes('.') ? String(_nmStep).split('.')[1].length : 0;
+  _nmVal = parseFloat(_nmVal.toFixed(precision));
+  const el = document.getElementById('nm-display');
+  if (el) el.textContent = _nmVal;
+}
+
+function nmConfirm() {
+  if (_nmKey) {
+    queueChange(_nmKey, String(_nmVal), _nmLabel, _nmNeedsCycle);
+  }
 }
 
 /* ---- Build title with suffix ---- */
@@ -225,8 +405,16 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
         controlHtml += `<option value="${o.value}" ${currentVal === String(o.value) ? 'selected' : ''} ${!optEnabled ? 'disabled' : ''}>${o.label}</option>`;
       });
       controlHtml += `</select>`;
+    } else if (item.min !== undefined || item.max !== undefined) {
+      /* Numeric option — stepper button */
+      const unit = buildUnit(item, status.is_metric);
+      const safeTitle = title.replace(/'/g, "\\'");
+      controlHtml = `<button class="num-edit-btn" data-param="${key}"
+        data-min="${item.min ?? ''}" data-max="${item.max ?? ''}" data-step="${item.step ?? 1}"
+        data-label="${safeTitle}" data-needs-cycle="${item.needs_onroad_cycle ? '1' : ''}"
+        ${!enabled ? 'disabled' : ''}>${fmtVal(paramCache[key])}${unit}</button>`;
     } else {
-      /* option widget with no predefined choices = display current value */
+      /* option widget with no predefined choices and no range = display only */
       const unit = buildUnit(item, status.is_metric);
       controlHtml = `<span class="item-value-mono">${fmtVal(paramCache[key])}${unit}</span>`;
     }
@@ -411,36 +599,47 @@ function renderSettingsUI() {
   }
   container.innerHTML = html;
 
-  /* Wire up toggle events */
+  /* Wire up toggle events — queue change, don't apply immediately */
   container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-    cb.addEventListener('change', async (e) => {
+    cb.addEventListener('change', (e) => {
       const key = e.target.dataset.param;
-      const val = e.target.checked;
-      try {
-        await api(`/api/params/${key}/bool`, { method: 'PUT', body: JSON.stringify({ value: val }) });
-        settingsParamCache[key] = val ? '1' : '0';
-        maybeReEval();
-        toast('Saved', 'success');
-      } catch { e.target.checked = !val; }
+      const val = e.target.checked ? '1' : '0';
+      const labelEl = e.target.closest('.section-item')?.querySelector('.item-title');
+      const label = labelEl ? labelEl.textContent.trim() : key;
+      const needsCycle = e.target.closest('.section-item')?.querySelector('.badge-restart') !== null;
+      queueChange(key, val, label, needsCycle);
     });
   });
 
-  /* Wire up all <select> controls (option + multiple_button widgets) */
+  /* Wire up all <select> controls — queue change */
   container.querySelectorAll('select.setting-select').forEach(sel => {
-    sel.addEventListener('change', async (e) => {
+    sel.addEventListener('change', (e) => {
       const key = e.target.dataset.param;
       const val = e.target.value;
-      const prev = settingsParamCache[key];
-      try {
-        await api(`/api/params/${key}`, { method: 'POST', body: JSON.stringify({ value: val }) });
-        settingsParamCache[key] = val;
-        maybeReEval();
-        toast(`Saved`, 'success');
-      } catch { e.target.value = prev ?? ''; }
+      const labelEl = e.target.closest('.section-item')?.querySelector('.item-title');
+      const label = labelEl ? labelEl.textContent.trim() : key;
+      const needsCycle = e.target.closest('.section-item')?.querySelector('.badge-restart') !== null;
+      queueChange(key, val, label, needsCycle);
     });
   });
 
-  /* Wire up button events */
+  /* Wire up numeric stepper buttons */
+  container.querySelectorAll('button.num-edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const key = e.target.dataset.param;
+      openNumModal(
+        key,
+        settingsParamCache[key],
+        e.target.dataset.min,
+        e.target.dataset.max,
+        e.target.dataset.step,
+        e.target.dataset.label,
+        e.target.dataset.needsCycle === '1',
+      );
+    });
+  });
+
+  /* Wire up button events — apply immediately (one-shot action, not a setting) */
   container.querySelectorAll('button.action-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const key = e.target.dataset.param;

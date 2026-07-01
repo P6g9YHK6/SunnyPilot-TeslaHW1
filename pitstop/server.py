@@ -59,8 +59,16 @@ class PitStopServer:
     self._can_handler = CanApiHandler()
     self._running = True
     self._model_state = None
-    self._model_thread = threading.Thread(target=self._model_manager_loop, daemon=True)
-    self._model_thread.start()
+    self._car_state = None
+    self._car_params = None
+    self._device_state = None
+    for target in (
+      self._model_manager_loop,
+      self._car_state_loop,
+      self._car_params_loop,
+      self._device_state_loop,
+    ):
+      threading.Thread(target=target, daemon=True).start()
 
   def _model_manager_loop(self):
     try:
@@ -72,7 +80,79 @@ class PitStopServer:
     except Exception:
       logger.warning("modelManagerSP subscriber not available (no cereal context)")
 
+  def _car_state_loop(self):
+    try:
+      sock = messaging.sub_sock('carState', conflate=True, timeout=1000)
+      while self._running:
+        msg = messaging.recv_one_or_none(sock)
+        if msg is not None:
+          self._car_state = msg.carState
+    except Exception:
+      logger.warning("carState subscriber not available")
+
+  def _car_params_loop(self):
+    try:
+      sock = messaging.sub_sock('carParams', conflate=True, timeout=1000)
+      while self._running:
+        msg = messaging.recv_one_or_none(sock)
+        if msg is not None:
+          self._car_params = msg.carParams
+    except Exception:
+      logger.warning("carParams subscriber not available")
+
+  def _device_state_loop(self):
+    try:
+      sock = messaging.sub_sock('deviceState', conflate=True, timeout=1000)
+      while self._running:
+        msg = messaging.recv_one_or_none(sock)
+        if msg is not None:
+          self._device_state = msg.deviceState
+    except Exception:
+      logger.warning("deviceState subscriber not available")
+
   # ---- System ----
+
+  async def handle_telemetry(self, request):
+    cs = self._car_state
+    cp = self._car_params
+    ds = self._device_state
+    try:
+      gear = str(cs.gearShifter) if cs is not None else None
+      # capnp enum stringifies as "GearShifter.drive" etc. — strip prefix
+      if gear and '.' in gear:
+        gear = gear.split('.')[-1]
+    except Exception:
+      gear = None
+    try:
+      net_type = str(ds.networkType).split('.')[-1] if ds is not None else None
+    except Exception:
+      net_type = None
+    try:
+      thermal = str(ds.thermalStatus).split('.')[-1] if ds is not None else None
+    except Exception:
+      thermal = None
+    return web.json_response({
+      "ignition": bool(ds.started) if ds is not None else None,
+      "started": bool(ds.started) if ds is not None else None,
+      "car": {
+        "brand": str(cp.brand) if cp is not None else None,
+        "fingerprint": str(cp.carFingerprint) if cp is not None else None,
+        "vin": str(cp.carVin) if cp is not None else None,
+      },
+      "motion": {
+        "speed_ms": float(cs.vEgo) if cs is not None else None,
+        "gear": gear,
+        "standstill": bool(cs.standstill) if cs is not None else None,
+      },
+      "device": {
+        "temp_c": float(ds.maxTempC) if ds is not None else None,
+        "memory_pct": float(ds.memoryUsagePercent) if ds is not None else None,
+        "cpu_pct": float(ds.cpuUsagePercent[0]) if ds is not None and len(ds.cpuUsagePercent) > 0 else None,
+        "free_space_pct": float(ds.freeSpacePercent) if ds is not None else None,
+        "network_type": net_type,
+        "thermal_status": thermal,
+      },
+    })
 
   async def handle_status(self, request):
     return web.json_response({
@@ -320,7 +400,7 @@ class PitStopServer:
     index = body.get("index")
     if index is None:
       raise web.HTTPBadRequest(text="Missing 'index'")
-    self.params.put("ModelManager_DownloadIndex", str(index))
+    self.params.put("ModelManager_DownloadIndex", int(index))
     return web.json_response({"status": "ok", "index": index})
 
   async def handle_models_select_default(self, request):
@@ -468,6 +548,7 @@ class PitStopServer:
     # System
     app.router.add_get("/api/status", self.handle_status)
     app.router.add_get("/api/device", self.handle_device)
+    app.router.add_get("/api/telemetry", self.handle_telemetry)
 
     # Params
     app.router.add_get("/api/params", self.handle_params_list)
