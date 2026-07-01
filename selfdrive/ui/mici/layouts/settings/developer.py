@@ -1,12 +1,16 @@
+import os
+import subprocess
 from collections.abc import Callable
+
 from openpilot.common.time_helpers import system_time_valid
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, BigParamControl, BigCircleParamControl, GreyBigButton
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, BigParamControl, BigCircleParamControl, BigCircleToggle, GreyBigButton
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigInputDialog, BigConfirmationCircleButton
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.widgets.ssh_key import SshKeyFetcher
+from openpilot.selfdrive.ui.mici.layouts.settings.fork_select_ui import ForkSelectUIMici
 
 
 class AlphaLongConfirmPage(NavScroller):
@@ -66,10 +70,18 @@ class DeveloperLayoutMici(NavScroller):
     self._ssh_keys_btn = BigButton("SSH keys", "Not set" if not github_username else github_username, icon=txt_ssh)
     self._ssh_keys_btn.set_click_callback(ssh_keys_callback)
 
-    # adb, ssh, ssh keys, debug mode, joystick debug mode, longitudinal maneuver mode, ip address
+    # Fork switch button
+    self._fork_btn = BigButton("Fork", self._get_current_fork_display(), sub_wrap_text=False, sub_elide=True)
+    self._fork_btn.set_click_callback(self._on_select_fork)
+
+    # adb, ssh, ssh keys, zmq, can api, fork, debug mode, joystick debug mode, etc.
     # ******** Main Scroller ********
     self._adb_toggle = BigCircleParamControl(gui_app.texture("icons_mici/adb_short.png", 82, 82), "AdbEnabled", icon_offset=(0, 12))
     self._ssh_toggle = BigCircleParamControl(gui_app.texture("icons_mici/ssh_short.png", 82, 82), "SshEnabled", icon_offset=(0, 12))
+    self._bridge_toggle = BigParamControl("enable zmq bridge", "BridgeEnabled")
+    self._can_api_toggle = BigToggle("enable can api (http)",
+                                     initial_state=ui_state.params.get_bool("CanApiEnabled"),
+                                     toggle_callback=self._on_enable_can_api)
     self._joystick_toggle = BigToggle("joystick debug mode",
                                       initial_state=ui_state.params.get_bool("JoystickDebugMode"),
                                       toggle_callback=self._on_joystick_debug_mode)
@@ -90,6 +102,9 @@ class DeveloperLayoutMici(NavScroller):
       self._adb_toggle,
       self._ssh_toggle,
       self._ssh_keys_btn,
+      self._bridge_toggle,
+      self._can_api_toggle,
+      self._fork_btn,
       self._joystick_toggle,
       self._long_maneuver_toggle,
       self._lat_maneuver_toggle,
@@ -101,13 +116,15 @@ class DeveloperLayoutMici(NavScroller):
     self._refresh_toggles = (
       ("AdbEnabled", self._adb_toggle),
       ("SshEnabled", self._ssh_toggle),
+      ("BridgeEnabled", self._bridge_toggle),
+      ("CanApiEnabled", self._can_api_toggle),
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ShowDebugInfo", self._debug_mode_toggle),
     )
-    onroad_blocked_toggles = (self._adb_toggle, self._joystick_toggle)
+    onroad_blocked_toggles = (self._adb_toggle, self._can_api_toggle, self._joystick_toggle)
     release_blocked_toggles = (self._joystick_toggle, self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
     engaged_blocked_toggles = (self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
 
@@ -136,6 +153,7 @@ class DeveloperLayoutMici(NavScroller):
 
   def show_event(self):
     super().show_event()
+    self._fork_btn.set_value(self._get_current_fork_display())
     self._update_toggles()
 
   def _update_toggles(self):
@@ -160,6 +178,10 @@ class DeveloperLayoutMici(NavScroller):
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
+
+
+  def _on_enable_can_api(self, state: bool):
+    ui_state.params.put_bool("CanApiEnabled", state)
 
   def _on_joystick_debug_mode(self, state: bool):
     ui_state.params.put_bool("JoystickDebugMode", state, block=True)
@@ -197,3 +219,18 @@ class DeveloperLayoutMici(NavScroller):
       gui_app.push_widget(AlphaLongConfirmPage(lambda: do_toggle(True)))
     else:
       do_toggle(False)
+
+  def _on_select_fork(self):
+    gui_app.push_widget(ForkSelectUIMici())
+
+  def _get_current_fork_display(self):
+    try:
+      target = os.readlink("/data/openpilot")
+      repo_dir = os.path.basename(target).replace("_", "/")
+      branch = subprocess.check_output(
+        ["git", "-C", target, "branch", "--show-current"],
+        stderr=subprocess.DEVNULL, timeout=5,
+      ).decode().strip()
+      return f"{repo_dir}\n{branch}" if branch else repo_dir
+    except Exception:
+      return "unknown"
