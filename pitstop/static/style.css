@@ -292,6 +292,33 @@ h1 {
 }
 .item-detail-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ---- Offroad status banner (top of settings page) ---- */
+.offroad-banner {
+  border-radius: var(--radius);
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.offroad-banner-on  { background: var(--green-dim);  color: var(--green);  border: 1px solid var(--green); }
+.offroad-banner-off { background: var(--orange-dim); color: var(--orange); border: 1px solid var(--orange); }
+
+.badge-offroad {
+  display: inline-block;
+  font-size: 0.6rem;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  margin-left: 0.35rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 .badge-restart {
   display: inline-block;
   font-size: 0.6rem;

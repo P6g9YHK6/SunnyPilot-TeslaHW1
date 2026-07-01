@@ -331,6 +331,16 @@ function evaluateRules(rules, caps, paramCache, status) {
   return rules.every(r => evaluateRule(r, caps, paramCache, status));
 }
 
+function hasOffroadOnly(rules) {
+  if (!rules || !rules.length) return false;
+  return rules.some(r => {
+    if (r.type === 'offroad_only') return true;
+    if (r.condition) return hasOffroadOnly([r.condition]);
+    if (r.conditions) return hasOffroadOnly(r.conditions);
+    return false;
+  });
+}
+
 /* ---- Number selector modal ---- */
 let _nmKey = null, _nmVal = 0, _nmMin = -Infinity, _nmMax = Infinity, _nmStep = 1;
 let _nmLabel = '', _nmNeedsCycle = false;
@@ -402,7 +412,8 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
   const title = buildTitle(item, paramCache);
   const desc = item.description || '';
   const widget = item.widget || 'toggle';
-  const needsCycle = item.needs_onroad_cycle ? '<span class="badge-restart">Restart</span>' : '';
+  const needsCycle  = item.needs_onroad_cycle ? '<span class="badge-restart">Restart</span>' : '';
+  const offroadOnly = hasOffroadOnly(item.enablement) ? '<span class="badge-offroad">Offroad</span>' : '';
   const isBlocked = !!item.blocked;
   const vis = evaluateRules(item.visibility, caps, paramCache, status);
   const enabled = !isBlocked && evaluateRules(item.enablement, caps, paramCache, status);
@@ -483,7 +494,7 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
   }
 
   let html = `<div class="section-item ${extraClasses}"${indentStyle}>`;
-  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}</div>${descHtml}</div>`;
+  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}${offroadOnly}</div>${descHtml}</div>`;
   html += `<div class="item-control">${controlHtml}</div>`;
   html += `</div>`;
 
@@ -606,6 +617,22 @@ function renderSettingsUI() {
   const pc = settingsParamCache;
   const st = settingsStatus;
   const container = document.getElementById('settings-panels');
+
+  /* Offroad status banner */
+  let offroadBanner = document.getElementById('offroad-status-banner');
+  if (!offroadBanner) {
+    offroadBanner = document.createElement('div');
+    offroadBanner.id = 'offroad-status-banner';
+    container.parentElement.insertBefore(offroadBanner, container);
+  }
+  if (st.is_offroad) {
+    offroadBanner.className = 'offroad-banner offroad-banner-on';
+    offroadBanner.innerHTML = '&#9989; Offroad &mdash; all settings available';
+  } else {
+    offroadBanner.className = 'offroad-banner offroad-banner-off';
+    offroadBanner.innerHTML = '&#128664; Onroad &mdash; <span class="badge-offroad">Offroad</span> settings are locked';
+  }
+
   let html = '';
   for (const panel of schema.panels || []) {
     if (!evaluateRules(panel.visibility, caps, pc, st)) continue;
