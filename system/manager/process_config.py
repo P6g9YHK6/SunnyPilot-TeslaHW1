@@ -74,11 +74,8 @@ def use_copyparty(started, params, CP: car.CarParams) -> bool:
 def use_bridge(started, params, CP: car.CarParams) -> bool:
   return bool(params.get_bool("BridgeEnabled"))
 
-def use_sunnyweb(started, params, CP: car.CarParams) -> bool:
-  return bool(params.get_bool("SunnyWebEnabled"))
-
-def use_can_api(started, params, CP: car.CarParams) -> bool:
-  return bool(params.get_bool("CanApiEnabled"))
+def use_pitstop(started, params, CP: car.CarParams) -> bool:
+  return bool(params.get_bool("PitStopEnabled"))
 
 def sunnylink_ready_shim(started, params, CP: car.CarParams) -> bool:
   """Shim for sunnylink_ready to match the process manager signature."""
@@ -165,7 +162,6 @@ procs = [
 
   # debug procs
   NativeProcess("bridge", "cereal/messaging", ["./bridge"], use_bridge),
-  PythonProcess("can_api", "selfdrive.controls.lib.can_api.server", use_can_api),
   PythonProcess("webrtcd", "system.webrtc.webrtcd", notcar),
   PythonProcess("webjoystick", "tools.bodyteleop.web", notcar),
   PythonProcess("joystick", "tools.joystick.joystick_control", and_(joystick, iscar)),
@@ -175,8 +171,8 @@ procs = [
   PythonProcess("sunnylink_registration_manager", "sunnypilot.sunnylink.registration_manager", sunnylink_need_register_shim),
   PythonProcess("statsd_sp", "sunnypilot.sunnylink.statsd", and_(always_run, sunnylink_ready_shim)),
 
-  # sunnyweb
-  PythonProcess("sunnyweb", "sunnyweb.server", use_sunnyweb),
+  # pitstop
+  PythonProcess("pitstop", "pitstop.server", use_pitstop),
 ]
 
 # sunnypilot

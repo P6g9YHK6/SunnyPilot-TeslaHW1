@@ -58,12 +58,9 @@ class DeveloperLayoutMici(NavScroller):
     self._adb_toggle = BigCircleParamControl(gui_app.texture("icons_mici/adb_short.png", 82, 82), "AdbEnabled", icon_offset=(0, 12))
     self._ssh_toggle = BigCircleParamControl(gui_app.texture("icons_mici/ssh_short.png", 82, 82), "SshEnabled", icon_offset=(0, 12))
     self._bridge_toggle = BigParamControl("enable zmq bridge", "BridgeEnabled")
-    self._can_api_toggle = BigToggle("enable can api (http)",
-                                     initial_state=ui_state.params.get_bool("CanApiEnabled"),
-                                     toggle_callback=self._on_enable_can_api)
-    self._sunnyweb_toggle = BigToggle("sunnyweb (http local ui)",
-                                      initial_state=ui_state.params.get_bool("SunnyWebEnabled"),
-                                      toggle_callback=self._on_enable_sunnyweb)
+    self._pitstop_toggle = BigToggle("PitStop (local web UI :80)",
+                                     initial_state=ui_state.params.get_bool("PitStopEnabled"),
+                                     toggle_callback=self._on_enable_pitstop)
     self._joystick_toggle = BigToggle("joystick debug mode",
                                       initial_state=ui_state.params.get_bool("JoystickDebugMode"),
                                       toggle_callback=self._on_joystick_debug_mode)
@@ -85,8 +82,7 @@ class DeveloperLayoutMici(NavScroller):
       self._ssh_toggle,
       self._ssh_keys_btn,
       self._bridge_toggle,
-      self._can_api_toggle,
-      self._sunnyweb_toggle,
+      self._pitstop_toggle,
       self._fork_btn,
       self._joystick_toggle,
       self._long_maneuver_toggle,
@@ -100,15 +96,14 @@ class DeveloperLayoutMici(NavScroller):
       ("AdbEnabled", self._adb_toggle),
       ("SshEnabled", self._ssh_toggle),
       ("BridgeEnabled", self._bridge_toggle),
-      ("CanApiEnabled", self._can_api_toggle),
-      ("SunnyWebEnabled", self._sunnyweb_toggle),
+      ("PitStopEnabled", self._pitstop_toggle),
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ShowDebugInfo", self._debug_mode_toggle),
     )
-    onroad_blocked_toggles = (self._adb_toggle, self._can_api_toggle, self._sunnyweb_toggle, self._joystick_toggle)
+    onroad_blocked_toggles = (self._adb_toggle, self._pitstop_toggle, self._joystick_toggle)
     release_blocked_toggles = (self._joystick_toggle, self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
     engaged_blocked_toggles = (self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
 
@@ -170,11 +165,8 @@ class DeveloperLayoutMici(NavScroller):
       item.set_checked(ui_state.params.get_bool(key))
 
 
-  def _on_enable_can_api(self, state: bool):
-    ui_state.params.put_bool("CanApiEnabled", state)
-
-  def _on_enable_sunnyweb(self, state: bool):
-    ui_state.params.put_bool("SunnyWebEnabled", state)
+  def _on_enable_pitstop(self, state: bool):
+    ui_state.params.put_bool("PitStopEnabled", state)
 
   def _on_joystick_debug_mode(self, state: bool):
     ui_state.params.put_bool("JoystickDebugMode", state)
