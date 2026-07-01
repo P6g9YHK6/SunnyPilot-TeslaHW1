@@ -5,6 +5,7 @@ from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigConfirmationDialog
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.selfdrive.ui.widgets.fork_switcher import ForkSwitchExecuting
 
 
 class ForkButton(BigButton):
@@ -21,7 +22,7 @@ class ForkSelectUIMici(NavScroller):
     for fork in self._forks:
       key = str(fork["key"]) if fork["key"] else fork.get("_key", "")
       btn = ForkButton(key, fork["org"], fork["repo"], fork["branch"], fork.get("discovered", False))
-      btn.set_click_callback(lambda k=key: self._on_fork_selected(k))
+      btn.set_click_callback(lambda f=fork: self._on_fork_selected(f))
       self._scroller.add_widget(btn)
 
   @staticmethod
@@ -94,17 +95,17 @@ class ForkSelectUIMici(NavScroller):
       })
     return discovered
 
-  def _on_fork_selected(self, key: str):
+  def _on_fork_selected(self, fork: dict):
     dlg = BigConfirmationDialog(
       "Switch Fork",
       gui_app.texture("icons_mici/settings/device/reboot.png", 64, 70),
-      confirm_callback=lambda: self._switch_fork(key),
+      confirm_callback=lambda: self._switch_fork(fork),
     )
     gui_app.push_widget(dlg)
 
   @staticmethod
-  def _switch_fork(key: str):
-    subprocess.Popen(
-      ["bash", "/data/openpilot/tools/op.sh", "fork", key],
-      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+  def _switch_fork(fork: dict):
+    repo = f"{fork['org']}/{fork['repo']}"
+    branch = fork["branch"]
+    fork_num = int(fork["key"]) if str(fork.get("key", "0")).isdigit() else 0
+    gui_app.push_widget(ForkSwitchExecuting(fork_num, repo, branch))
