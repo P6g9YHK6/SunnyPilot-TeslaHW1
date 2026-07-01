@@ -1141,8 +1141,32 @@ async function doDeleteBackup(name) {
   } catch (e) { toast('Delete failed', 'error'); }
 }
 
+/* ============ THEME ============ */
+const THEMES = ['dark', 'light', 'hc'];
+const THEME_ICONS = { dark: '☾', light: '☀', hc: '◈' };
+const THEME_LABELS = { dark: 'Dark', light: 'Light', hc: 'High Contrast' };
+
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  const btn = document.getElementById('theme-cycle-btn');
+  if (btn) {
+    btn.textContent = THEME_ICONS[t];
+    btn.title = `Theme: ${THEME_LABELS[t]} — tap to cycle`;
+  }
+}
+
+function cycleTheme() {
+  const current = document.documentElement.dataset.theme || 'dark';
+  const next = THEMES[(THEMES.indexOf(current) + 1) % THEMES.length];
+  localStorage.setItem('pitstop_theme', next);
+  applyTheme(next);
+}
+
 /* ---------- Init ---------- */
-(function restoreRefreshSetting() {
+(function restoreSettings() {
+  const theme = localStorage.getItem('pitstop_theme') || 'dark';
+  applyTheme(theme);
+
   const saved = localStorage.getItem('pitstop_refresh');
   if (saved && saved !== '0') {
     const sel = document.getElementById('refresh-interval-select');
