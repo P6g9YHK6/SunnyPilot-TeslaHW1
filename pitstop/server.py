@@ -350,6 +350,19 @@ class PitStopServer:
       json.dump({"created": time.time(), "params": config}, f)
     return web.json_response({"name": fname, "status": "created"})
 
+  async def handle_backup_delete(self, request):
+    name = request.match_info.get("name")
+    if not name:
+      raise web.HTTPBadRequest(text="Missing name")
+    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
+    fpath = os.path.normpath(os.path.join(backup_dir, name))
+    if not fpath.startswith(backup_dir + os.sep):
+      raise web.HTTPBadRequest(text="Invalid backup name")
+    if not os.path.isfile(fpath):
+      raise web.HTTPNotFound(text=f"Backup '{name}' not found")
+    os.remove(fpath)
+    return web.json_response({"status": "deleted"})
+
   async def handle_backup_restore(self, request):
     try:
       body = await request.json()
@@ -566,6 +579,7 @@ class PitStopServer:
     app.router.add_get("/api/backup", self.handle_backup_list)
     app.router.add_post("/api/backup/create", self.handle_backup_create)
     app.router.add_post("/api/backup/restore", self.handle_backup_restore)
+    app.router.add_delete("/api/backup/{name}", self.handle_backup_delete)
 
     # Models
     app.router.add_get("/api/models", self.handle_models_list)
