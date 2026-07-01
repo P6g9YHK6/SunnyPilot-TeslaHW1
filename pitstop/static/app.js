@@ -10,6 +10,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 });
 
 function loadPage(name) {
+  if (name !== 'settings') stopSettingsStatusPoll();
   if (name === 'dashboard') loadDashboard();
   if (name === 'settings') loadSettings();
   if (name === 'models') loadModels();
@@ -133,6 +134,7 @@ let settingsCapabilities = {};
 let settingsParamCache = {};
 let settingsStatus = { is_offroad: true, is_metric: false };
 let reEvalPending = false;
+let settingsStatusInterval = null;
 
 /* ---- Rule evaluator ---- */
 function evaluateRule(rule, caps, paramCache, status) {
@@ -205,32 +207,26 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
   const idAttr = `si-${key}`;
 
   if (widget === 'toggle') {
-    const checked = parentChecked === '1' || parentChecked === 'true';
+    const sv = String(parentChecked || '');
+    const checked = sv === '1' || sv.toLowerCase() === 'true';
     controlHtml = `<label class="toggle">
       <input type="checkbox" id="${idAttr}" data-param="${key}" ${checked ? 'checked' : ''} ${!enabled ? 'disabled' : ''}>
       <span class="slider"></span>
     </label>`;
 
-  } else if (widget === 'multiple_button') {
+  } else if (widget === 'multiple_button' || widget === 'option') {
+    /* Always render as <select> — cleaner on portrait and desktop alike */
     const opts = item.options || [];
-    const currentVal = paramCache[key];
-    controlHtml = `<div class="segmented-control">`;
-    opts.forEach(o => {
-      const isActive = String(currentVal) === String(o.value);
-      const optEnabled = enabled && evaluateRules(o.enablement, caps, paramCache, status);
-      controlHtml += `<button class="segmented-btn ${isActive ? 'active' : ''}" data-param="${key}" data-value="${o.value}" ${!optEnabled ? 'disabled' : ''}>${o.label}</button>`;
-    });
-    controlHtml += `</div>`;
-
-  } else if (widget === 'option') {
-    if (item.options && item.options.length) {
-      const currentVal = paramCache[key];
-      controlHtml = `<select class="setting-select" data-param="${key}" ${!enabled ? 'disabled' : ''}>`;
-      item.options.forEach(o => {
-        controlHtml += `<option value="${o.value}" ${String(currentVal) === String(o.value) ? 'selected' : ''}>${o.label}</option>`;
+    const currentVal = String(paramCache[key] ?? '');
+    if (opts.length) {
+      controlHtml = `<select class="setting-select" data-param="${key}" data-widget="${widget}" ${!enabled ? 'disabled' : ''}>`;
+      opts.forEach(o => {
+        const optEnabled = enabled && (widget === 'option' || evaluateRules(o.enablement, caps, paramCache, status));
+        controlHtml += `<option value="${o.value}" ${currentVal === String(o.value) ? 'selected' : ''} ${!optEnabled ? 'disabled' : ''}>${o.label}</option>`;
       });
       controlHtml += `</select>`;
     } else {
+      /* option widget with no predefined choices = display current value */
       const unit = buildUnit(item, status.is_metric);
       controlHtml = `<span class="item-value-mono">${fmtVal(paramCache[key])}${unit}</span>`;
     }
@@ -309,8 +305,27 @@ function renderSubItems(items, caps, paramCache, status, depth) {
   return html;
 }
 
+/* ---- Poll offroad state while settings page is active ---- */
+function startSettingsStatusPoll() {
+  if (settingsStatusInterval) return;
+  settingsStatusInterval = setInterval(async () => {
+    try {
+      const s = await api('/api/status', { silent: true });
+      if (s.is_offroad !== settingsStatus.is_offroad || s.is_metric !== settingsStatus.is_metric) {
+        settingsStatus = s;
+        maybeReEval();
+      }
+    } catch {}
+  }, 3000);
+}
+function stopSettingsStatusPoll() {
+  clearInterval(settingsStatusInterval);
+  settingsStatusInterval = null;
+}
+
 /* ---- Main settings loader ---- */
 async function loadSettings() {
+  startSettingsStatusPoll();
   const container = document.getElementById('settings-panels');
   try {
     const [schema, caps, status_] = await Promise.all([
@@ -405,37 +420,23 @@ function renderSettingsUI() {
         await api(`/api/params/${key}/bool`, { method: 'PUT', body: JSON.stringify({ value: val }) });
         settingsParamCache[key] = val ? '1' : '0';
         maybeReEval();
-        toast(`Set ${key} = ${val}`, 'success');
+        toast('Saved', 'success');
       } catch { e.target.checked = !val; }
     });
   });
 
-  /* Wire up segmented control events (multiple_button) */
-  container.querySelectorAll('.segmented-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      if (e.target.disabled) return;
-      const key = e.target.dataset.param;
-      const val = e.target.dataset.value;
-      try {
-        await api(`/api/params/${key}`, { method: 'POST', body: JSON.stringify({ value: val }) });
-        settingsParamCache[key] = val;
-        maybeReEval();
-        toast(`Set ${key} = ${val}`, 'success');
-      } catch {}
-    });
-  });
-
-  /* Wire up select events */
+  /* Wire up all <select> controls (option + multiple_button widgets) */
   container.querySelectorAll('select.setting-select').forEach(sel => {
     sel.addEventListener('change', async (e) => {
       const key = e.target.dataset.param;
       const val = e.target.value;
+      const prev = settingsParamCache[key];
       try {
         await api(`/api/params/${key}`, { method: 'POST', body: JSON.stringify({ value: val }) });
         settingsParamCache[key] = val;
         maybeReEval();
-        toast(`Set ${key} = ${val}`, 'success');
-      } catch {}
+        toast(`Saved`, 'success');
+      } catch { e.target.value = prev ?? ''; }
     });
   });
 
