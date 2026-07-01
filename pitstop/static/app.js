@@ -109,7 +109,7 @@ function showModal(title, body, buttons) {
       <div class="modal-content">
         <h3>${title}</h3>
         ${body}
-        <div class="modal-actions">${(buttons||[]).map(b => `<button class="btn ${b.cls||''} btn-sm" onclick="${b.action ? `(${b.action})();` : ''}closeModal()">${b.label}</button>`).join('')}</div>
+        <div class="modal-actions">${(buttons||[]).map(b => `<button class="btn ${b.cls||''} btn-sm" onclick="${b.action ? b.action.replace(/"/g,'&quot;') + ';' : ''}closeModal()">${b.label}</button>`).join('')}</div>
       </div>
     </div>`;
   document.getElementById('modal-container').innerHTML = html;
@@ -850,15 +850,17 @@ function renderBundleList(bundles, active, favorites) {
     items.forEach(b => {
       const isActive = b.ref === activeRef || b.internalName === active.internalName;
       const isFav = favSet.has(b.ref);
-      const models = b.models || [];
+      const isCached = !!b.isCached;
+      const actionLabel = isCached ? 'Select' : 'Download';
+      const actionCls   = isCached ? 'btn-primary' : 'btn-download';
       html += `<div class="model-item">
         <div class="model-item-info">
           <div class="model-item-name">${b.displayName || b.internalName}</div>
-          <div class="model-item-meta">Gen ${b.generation || '?'} &middot; ${b.environment || '—'} &middot; ${fmtRunner(b.runner)}${b.is20hz ? ' &middot; 20Hz' : ''}</div>
+          <div class="model-item-meta">Gen ${b.generation || '?'} &middot; ${b.environment || '—'} &middot; ${fmtRunner(b.runner)}${b.is20hz ? ' &middot; 20Hz' : ''}${isCached ? ' &middot; <span class="meta-cached">cached</span>' : ''}</div>
         </div>
         <div class="model-item-actions">
           <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFav('${b.ref}', this)" title="Favorite">${isFav ? '★' : '☆'}</button>
-          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm btn-primary" onclick="selectModel(${b.index}, '${(b.displayName || b.internalName).replace(/'/g,"\\'")}')">Select</button>`}
+          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm ${actionCls}" onclick="selectModel(${b.index}, '${(b.displayName || b.internalName).replace(/'/g,"\\'")}', ${isCached})">${actionLabel}</button>`}
         </div>
       </div>`;
     });
@@ -896,11 +898,39 @@ async function refreshModelList() {
   }, 1000);
 }
 
-async function selectModel(index, name) {
-  showModal('Select Model', `<p>Select "${name}"? If not cached, a download will start.</p>`, [
-    { label: 'Cancel', action: '', cls: '' },
-    { label: 'Select', action: `api('/api/models/select',{method:'POST',body:JSON.stringify({index:${index}})}).then(()=>{toast('Model selected: ${name}','info');loadModels();})`, cls: 'btn-primary' },
-  ]);
+async function selectModel(index, name, isCached) {
+  const verb = isCached ? 'Select' : 'Download';
+  const detail = isCached
+    ? 'Already cached — will switch to this model immediately.'
+    : 'Not on device yet — a download will start.';
+  showModal(`${verb} Model`,
+    `<p><b>${name}</b></p><p>${detail}</p>`,
+    [
+      { label: 'Cancel', cls: '' },
+      { label: verb, action: `doSelectModel(${index}, '${name.replace(/'/g,"\\'")}', ${!!isCached})`, cls: 'btn-primary' },
+    ]
+  );
+}
+
+async function doSelectModel(index, name, isCached) {
+  try {
+    await api('/api/models/select', { method: 'POST', body: JSON.stringify({ index }) });
+    if (isCached) {
+      toast(`Switched to ${name}`, 'success');
+      loadModels();
+    } else {
+      toast(`Download started: ${name}`, 'info');
+      /* Scroll to top so progress bar is visible */
+      document.getElementById('page-models').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      /* Start polling progress */
+      if (modelsProgressInterval) clearInterval(modelsProgressInterval);
+      modelsProgressInterval = setInterval(checkDownloadProgress, 2000);
+      checkDownloadProgress();
+    }
+  } catch (e) {
+    toast(`Failed to ${isCached ? 'select' : 'start download for'} ${name}`, 'error');
+  }
 }
 
 async function selectDefaultModel() {

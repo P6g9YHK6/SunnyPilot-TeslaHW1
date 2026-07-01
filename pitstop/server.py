@@ -394,7 +394,21 @@ class PitStopServer:
     try:
       fetcher = ModelFetcher(self.params)
       bundles = fetcher.get_available_bundles()
-      return web.json_response([b.to_dict() for b in bundles])
+      model_dir = Paths.model_root()
+      result = []
+      for b in bundles:
+        d = b.to_dict()
+        files = set()
+        for m in b.models:
+          if hasattr(m, 'artifact') and m.artifact.fileName:
+            files.add(m.artifact.fileName)
+          if hasattr(m, 'metadata') and m.metadata.fileName:
+            files.add(m.metadata.fileName)
+        d['isCached'] = bool(files) and all(
+          os.path.isfile(os.path.join(model_dir, f)) for f in files
+        )
+        result.append(d)
+      return web.json_response(result)
     except Exception as e:
       logger.exception("Failed to list models")
       return web.json_response({"error": str(e)}, status=500)
