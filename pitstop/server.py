@@ -570,15 +570,21 @@ class PitStopServer:
               if levelnum < min_level:
                 continue
               name = d.get('name', '')
-              raw_msg = d.get('msg', '')
+              # swaglog uses msg$s for plain strings, msg for structured dicts
+              raw_msg = d.get('msg$s') or d.get('msg', '')
               msg = json.dumps(raw_msg) if isinstance(raw_msg, (dict, list)) else str(raw_msg)
               if proc_lc and proc_lc not in name.lower():
                 continue
               if search_lc and search_lc not in msg.lower() and search_lc not in name.lower():
                 continue
+              if levelnum >= 50: lvlname = 'CRITICAL'
+              elif levelnum >= 40: lvlname = 'ERROR'
+              elif levelnum >= 30: lvlname = 'WARNING'
+              elif levelnum >= 10: lvlname = 'DEBUG' if levelnum < 20 else 'INFO'
+              else: lvlname = 'DEBUG'
               entries.append({
                 'ts':       d.get('created', 0),
-                'level':    d.get('levelname', 'INFO').upper(),
+                'level':    (d.get('levelname') or lvlname).upper(),
                 'levelnum': levelnum,
                 'source':   'swaglog',
                 'process':  name,
