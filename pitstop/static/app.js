@@ -19,10 +19,13 @@ function loadPage(name) {
 
 /* ---------- API helper ---------- */
 async function api(path, opts = {}) {
+  const silent = opts.silent;
+  const fetchOpts = { ...opts };
+  delete fetchOpts.silent;
   try {
     const res = await fetch(path, {
-      headers: { 'Accept': 'application/json', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
-      ...opts,
+      headers: { 'Accept': 'application/json', ...(fetchOpts.body ? { 'Content-Type': 'application/json' } : {}) },
+      ...fetchOpts,
     });
     if (!res.ok) {
       const text = await res.text();
@@ -32,7 +35,7 @@ async function api(path, opts = {}) {
     if (ct.includes('application/json')) return await res.json();
     return await res.text();
   } catch (e) {
-    toast(e.message, 'error');
+    if (!silent) toast(e.message, 'error');
     throw e;
   }
 }
@@ -184,17 +187,16 @@ function buildUnit(item, isMetric) {
 }
 
 /* ---- Render a single setting item ---- */
+let _descId = 0;
 function renderSettingItem(item, caps, paramCache, status, depth) {
   const key = item.key || '';
   const title = buildTitle(item, paramCache);
   const desc = item.description || '';
   const widget = item.widget || 'toggle';
-  const detailBtn = item.details ? `<button class="item-detail-btn" onclick="showModal('${title.replace(/'/g,"\\'")}','<p>${item.details.replace(/'/g,"\\'").replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>',[{label:'Close',action:'',cls:'btn-primary'}])" title="Details">i</button>` : '';
   const needsCycle = item.needs_onroad_cycle ? '<span class="badge-restart">Restart</span>' : '';
   const isBlocked = !!item.blocked;
   const vis = evaluateRules(item.visibility, caps, paramCache, status);
   const enabled = !isBlocked && evaluateRules(item.enablement, caps, paramCache, status);
-  const hasSub = item.sub_items && item.sub_items.length > 0;
   const parentChecked = paramCache[key];
 
   if (!vis) return '';
@@ -213,7 +215,7 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
     const opts = item.options || [];
     const currentVal = paramCache[key];
     controlHtml = `<div class="segmented-control">`;
-    opts.forEach((o, i) => {
+    opts.forEach(o => {
       const isActive = String(currentVal) === String(o.value);
       const optEnabled = enabled && evaluateRules(o.enablement, caps, paramCache, status);
       controlHtml += `<button class="segmented-btn ${isActive ? 'active' : ''}" data-param="${key}" data-value="${o.value}" ${!optEnabled ? 'disabled' : ''}>${o.label}</button>`;
@@ -230,7 +232,7 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
       controlHtml += `</select>`;
     } else {
       const unit = buildUnit(item, status.is_metric);
-      controlHtml = `<span style="font-family:monospace;font-size:0.85rem;color:var(--text)">${fmtVal(paramCache[key])}${unit}</span>`;
+      controlHtml = `<span class="item-value-mono">${fmtVal(paramCache[key])}${unit}</span>`;
     }
 
   } else if (widget === 'info') {
@@ -240,18 +242,54 @@ function renderSettingItem(item, caps, paramCache, status, depth) {
     controlHtml = `<button class="action-btn" data-param="${key}" ${!enabled ? 'disabled' : ''}>${item.action || title}</button>`;
 
   } else {
-    controlHtml = `<span class="item-value" style="font-family:monospace;font-size:0.8rem;color:var(--text-dim)">${fmtVal(paramCache[key])}</span>`;
+    controlHtml = `<span class="item-value-mono">${fmtVal(paramCache[key])}</span>`;
   }
 
-  const extraClasses = `${!vis ? 'hidden-item' : ''} ${!enabled && !isBlocked ? 'disabled' : ''} ${isBlocked ? 'blocked' : ''}`;
+  const extraClasses = `${!enabled && !isBlocked ? 'disabled' : ''} ${isBlocked ? 'blocked' : ''}`;
   const indentStyle = depth > 0 ? ` style="padding-left:${1.25 + depth * 1.25}rem"` : '';
 
+  /* Collapsible description: show first 100 chars, expand on click */
+  let descHtml = '';
+  if (desc) {
+    const stripped = desc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const did = `desc-${key || (_descId++)}`;
+    if (stripped.length > 120) {
+      descHtml = `<div class="item-desc" id="${did}">
+        <span class="desc-short">${stripped.slice(0, 120).trim()}… <button class="desc-expand" onclick="expandDesc('${did}')">more</button></span>
+        <span class="desc-full hidden">${desc} <button class="desc-expand" onclick="collapseDesc('${did}')">less</button></span>
+      </div>`;
+    } else {
+      descHtml = `<div class="item-desc">${desc}</div>`;
+    }
+  }
+
+  /* Details popover (from item.details field) */
+  let detailBtn = '';
+  if (item.details) {
+    const safeTitle = title.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const safeDetails = item.details.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    detailBtn = `<button class="item-detail-btn" onclick="showModal('${safeTitle}','<p>${safeDetails}</p>',[{label:'Close',action:'',cls:'btn-primary'}])" title="More info">i</button>`;
+  }
+
   let html = `<div class="section-item ${extraClasses}"${indentStyle}>`;
-  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}</div>${desc ? `<div class="item-desc">${desc}</div>` : ''}</div>`;
+  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}</div>${descHtml}</div>`;
   html += `<div class="item-control">${controlHtml}</div>`;
   html += `</div>`;
 
   return html;
+}
+
+function expandDesc(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.querySelector('.desc-short').classList.add('hidden');
+  el.querySelector('.desc-full').classList.remove('hidden');
+}
+function collapseDesc(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.querySelector('.desc-short').classList.remove('hidden');
+  el.querySelector('.desc-full').classList.add('hidden');
 }
 
 /* ---- Render sub_items recursively ---- */
@@ -320,7 +358,7 @@ async function loadSettings() {
     /* Batch-fetch all needed param values */
     const paramPromises = [...neededKeys].map(async k => {
       try {
-        const r = await api(`/api/params/${k}`);
+        const r = await api(`/api/params/${k}`, { silent: true });
         settingsParamCache[k] = r.value;
       } catch { settingsParamCache[k] = null; }
     });
@@ -659,7 +697,7 @@ function renderParams() {
   }
   container.innerHTML = html;
   for (const key of filtered.slice(0, 500)) {
-    api(`/api/params/${key}`).then(p => {
+    api(`/api/params/${key}`, { silent: true }).then(p => {
       const el = document.getElementById(`pv-${key}`);
       if (el) el.textContent = fmtVal(p.value);
     }).catch(() => {});

@@ -113,23 +113,21 @@ class PitStopServer:
 
   async def handle_params_list(self, request):
     try:
-      with open(PARAMS_METADATA_PATH) as f:
-        metadata = json.load(f)
+      keys = sorted(k.decode("utf-8") for k in self.params.all_keys())
+      return web.json_response({k: {} for k in keys})
     except Exception:
-      metadata = {}
-    return web.json_response(metadata)
+      return web.json_response({})
 
   async def handle_param_get(self, request):
     key = request.match_info.get("key")
-    raw = self.params.get(key)
+    try:
+      raw = self.params.get(key)
+    except Exception:
+      raise web.HTTPNotFound(text=f"Unknown param '{key}'") from None
     if raw is None:
-      raise web.HTTPNotFound(text=f"Param '{key}' not found")
-    param_type = self.params.get_param_type(key)
-    return web.json_response({
-      "key": key,
-      "value": raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw),
-      "type": str(param_type),
-    })
+      return web.json_response({"key": key, "value": None})
+    value = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+    return web.json_response({"key": key, "value": value})
 
   async def handle_param_set(self, request):
     key = request.match_info.get("key")
@@ -140,7 +138,10 @@ class PitStopServer:
     value = body.get("value")
     if value is None:
       raise web.HTTPBadRequest(text="Missing 'value'")
-    self.params.put(key, str(value))
+    try:
+      self.params.put(key, str(value))
+    except Exception as e:
+      raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
     return web.json_response({"key": key, "status": "ok"})
 
   async def handle_param_put_bool(self, request):
@@ -152,7 +153,10 @@ class PitStopServer:
     value = body.get("value")
     if not isinstance(value, bool):
       raise web.HTTPBadRequest(text="'value' must be boolean")
-    self.params.put_bool(key, value)
+    try:
+      self.params.put_bool(key, value)
+    except Exception as e:
+      raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
     return web.json_response({"key": key, "value": value, "status": "ok"})
 
   async def handle_param_put_int(self, request):
@@ -162,10 +166,13 @@ class PitStopServer:
     except Exception:
       raise web.HTTPBadRequest(text="Invalid JSON") from None
     value = body.get("value")
-    if not isinstance(value, int):
-      raise web.HTTPBadRequest(text="'value' must be integer")
-    self.params.put_int(key, value)
-    return web.json_response({"key": key, "value": value, "status": "ok"})
+    if not isinstance(value, (int, float)):
+      raise web.HTTPBadRequest(text="'value' must be a number")
+    try:
+      self.params.put(key, str(int(value)))
+    except Exception as e:
+      raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
+    return web.json_response({"key": key, "value": int(value), "status": "ok"})
 
   async def handle_param_put_float(self, request):
     key = request.match_info.get("key")
@@ -176,7 +183,10 @@ class PitStopServer:
     value = body.get("value")
     if not isinstance(value, (int, float)):
       raise web.HTTPBadRequest(text="'value' must be a number")
-    self.params.put_float(key, float(value))
+    try:
+      self.params.put(key, str(float(value)))
+    except Exception as e:
+      raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
     return web.json_response({"key": key, "value": float(value), "status": "ok"})
 
   # ---- Settings ----
@@ -382,6 +392,17 @@ class PitStopServer:
 
   # ---- OpenAPI / Swagger ----
 
+  async def handle_error_log(self, request):
+    crash_log = "/data/community/crashes/error.log"
+    try:
+      with open(crash_log) as f:
+        content = f.read()
+    except FileNotFoundError:
+      content = ""
+    except Exception as e:
+      content = f"Error reading log: {e}"
+    return web.json_response({"path": crash_log, "content": content})
+
   async def handle_openapi(self, request):
     host = request.host.split(":")[0] if ":" in request.host else request.host
     schema = generate_openapi_schema(host=host, port=EXTERNAL_PORT, dbc=self._can_handler.dbc)
@@ -446,6 +467,9 @@ class PitStopServer:
     app.router.add_post("/api/v1/signals/{name}", self.handle_can_signal_send)
     app.router.add_post("/api/v1/signals/batch", self.handle_can_batch_send)
     app.router.add_post("/api/v1/can/send", self.handle_can_raw_send)
+
+    # Logs
+    app.router.add_get("/api/logs/errors", self.handle_error_log)
 
     # OpenAPI / Swagger
     app.router.add_get("/openapi.json", self.handle_openapi)
