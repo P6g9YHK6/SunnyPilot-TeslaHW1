@@ -155,6 +155,12 @@ def _exec_fork_switch(fork_num: int, repo: str, branch: str, status_callback: Ca
         os.rename("/data/openpilot", bak)
       os.symlink(rp, "/data/openpilot")
 
+      try:
+        with open("/data/params/d/UpdaterTargetBranch", "w") as f:
+          f.write(branch)
+      except Exception:
+        pass
+
       done_callback(True, tr("Rebooting..."))
       subprocess.run(["sudo", "reboot"], check=False)
     except subprocess.CalledProcessError as e:
