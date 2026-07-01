@@ -1224,3 +1224,156 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 .segmented-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
 .segmented-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .segmented-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* ─── Logs page ─────────────────────────────────────────────────── */
+.log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.875rem;
+  align-items: center;
+}
+.log-sources, .log-levels {
+  display: flex;
+  gap: 2px;
+  background: var(--surface2);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  padding: 3px;
+  flex-shrink: 0;
+}
+.log-src-btn, .log-lvl-btn {
+  background: none;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  min-height: 34px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.log-src-btn:hover, .log-lvl-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.log-src-btn.active { background: var(--surface3); color: var(--text); }
+.log-lvl-btn.active { background: var(--accent); color: #fff; }
+
+#log-proc-wrap select {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  padding: 0 0.5rem;
+  font-size: 0.8rem;
+  height: 40px;
+  cursor: pointer;
+  outline: none;
+  max-width: 180px;
+}
+#log-proc-wrap select:focus { border-color: var(--accent); }
+
+#log-search {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.875rem;
+  outline: none;
+  height: 40px;
+  transition: border-color 0.15s;
+}
+#log-search:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+
+.log-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+#log-count { font-size: 0.77rem; color: var(--text-muted); white-space: nowrap; }
+
+.logs-list {
+  font-size: 0.8rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+.log-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.28rem 0.75rem;
+  border-bottom: 1px solid var(--border-soft);
+  line-height: 1.4;
+  transition: background 0.1s;
+}
+.log-row:last-child { border-bottom: none; }
+.log-row:hover { background: rgba(255,255,255,0.025); }
+.log-ts {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.log-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 99px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.log-badge-debug { background: var(--surface3); color: var(--text-muted); }
+.log-badge-info  { background: var(--accent-dim); color: var(--accent); }
+.log-badge-warn  { background: var(--orange-dim); color: var(--orange); }
+.log-badge-error, .log-badge-crit { background: var(--red-dim); color: var(--red); }
+.log-proc {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-msg {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-crash { flex-direction: column; align-items: flex-start; cursor: pointer; }
+.log-row-head { display: flex; align-items: baseline; gap: 0.5rem; width: 100%; }
+.log-crash-body {
+  display: none;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.73rem;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 0.3rem;
+  width: 100%;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.log-crash.expanded .log-crash-body { display: block; }
+
+@media (max-width: 600px) {
+  .log-toolbar { gap: 0.35rem; }
+  .log-proc { max-width: 80px; }
+  .log-src-btn, .log-lvl-btn { font-size: 0.75rem; padding: 0.3rem 0.45rem; }
+  #log-proc-wrap select { max-width: 120px; }
+}

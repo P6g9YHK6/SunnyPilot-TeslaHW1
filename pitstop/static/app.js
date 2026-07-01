@@ -45,6 +45,7 @@ function loadPage(name) {
   if (name === 'models') loadModels();
   if (name === 'params') loadParams();
   if (name === 'backup') loadBackups();
+  if (name === 'logs') loadLogs();
 }
 
 function refreshNow() {
@@ -120,6 +121,9 @@ function closeModal() {
 }
 
 /* ---------- Formatting ---------- */
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 function fmtBool(v) { return v ? 'Yes' : 'No'; }
 function fmtVal(v) {
   if (v === null || v === undefined) return '—';
@@ -368,6 +372,22 @@ function hasOffroadOnly(rules) {
   });
 }
 
+function getDisabledReason(item, caps, paramCache, status, forceDisabled) {
+  if (item.blocked) return 'Can only be changed on the device itself';
+  if (forceDisabled) return 'Not supported in this vehicle configuration';
+  const rules = item.enablement || [];
+  for (const r of rules) {
+    if (evaluateRule(r, caps, paramCache, status)) continue;
+    if (r.type === 'offroad_only') return 'Requires offroad mode';
+    if (r.type === 'not_engaged') return 'Cannot change while driving';
+    if (r.type === 'capability') return 'Not supported by this vehicle';
+    if (r.type === 'param') return 'Requires another setting to be enabled first';
+    if (r.type === 'param_compare') return 'Another setting value is out of range';
+    if (r.type === 'any' || r.type === 'all' || r.type === 'not') return 'Not available in this configuration';
+  }
+  return '';
+}
+
 /* ---- Number selector modal ---- */
 let _nmKey = null, _nmVal = 0, _nmMin = -Infinity, _nmMax = Infinity, _nmStep = 1;
 let _nmLabel = '', _nmNeedsCycle = false;
@@ -506,7 +526,9 @@ function renderSettingItem(item, caps, paramCache, status, depth, forceDisabled 
     controlHtml = `<span class="item-value-mono">${fmtVal(paramCache[key])}</span>`;
   }
 
+  const disabledReason = (!enabled || isBlocked) ? getDisabledReason(item, caps, paramCache, status, forceDisabled) : '';
   const extraClasses = `${!enabled && !isBlocked ? 'disabled' : ''} ${isBlocked ? 'blocked' : ''}`;
+  const reasonAttr = disabledReason ? ` title="${escHtml(disabledReason)}"` : '';
   const indentStyle = depth > 0 ? ` style="padding-left:${1.25 + depth * 1.25}rem"` : '';
 
   /* Collapsible description: show first 100 chars, expand on click */
@@ -532,7 +554,7 @@ function renderSettingItem(item, caps, paramCache, status, depth, forceDisabled 
     detailBtn = `<button class="item-detail-btn" onclick="showModal('${safeTitle}','<p>${safeDetails}</p>',[{label:'Close',action:'',cls:'btn-primary'}])" title="More info">i</button>`;
   }
 
-  let html = `<div class="section-item ${extraClasses}"${indentStyle}>`;
+  let html = `<div class="section-item ${extraClasses}"${indentStyle}${reasonAttr}>`;
   html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}${offroadOnly}${blockedBadge}</div>${descHtml}</div>`;
   html += `<div class="item-control">${controlHtml}</div>`;
   html += `</div>`;
@@ -664,10 +686,10 @@ function renderSettingsUI() {
   }
   if (st.is_offroad) {
     offroadBanner.className = 'offroad-banner offroad-banner-on';
-    offroadBanner.innerHTML = '&#9989; Offroad &mdash; all settings available';
+    offroadBanner.innerHTML = '&#9989; Offroad &mdash; offroad settings unlocked (some may still be vehicle-specific)';
   } else {
     offroadBanner.className = 'offroad-banner offroad-banner-off';
-    offroadBanner.innerHTML = '&#128664; Onroad &mdash; <span class="badge-offroad">Offroad</span> settings are locked';
+    offroadBanner.innerHTML = '&#128664; Onroad &mdash; <span class="badge-offroad">Offroad</span> settings are locked until parked';
   }
 
   function subPanelVisible(sub) {
@@ -1138,7 +1160,7 @@ async function createBackup() {
     const res = await api('/api/backup/create', { method: 'POST' });
     toast('Backup created: ' + res.name, 'success');
     loadBackups();
-  } catch (e) {}
+  } catch (e) { toast('Backup failed: ' + (e.message || e), 'error'); }
 }
 
 async function restoreBackup(name) {
@@ -1170,6 +1192,116 @@ async function doDeleteBackup(name) {
     loadBackups();
   } catch (e) { toast('Delete failed', 'error'); }
 }
+
+/* ============ LOGS ============ */
+let logsData  = [];
+let logSource = 'swaglog';
+let logLevel  = 0;
+let logProc   = '';
+
+async function loadLogs() {
+  const searchEl = document.getElementById('log-search');
+  const search = searchEl ? searchEl.value.trim() : '';
+  const params = new URLSearchParams({ source: logSource, level: logLevel, limit: 500 });
+  if (search) params.set('search', search);
+  if (logProc && (logSource === 'swaglog' || logSource === 'journal')) params.set('process', logProc);
+  const container = document.getElementById('logs-list');
+  if (!container) return;
+  container.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+  try {
+    logsData = await api('/api/logs?' + params.toString(), { silent: true });
+    renderLogs(logsData);
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--red)">Failed to load logs: ${escHtml(e.message || String(e))}</p>`;
+  }
+}
+
+function renderLogs(entries) {
+  const container = document.getElementById('logs-list');
+  if (!container) return;
+  document.getElementById('log-count').textContent = `${entries.length} entries`;
+  if (!entries.length) {
+    container.innerHTML = '<p style="color:var(--text-muted)">No entries found.</p>';
+    updateProcSelect([]);
+    return;
+  }
+  updateProcSelect(entries);
+  container.innerHTML = entries.map(e => {
+    const dt = e.ts ? new Date(e.ts * 1000).toLocaleTimeString() : '—';
+    const lvl = (e.level || 'INFO').toUpperCase();
+    const lvlCls = { DEBUG:'debug', INFO:'info', WARNING:'warn', ERROR:'error', CRITICAL:'crit' }[lvl] || 'info';
+    const proc = escHtml(e.process || '');
+    if (e.source === 'crash') {
+      const msgShort = escHtml((e.msg || '').split('\n').slice(0, 3).join(' ↵ ').slice(0, 200));
+      return `<div class="log-row log-crash" onclick="this.classList.toggle('expanded')">
+        <div class="log-row-head">
+          <span class="log-ts">${dt}</span>
+          <span class="log-badge log-badge-crit">CRASH</span>
+          <span class="log-proc">${escHtml(e.filename || '')}</span>
+          <span class="log-msg">${msgShort}</span>
+        </div>
+        <pre class="log-crash-body">${escHtml(e.msg || '')}</pre>
+      </div>`;
+    }
+    const msgShort = escHtml((e.msg || '').slice(0, 300));
+    return `<div class="log-row">
+      <span class="log-ts">${dt}</span>
+      <span class="log-badge log-badge-${lvlCls}">${lvl}</span>
+      <span class="log-proc">${proc}</span>
+      <span class="log-msg">${msgShort}</span>
+    </div>`;
+  }).join('');
+}
+
+function updateProcSelect(entries) {
+  const sel = document.getElementById('log-proc-select');
+  if (!sel) return;
+  const cur = sel.value;
+  const procs = [...new Set(entries.map(e => e.process).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All services</option>' +
+    procs.map(p => `<option value="${escHtml(p)}"${p === cur ? ' selected' : ''}>${escHtml(p)}</option>`).join('');
+}
+
+function onLogProcChange() {
+  logProc = (document.getElementById('log-proc-select')?.value || '').trim();
+  loadLogs();
+}
+
+const onLogSearch = debounce(() => loadLogs(), 350);
+
+/* Source / level button wiring */
+(function initLogToolbar() {
+  const srcWrap = document.getElementById('log-sources');
+  const lvlWrap = document.getElementById('log-levels');
+  if (srcWrap) {
+    srcWrap.addEventListener('click', e => {
+      const btn = e.target.closest('.log-src-btn');
+      if (!btn) return;
+      srcWrap.querySelectorAll('.log-src-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      logSource = btn.dataset.src;
+      const showLevel = logSource === 'swaglog';
+      const showProc  = logSource === 'swaglog' || logSource === 'journal';
+      if (lvlWrap) lvlWrap.style.display = showLevel ? '' : 'none';
+      const procWrap = document.getElementById('log-proc-wrap');
+      if (procWrap) procWrap.style.display = showProc ? '' : 'none';
+      logProc = '';
+      const sel = document.getElementById('log-proc-select');
+      if (sel) sel.value = '';
+      loadLogs();
+    });
+  }
+  if (lvlWrap) {
+    lvlWrap.addEventListener('click', e => {
+      const btn = e.target.closest('.log-lvl-btn');
+      if (!btn) return;
+      lvlWrap.querySelectorAll('.log-lvl-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      logLevel = parseInt(btn.dataset.level, 10) || 0;
+      loadLogs();
+    });
+  }
+})();
 
 /* ============ THEME ============ */
 const THEMES = ['dark', 'light', 'hc'];
