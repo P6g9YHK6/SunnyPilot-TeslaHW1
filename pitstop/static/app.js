@@ -874,8 +874,13 @@ function renderBundleList(bundles, active, favorites) {
       const isActive = b.ref === activeRef || b.internalName === active.internalName;
       const isFav = favSet.has(b.ref);
       const isCached = !!b.isCached;
+      const safeDisplayName = (b.displayName || b.internalName).replace(/'/g,"\\'");
+      const safeInternalName = (b.internalName || '').replace(/'/g,"\\'");
       const actionLabel = isCached ? 'Select' : 'Download';
       const actionCls   = isCached ? 'btn-primary' : 'btn-download';
+      const deleteBtn   = isCached && !isActive
+        ? `<button class="btn btn-sm btn-danger model-delete-btn" onclick="deleteModel('${safeInternalName}', '${safeDisplayName}')" title="Delete from disk">🗑</button>`
+        : '';
       html += `<div class="model-item">
         <div class="model-item-info">
           <div class="model-item-name">${b.displayName || b.internalName}</div>
@@ -883,7 +888,8 @@ function renderBundleList(bundles, active, favorites) {
         </div>
         <div class="model-item-actions">
           <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFav('${b.ref}', this)" title="Favorite">${isFav ? '★' : '☆'}</button>
-          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm ${actionCls}" onclick="selectModel(${b.index}, '${(b.displayName || b.internalName).replace(/'/g,"\\'")}', ${isCached})">${actionLabel}</button>`}
+          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm ${actionCls}" onclick="selectModel(${b.index}, '${safeDisplayName}', ${isCached})">${actionLabel}</button>`}
+          ${deleteBtn}
         </div>
       </div>`;
     });
@@ -953,6 +959,23 @@ async function doSelectModel(index, name, isCached) {
     }
   } catch (e) {
     toast(`Failed to ${isCached ? 'select' : 'start download for'} ${name}`, 'error');
+  }
+}
+
+async function deleteModel(internalName, displayName) {
+  showModal('Delete Model', `<p>Delete <b>${escHtml(displayName)}</b> from disk?<br>You can re-download it later.</p>`, [
+    { label: 'Cancel', action: '', cls: '' },
+    { label: 'Delete', action: `doDeleteModel('${internalName.replace(/'/g,"\\'")}','${displayName.replace(/'/g,"\\'")}')`, cls: 'btn-danger' },
+  ]);
+}
+
+async function doDeleteModel(internalName, displayName) {
+  try {
+    const res = await api(`/api/models/${encodeURIComponent(internalName)}`, { method: 'DELETE' });
+    toast(`Deleted ${displayName} (${res.deleted?.length || 0} files)`, 'success');
+    loadModels();
+  } catch (e) {
+    toast(`Delete failed: ${e.message || e}`, 'error');
   }
 }
 
