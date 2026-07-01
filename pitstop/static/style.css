@@ -660,6 +660,16 @@ select.setting-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px
 .btn-danger:hover  { opacity: 0.88; }
 .btn-danger:active { opacity: 0.75; }
 
+/* Download (not yet cached) — outlined accent */
+.btn-download {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-download:hover  { background: var(--accent-dim); }
+.btn-download:active { background: rgba(91,157,248,0.18); }
+html[data-theme="hc"] .btn-download { border-width: 2px; }
+
 /* Small variant keeps 44px touch target but is visually compact */
 .btn-sm {
   min-height: 38px;
@@ -905,6 +915,7 @@ select.setting-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px
 .model-item-info { flex: 1; min-width: 0; }
 .model-item-name { font-size: 0.875rem; font-weight: 500; }
 .model-item-meta { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.12rem; }
+.meta-cached { color: var(--green); font-weight: 600; }
 .model-item-actions {
   display: flex;
   align-items: center;
