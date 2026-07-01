@@ -22,7 +22,8 @@ from cereal import messaging, custom
 logger = logging.getLogger("pitstop")
 
 HOST = "0.0.0.0"
-PORT = 80
+PORT = 8080
+EXTERNAL_PORT = 80  # iptables redirects :80 → :PORT
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 PARAMS_METADATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sunnypilot", "sunnylink", "params_metadata.json")
@@ -383,8 +384,7 @@ class PitStopServer:
 
   async def handle_openapi(self, request):
     host = request.host.split(":")[0] if ":" in request.host else request.host
-    port = int(request.host.split(":")[1]) if ":" in request.host else PORT
-    schema = generate_openapi_schema(host=host, port=port, dbc=self._can_handler.dbc)
+    schema = generate_openapi_schema(host=host, port=EXTERNAL_PORT, dbc=self._can_handler.dbc)
     return web.json_response(schema)
 
   async def handle_docs(self, request):
@@ -457,13 +457,24 @@ class PitStopServer:
     return app
 
 
+def _setup_port_redirect():
+  import subprocess
+  ipt = ["sudo", "iptables-legacy", "-t", "nat"]
+  rule = ["-p", "tcp", "--dport", str(EXTERNAL_PORT), "-j", "REDIRECT", "--to-port", str(PORT)]
+  subprocess.run(ipt + ["-D", "PREROUTING"] + rule, capture_output=True)
+  subprocess.run(ipt + ["-A", "PREROUTING"] + rule, capture_output=True)
+  subprocess.run(ipt + ["-D", "OUTPUT", "-o", "lo"] + rule, capture_output=True)
+  subprocess.run(ipt + ["-A", "OUTPUT", "-o", "lo"] + rule, capture_output=True)
+
+
 def main():
   logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
   logger.setLevel(logging.INFO)
 
+  _setup_port_redirect()
   server = PitStopServer()
   app = server.build_app()
-  logger.info(f"PitStop starting on {HOST}:{PORT}")
+  logger.info(f"PitStop starting on {HOST}:{PORT} (accessible at :{EXTERNAL_PORT})")
   web.run_app(app, host=HOST, port=PORT, print=lambda *a: None)
 
 
