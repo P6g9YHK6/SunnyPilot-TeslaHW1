@@ -15,7 +15,7 @@
       <button class="nav-btn" data-page="models">Models</button>
       <button class="nav-btn" data-page="params">Params</button>
       <button class="nav-btn" data-page="backup">Backup</button>
-      <button class="nav-btn" data-page="logs">Logs</button>
+      <button class="nav-btn" data-page="logs">Logs <span id="nav-logs-badge" class="nav-err-badge hidden"></span></button>
       <a class="nav-btn" href="/docs" target="_blank">API Docs</a>
     </div>
     <div class="nav-refresh">
@@ -55,6 +55,10 @@
         </div>
         <div class="card" id="card-telemetry">
           <h3>Vehicle</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card card-wide" id="card-diag">
+          <h3>Services <span id="diag-summary-badge"></span></h3>
           <div class="card-body">Loading...</div>
         </div>
       </div>
