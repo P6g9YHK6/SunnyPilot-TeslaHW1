@@ -41,7 +41,7 @@ function op_load_fork_config() {
     REPOS[$num]="${repo#*/}"
     BRANCHES[$num]="$branch"
     [[ -n "$comment" ]] && COMMENTS[$num]="$comment"
-    [ "$num" -gt "$FORK_COUNT" ] && FORK_COUNT=$num
+    [ "$num" -gt "$FORK_COUNT" ] && FORK_COUNT=$num || true
   done < "$conf"
 }
 
