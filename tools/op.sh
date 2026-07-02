@@ -25,6 +25,7 @@ fi
 # =====================
 declare -A FORKS REPOS BRANCHES COMMENTS
 FORK_COUNT=0
+FORKS_CONF="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)/forks.conf"
 UNDECLARED_COUNT=0
 UNDECLARED_KEYS=()
 UNDECLARED_BRANCHES=()
@@ -797,6 +798,79 @@ function op_use_fork() {
   op_run_command sudo reboot
 }
 
+function op_fork_from_url() {
+  # Parse: https://github.com/owner/repo[.git], git@github.com:owner/repo[.git],
+  #        owner/repo, or owner/repo:branch
+  local raw="$1" owner repo branch
+  raw="${raw%.git}"
+
+  # Extract branch suffix (owner/repo:branch — only for non-URL forms)
+  if [[ ! "$raw" =~ ^https?:// ]] && [[ ! "$raw" =~ ^git@ ]] && [[ "$raw" =~ ^([^:]+):([^:]+)$ ]]; then
+    branch="${BASH_REMATCH[2]}"
+    raw="${BASH_REMATCH[1]}"
+  fi
+
+  if   [[ "$raw" =~ ^https?://[^/]+/([^/]+)/([^/]+) ]]; then owner="${BASH_REMATCH[1]}"; repo="${BASH_REMATCH[2]}"
+  elif [[ "$raw" =~ ^git@[^:]+:([^/]+)/([^/]+) ]];       then owner="${BASH_REMATCH[1]}"; repo="${BASH_REMATCH[2]}"
+  elif [[ "$raw" =~ ^([^/]+)/([^/]+)$ ]];                 then owner="${BASH_REMATCH[1]}"; repo="${BASH_REMATCH[2]}"
+  else echo "Cannot parse fork URL: $1"; return 1
+  fi
+  [ -z "$branch" ] && branch="master"
+
+  # Check if already declared in forks.conf (exact owner+repo+branch match)
+  local n found_n=0 repo_known=0
+  for n in $(seq 1 $FORK_COUNT); do
+    if [ "${FORKS[$n]}" = "$owner" ] && [ "${REPOS[$n]}" = "$repo" ]; then
+      repo_known=1
+      if [ "${BRANCHES[$n]}" = "$branch" ]; then found_n=$n; break; fi
+    fi
+  done
+  if [ $found_n -gt 0 ]; then
+    echo "Already in forks.conf as entry #${found_n}: ${owner}/${repo} @ ${branch}"
+    op_use_fork $found_n
+    return
+  fi
+
+  # Unknown fork (or known repo, new branch) — propose saving
+  echo ""
+  if [ $repo_known -eq 1 ]; then
+    echo "  Known repo, new branch: ${owner}/${repo} @ ${branch}"
+    echo "  (Repo already cloned — will checkout this branch, no re-clone needed)"
+  else
+    echo "  Unknown fork: ${owner}/${repo} @ ${branch}"
+    echo "  Clone URL:    https://github.com/${owner}/${repo}.git"
+  fi
+  echo ""
+  read -p "Save to forks.conf as a new entry? [y/N] " save_ans
+  if [[ "$save_ans" =~ ^[yY] ]]; then
+    local new_n=$((FORK_COUNT + 1))
+    echo "${new_n} ${owner}/${repo} ${branch}" >> "$FORKS_CONF"
+    echo "Saved as entry #${new_n}."
+    op_load_fork_config
+    op_use_fork $new_n
+  else
+    # Switch ad-hoc without saving
+    read -p "Switch to ${owner}/${repo} (${branch}) without saving? [y/N] " adhoc_ans
+    [[ "$adhoc_ans" =~ ^[yY] ]] || return
+    local rp="/data/${FORKS_DIR}/${owner}_${repo}"
+    mkdir -p "/data/${FORKS_DIR}"
+    if [ ! -d "$rp" ]; then
+      op_run_command git clone -b "$branch" --depth 1 --single-branch \
+        --recurse-submodules --shallow-submodules \
+        "https://github.com/${owner}/${repo}.git" "$rp"
+    fi
+    op_scan_undeclared
+    local idx
+    for idx in $(seq 0 $((UNDECLARED_COUNT - 1))); do
+      if [ "${UNDECLARED_KEYS[$idx]}" = "${owner}_${repo}" ]; then
+        op_use_fork "U$((idx + 1))"
+        return
+      fi
+    done
+    echo "Clone complete at $rp. Run 'op fork' to switch."
+  fi
+}
+
 function op_fork() {
   if [ $FORK_COUNT -eq 0 ]; then
     echo -e "[${RED}✗${NC}] No forks configured. Edit tools/forks.conf."
@@ -820,6 +894,7 @@ function op_fork() {
       echo "  list                    List all forks (no network)"
       echo "  status|check            List all forks with ahead/behind (fetches)"
       echo "  <N|UN>                  Switch to fork (clone + checkout + symlink + reboot)"
+      echo "  <URL|owner/repo[:branch]> Switch to any fork by URL or shorthand (propose save)"
       echo "  update <N|UN|all>       Update fork(s) (fetch + merge --ff-only)"
       echo "  info <N|UN>             Show SHA, date, title, ahead/behind"
       echo "  purge <N|UN>            Purge fork"
@@ -836,6 +911,8 @@ function op_fork() {
         echo "Invalid fork number. Use 1-$FORK_COUNT or U<N>."
       fi
       return ;;
+    https://*|git@*|*\/*)
+      op_fork_from_url "$1"; return ;;
     *)  [ -n "$1" ] && echo "Unknown action '$1'. Run 'op fork help' for usage." && return ;;
   esac
 
