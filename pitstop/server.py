@@ -576,7 +576,10 @@ class PitStopServer:
 
   async def handle_update_status(self, request):
     def _getstr(key):
-      v = self.params.get(key)
+      try:
+        v = self.params.get(key)
+      except Exception:
+        return ""
       return v.decode("utf-8", errors="replace").strip() if isinstance(v, bytes) else (v or "")
     desc = _getstr("UpdaterNewDescription")
     fork_url = _getstr("UpdaterForkUrl")
