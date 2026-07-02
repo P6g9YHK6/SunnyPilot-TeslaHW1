@@ -572,6 +572,26 @@ class PitStopServer:
       self.params.put("ModelManager_Favs", ";".join(refs))
       return web.json_response({"status": "ok", "count": len(refs)})
 
+  # ---- System actions ----
+
+  async def handle_update_status(self, request):
+    def _getstr(key):
+      v = self.params.get(key)
+      return v.decode("utf-8", errors="replace").strip() if isinstance(v, bytes) else (v or "")
+    desc = _getstr("UpdaterNewDescription")
+    fork_url = _getstr("UpdaterForkUrl")
+    return web.json_response({"available": bool(desc), "description": desc, "fork_url": fork_url})
+
+  async def handle_system_reboot(self, request):
+    import subprocess
+    subprocess.Popen(["sudo", "reboot"])
+    return web.json_response({"status": "rebooting"})
+
+  async def handle_system_restart(self, request):
+    import subprocess
+    subprocess.Popen(["sudo", "systemctl", "restart", "comma"])
+    return web.json_response({"status": "restarting"})
+
   # ---- CAN API (fused) ----
 
   async def handle_can_status(self, request):
@@ -868,6 +888,11 @@ class PitStopServer:
     app.router.add_get("/api/models/favorites", self.handle_models_favorites)
     app.router.add_post("/api/models/favorites", self.handle_models_favorites)
     app.router.add_delete("/api/models/{name}", self.handle_models_delete)
+
+    # System actions
+    app.router.add_get("/api/update", self.handle_update_status)
+    app.router.add_post("/api/system/reboot", self.handle_system_reboot)
+    app.router.add_post("/api/system/restart", self.handle_system_restart)
 
     # CAN API (fused)
     app.router.add_get("/api/v1/status", self.handle_can_status)
