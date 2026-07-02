@@ -795,6 +795,11 @@ function op_use_fork() {
       PYTHONPATH=$(pwd) "${py:-python3}" system/hardware/tici/agnos.py system/hardware/tici/agnos.json --swap || true
     fi
   fi
+  echo ""
+  echo -e "${BOLD}Note:${NC} after reboot you may need to run:"
+  echo "  op setup   — rebuild Python environment / install dependencies"
+  echo "  op build   — recompile openpilot for this fork"
+  echo ""
   op_run_command sudo reboot
 }
 
@@ -835,7 +840,7 @@ function op_fork_from_url() {
   echo ""
   if [ $repo_known -eq 1 ]; then
     echo "  Known repo, new branch: ${owner}/${repo} @ ${branch}"
-    echo "  (Repo already cloned — will checkout this branch, no re-clone needed)"
+    echo "  (Repo entry exists in forks.conf at a different branch — will fetch new branch on switch)"
   else
     echo "  Unknown fork: ${owner}/${repo} @ ${branch}"
     echo "  Clone URL:    https://github.com/${owner}/${repo}.git"
@@ -844,7 +849,7 @@ function op_fork_from_url() {
   read -p "Save to forks.conf as a new entry? [y/N] " save_ans
   if [[ "$save_ans" =~ ^[yY] ]]; then
     local new_n=$((FORK_COUNT + 1))
-    echo "${new_n} ${owner}/${repo} ${branch}" >> "$FORKS_CONF"
+    echo "${new_n} ${owner}/${repo} ${branch}" >> "$FORKS_CONF" || { echo "Failed to write to $FORKS_CONF"; return 1; }
     echo "Saved as entry #${new_n}."
     op_load_fork_config
     op_use_fork $new_n
@@ -858,6 +863,8 @@ function op_fork_from_url() {
       op_run_command git clone -b "$branch" --depth 1 --single-branch \
         --recurse-submodules --shallow-submodules \
         "https://github.com/${owner}/${repo}.git" "$rp"
+    else
+      op_run_command git -C "$rp" fetch origin "$branch:$branch" --depth 1
     fi
     op_scan_undeclared
     local idx
