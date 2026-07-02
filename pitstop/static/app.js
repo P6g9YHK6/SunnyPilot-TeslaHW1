@@ -163,7 +163,6 @@ function renderTelemetryCard(t) {
       : '<span class="badge-ign badge-ign-off">OFF</span>';
   const car = t.car || {};
   const motion = t.motion || {};
-  const dev = t.device || {};
   const standstillBadge = motion.standstill === true ? ' <span class="badge-ign badge-ign-off">STOPPED</span>' : '';
   document.getElementById('card-telemetry').querySelector('.card-body').innerHTML = `
     <div class="row"><span class="label">Ignition</span><span class="value">${ignBadge}</span></div>
@@ -172,6 +171,14 @@ function renderTelemetryCard(t) {
     ${car.vin ? `<div class="row"><span class="label">VIN</span><span class="value" style="font-size:0.72rem">${car.vin}</span></div>` : ''}
     <div class="row"><span class="label">Speed</span><span class="value">${fmtMps(motion.speed_ms)}${standstillBadge}</span></div>
     <div class="row"><span class="label">Gear</span><span class="value">${motion.gear || '—'}</span></div>
+  `;
+}
+
+function renderSystemCard(t) {
+  const el = document.getElementById('card-system').querySelector('.card-body');
+  if (!t) { el.textContent = 'No data'; return; }
+  const dev = t.device || {};
+  el.innerHTML = `
     <div class="row"><span class="label">CPU</span><span class="value">${fmtPct(dev.cpu_pct)}</span></div>
     <div class="row"><span class="label">RAM</span><span class="value">${fmtPct(dev.memory_pct)}</span></div>
     <div class="row"><span class="label">Temp</span><span class="value">${fmtTemp(dev.temp_c)}</span></div>
@@ -254,7 +261,9 @@ async function loadDashboard() {
       <div class="row"><span class="label">Serial</span><span class="value">${device.hardware_serial || '—'}</span></div>
       <div class="row"><span class="label">Version</span><span class="value">${device.version || '—'}</span></div>
       <div class="row"><span class="label">Branch</span><span class="value">${device.branch || '—'}</span></div>
+      <div class="row"><span class="label">Repo</span><span class="value" style="font-size:0.72rem">${device.git_repo || '—'}</span></div>
       <div class="row"><span class="label">Commit</span><span class="value">${device.git_commit ? device.git_commit.slice(0, 8) : '—'}</span></div>
+      <div class="row"><span class="label">Date</span><span class="value" style="font-size:0.72rem">${device.git_commit_date ? device.git_commit_date.split(' ').slice(0, 2).join(' ') : '—'}</span></div>
       <div class="row"><span class="label">Dirty</span><span class="value">${fmtBool(device.is_dirty)}</span></div>
     `;
 
@@ -276,9 +285,13 @@ async function loadDashboard() {
     document.getElementById('card-model').querySelector('.card-body').innerHTML = `
       <div class="row"><span class="label">Model</span><span class="value">${activeModel.displayName || activeModel.internalName || '—'}</span></div>
       <div class="row"><span class="label">Runner</span><span class="value">${activeModel.runner !== undefined ? fmtRunner(activeModel.runner) : 'Stock'}</span></div>
+      <div class="row"><span class="label">Generation</span><span class="value">${activeModel.generation ?? '—'}</span></div>
+      <div class="row"><span class="label">Environment</span><span class="value">${activeModel.environment || '—'}</span></div>
+      <div class="row"><span class="label">20 Hz</span><span class="value">${activeModel.is20hz !== undefined ? fmtBool(activeModel.is20hz) : '—'}</span></div>
     `;
 
     renderTelemetryCard(telemetry);
+    renderSystemCard(telemetry);
     renderDiagCard(diag);
   } catch (e) {
     document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-status .card-body, #card-model .card-body')
