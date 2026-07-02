@@ -103,9 +103,11 @@ class PitStopServer:
   def _diag_loop(self):
     """Single background thread for service health, active alert, and process list."""
     try:
-      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState'])
+      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState', 'carState'])
       while self._running:
         sm.update(2000)
+        if sm.updated['carState']:
+          self._car_state = sm['carState']
         services = []
         for s in self._WATCHED_SERVICES:
           readers = self._msgq_readers(s)
@@ -217,14 +219,20 @@ class PitStopServer:
       version = build.openpilot.version
       branch = build.channel
       git_commit = build.openpilot.git_commit
-      git_commit_date = build.openpilot.git_commit_date
+      raw_date = (build.openpilot.git_commit_date or '').strip("'")
+      # format: "1782947217 2026-07-02 01:06:57 +0200" — drop the epoch prefix
+      date_parts = raw_date.split(' ')
+      git_commit_date = ' '.join(date_parts[1:]) if len(date_parts) > 1 else raw_date
       is_dirty = build.openpilot.is_dirty
+      git_origin = build.openpilot.git_normalized_origin
+      git_repo = '/'.join(git_origin.split('/')[1:]) if '/' in git_origin else git_origin
     except Exception:
       version = _getstr("Version")
       branch = None
       git_commit = None
       git_commit_date = None
       is_dirty = None
+      git_repo = None
 
     return web.json_response({
       "dongle_id": dongle_id,
@@ -233,6 +241,7 @@ class PitStopServer:
       "branch": branch,
       "git_commit": git_commit,
       "git_commit_date": git_commit_date,
+      "git_repo": git_repo,
       "is_dirty": is_dirty,
     })
 
