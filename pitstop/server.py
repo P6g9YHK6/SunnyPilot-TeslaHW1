@@ -66,13 +66,10 @@ class PitStopServer:
     self._can_handler = CanApiHandler()
     self._running = True
     self._model_state = None
-    self._car_state = None
-    self._car_params = None
     self._device_state = None
     self._diag = None   # cached diagnostic snapshot
     for target in (
       self._model_manager_loop,
-      self._car_params_loop,
       self._device_state_loop,
       self._diag_loop,
     ):
@@ -91,23 +88,15 @@ class PitStopServer:
   def _model_manager_loop(self):
     self._subscriber_loop('modelManagerSP', '_model_state', 'modelManagerSP')
 
-  def _car_state_loop(self):
-    self._subscriber_loop('carState', '_car_state', 'carState')
-
-  def _car_params_loop(self):
-    self._subscriber_loop('carParams', '_car_params', 'carParams')
-
   def _device_state_loop(self):
     self._subscriber_loop('deviceState', '_device_state', 'deviceState')
 
   def _diag_loop(self):
     """Single background thread for service health, active alert, and process list."""
     try:
-      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState', 'carState'])
+      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState'])
       while self._running:
         sm.update(2000)
-        if sm.updated['carState']:
-          self._car_state = sm['carState']
         services = []
         for s in self._WATCHED_SERVICES:
           readers = self._msgq_readers(s)
@@ -158,8 +147,8 @@ class PitStopServer:
   # ---- System ----
 
   async def handle_telemetry(self, request):
-    cs = self._car_state
-    cp = self._car_params
+    cs = None
+    cp = None
     ds = self._device_state
     try:
       gear = str(cs.gearShifter) if cs is not None else None
