@@ -243,17 +243,38 @@ async function updateLogsErrorBadge() {
   } catch (_) {}
 }
 
+function toggleMetric(checked) {
+  api('/api/params/IsMetric', { method: 'POST', body: JSON.stringify({ value: checked ? '1' : '0' }) })
+    .then(() => toast('Units updated', 'success'))
+    .catch(() => toast('Failed to update units', 'error'));
+}
+
+function rebootDevice() {
+  showModal('Reboot Device', '<p>Reboot the device now?</p>', [
+    { label: 'Cancel', cls: '' },
+    { label: 'Reboot', action: "api('/api/system/reboot',{method:'POST'}).then(()=>toast('Rebooting…','info'))", cls: 'btn-danger' },
+  ]);
+}
+
+function restartOpenpilot() {
+  showModal('Restart openpilot', '<p>Restart the openpilot stack? (soft restart, no reboot)</p>', [
+    { label: 'Cancel', cls: '' },
+    { label: 'Restart', action: "api('/api/system/restart',{method:'POST'}).then(()=>toast('Restarting…','info'))", cls: 'btn-primary' },
+  ]);
+}
+
 function stopDashboardPoll() {}   // kept for loadPage() call-site compatibility
 
 async function loadDashboard() {
   try {
-    const [device, caps, status, activeModel, telemetry, diag] = await Promise.all([
+    const [device, caps, status, activeModel, telemetry, diag, updateStatus] = await Promise.all([
       api('/api/device'),
       api('/api/capabilities'),
       api('/api/status'),
       api('/api/models/active'),
       api('/api/telemetry', { silent: true }).catch(() => null),
       api('/api/diag', { silent: true }).catch(() => null),
+      api('/api/update', { silent: true }).catch(() => null),
     ]);
 
     document.getElementById('card-device').querySelector('.card-body').innerHTML = `
@@ -265,6 +286,7 @@ async function loadDashboard() {
       <div class="row"><span class="label">Commit</span><span class="value">${device.git_commit ? device.git_commit.slice(0, 8) : '—'}</span></div>
       <div class="row"><span class="label">Date</span><span class="value" style="font-size:0.72rem">${device.git_commit_date ? device.git_commit_date.split(' ').slice(0, 2).join(' ') : '—'}</span></div>
       <div class="row"><span class="label">Dirty</span><span class="value">${fmtBool(device.is_dirty)}</span></div>
+      ${updateStatus?.available ? `<div class="row"><span class="label">Update</span><span class="value"><span class="badge-restart" style="background:var(--green,#4caf50);color:#fff">AVAILABLE</span> <span style="font-size:0.7rem;color:var(--text-dim)">${escHtml(updateStatus.description)}</span></span></div>` : ''}
     `;
 
     document.getElementById('card-capabilities').querySelector('.card-body').innerHTML = `
@@ -279,7 +301,11 @@ async function loadDashboard() {
     document.getElementById('card-status').querySelector('.card-body').innerHTML = `
       <div class="row"><span class="label">Web UI</span><span class="value">${fmtBool(status.enabled)}</span></div>
       <div class="row"><span class="label">Offroad</span><span class="value">${fmtBool(status.is_offroad)}</span></div>
-      <div class="row"><span class="label">Metric</span><span class="value">${fmtBool(status.is_metric)}</span></div>
+      <div class="row"><span class="label">Metric</span><span class="value"><label class="toggle" style="margin:0"><input type="checkbox" ${status.is_metric ? 'checked' : ''} onchange="toggleMetric(this.checked)"><span class="slider"></span></label></span></div>
+      <div class="row" style="margin-top:0.5rem;display:flex;gap:0.4rem;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="restartOpenpilot()">Restart OP</button>
+        <button class="btn btn-sm btn-danger" onclick="rebootDevice()">Reboot</button>
+      </div>
     `;
 
     document.getElementById('card-model').querySelector('.card-body').innerHTML = `
