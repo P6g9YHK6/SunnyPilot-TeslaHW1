@@ -68,10 +68,13 @@ class PitStopServer:
     self._model_state = None
     self._device_state = None
     self._diag = None   # cached diagnostic snapshot
+    self._gps_location = None
+    self._calibration = None
     for target in (
       self._model_manager_loop,
       self._device_state_loop,
       self._diag_loop,
+      self._gps_location_loop,
     ):
       threading.Thread(target=target, daemon=True).start()
 
@@ -90,6 +93,9 @@ class PitStopServer:
 
   def _device_state_loop(self):
     self._subscriber_loop('deviceState', '_device_state', 'deviceState')
+
+  def _gps_location_loop(self):
+    self._subscriber_loop('gpsLocationExternal', '_gps_location', 'gpsLocationExternal')
 
   def _diag_loop(self):
     """Single background thread for service health, active alert, and process list."""
@@ -128,6 +134,16 @@ class PitStopServer:
           'alert': alert,
           'processes': processes,
         }
+        if sm.updated['liveCalibration']:
+          lc = sm['liveCalibration']
+          self._calibration = {
+            'status': str(lc.calStatus).split('.')[-1],
+            'percent': lc.calPerc,
+            'valid_blocks': lc.validBlocks,
+            'pitch': lc.rpyCalib[0] if len(lc.rpyCalib) > 0 else None,
+            'roll': lc.rpyCalib[1] if len(lc.rpyCalib) > 1 else None,
+            'yaw': lc.rpyCalib[2] if len(lc.rpyCalib) > 2 else None,
+          }
     except Exception:
       logger.warning("diag loop error", exc_info=True)
 
@@ -143,6 +159,83 @@ class PitStopServer:
 
   async def handle_diag(self, request):
     return web.json_response(self._diag or {})
+
+  # ---- New endpoints (GPS / Calibration / Network / Sunnylink / Storage) ----
+
+  async def handle_gps(self, request):
+    g = self._gps_location
+    if g is None:
+      return web.json_response({"status": "no_fix"})
+    return web.json_response({
+      "latitude": g.latitude,
+      "longitude": g.longitude,
+      "altitude": g.altitude,
+      "speed": g.speed,
+      "bearing": g.bearingDeg,
+      "accuracy": g.horizontalAccuracy,
+      "vertical_accuracy": g.verticalAccuracy,
+      "bearing_accuracy": g.bearingAccuracyDeg,
+      "speed_accuracy": g.speedAccuracy,
+      "has_fix": g.hasFix,
+      "satellites": g.satelliteCount,
+      "source": str(g.source).split('.')[-1],
+    })
+
+  async def handle_calibration(self, request):
+    return web.json_response(self._calibration or {"status": "no_data"})
+
+  async def handle_network(self, request):
+    ds = self._device_state
+    if ds is None:
+      return web.json_response({})
+    return web.json_response({
+      "type": str(ds.networkType).split('.')[-1],
+      "strength": str(ds.networkStrength).split('.')[-1],
+      "metered": bool(ds.networkMetered),
+    })
+
+  async def handle_sunnylink(self, request):
+    def _gp(key):
+      v = self.params.get(key)
+      return v.decode() if isinstance(v, bytes) else v
+    enabled = self.params.get_bool("SunnylinkEnabled")
+    dongle_id = _gp("SunnylinkDongleId")
+    registered = bool(dongle_id)
+    last_ping = self.params.get("LastSunnylinkPingTime")
+    temp_fault = self.params.get_bool("SunnylinkTempFault")
+    online = False
+    if last_ping is not None:
+      try:
+        last_ping_ns = int(last_ping)
+        online = (time.time_ns() - last_ping_ns) < 80_000_000_000
+      except (ValueError, AttributeError, OverflowError):
+        pass
+    return web.json_response({
+      "enabled": enabled,
+      "registered": registered,
+      "dongle_id": dongle_id,
+      "online": online,
+      "temp_fault": temp_fault,
+      "ready": enabled and registered and not temp_fault,
+    })
+
+  async def handle_storage(self, request):
+    def _usage(path):
+      try:
+        s = os.statvfs(path)
+        total = s.f_frsize * s.f_blocks
+        free = s.f_frsize * s.f_bfree
+        used = total - free
+        return {"total": total, "used": used, "free": free, "pct": round(used / total * 100, 1) if total else 0}
+      except Exception:
+        return None
+    return web.json_response({
+      "root": _usage("/"),
+      "data": _usage("/data") if os.path.isdir("/data") else None,
+      "logs": _usage(Paths.log_root()),
+      "models": _usage(Paths.model_root()),
+      "crashes": _usage(Paths.crash_log_root()),
+    })
 
   # ---- System ----
 
@@ -858,6 +951,13 @@ class PitStopServer:
     app.router.add_get("/api/device", self.handle_device)
     app.router.add_get("/api/telemetry", self.handle_telemetry)
     app.router.add_get("/api/diag", self.handle_diag)
+
+    # New endpoints
+    app.router.add_get("/api/gps", self.handle_gps)
+    app.router.add_get("/api/calibration", self.handle_calibration)
+    app.router.add_get("/api/network", self.handle_network)
+    app.router.add_get("/api/sunnylink", self.handle_sunnylink)
+    app.router.add_get("/api/storage", self.handle_storage)
 
     # Params
     app.router.add_get("/api/params", self.handle_params_list)
