@@ -326,6 +326,41 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
           "responses": {"200": {"description": "Frame sent"}, "400": {"description": "Invalid request"}},
         }
       },
+      "/api/gps": {
+        "get": {
+          "tags": ["system"],
+          "summary": "GPS location and fix status",
+          "responses": {"200": {"description": "GPS data"}},
+        }
+      },
+      "/api/calibration": {
+        "get": {
+          "tags": ["system"],
+          "summary": "Live calibration status (pitch/roll/yaw, percent)",
+          "responses": {"200": {"description": "Calibration data"}},
+        }
+      },
+      "/api/network": {
+        "get": {
+          "tags": ["system"],
+          "summary": "Network type, signal strength, metered status",
+          "responses": {"200": {"description": "Network info"}},
+        }
+      },
+      "/api/sunnylink": {
+        "get": {
+          "tags": ["system"],
+          "summary": "Sunnylink connection status and registration info",
+          "responses": {"200": {"description": "Sunnylink status"}},
+        }
+      },
+      "/api/storage": {
+        "get": {
+          "tags": ["system"],
+          "summary": "Disk usage breakdown per directory",
+          "responses": {"200": {"description": "Storage usage"}},
+        }
+      },
       "/openapi.json": {
         "get": {
           "tags": ["system"],
