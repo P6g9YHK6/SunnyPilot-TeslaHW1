@@ -243,6 +243,89 @@ async function updateLogsErrorBadge() {
   } catch (_) {}
 }
 
+/* ── New dashboard card renderers ── */
+function renderGpsCard(g) {
+  const el = document.getElementById('card-gps').querySelector('.card-body');
+  if (!g || g.status === 'no_fix') { el.innerHTML = '<div class="row"><span class="label">Fix</span><span class="value">No GPS fix</span></div>'; return; }
+  el.innerHTML = `
+    <div class="row"><span class="label">Fix</span><span class="value">${g.has_fix ? '<span class="diag-dot dot-ok">OK</span>' : '<span class="diag-dot dot-fail">No</span>'}</span></div>
+    <div class="row"><span class="label">Lat</span><span class="value">${g.latitude != null ? g.latitude.toFixed(5) : '—'}</span></div>
+    <div class="row"><span class="label">Lon</span><span class="value">${g.longitude != null ? g.longitude.toFixed(5) : '—'}</span></div>
+    <div class="row"><span class="label">Speed</span><span class="value">${g.speed != null ? fmtMps(g.speed) : '—'}</span></div>
+    <div class="row"><span class="label">Bearing</span><span class="value">${g.bearing != null ? g.bearing.toFixed(1) + '°' : '—'}</span></div>
+    <div class="row"><span class="label">Altitude</span><span class="value">${g.altitude != null ? g.altitude.toFixed(0) + ' m' : '—'}</span></div>
+    <div class="row"><span class="label">Accuracy</span><span class="value">${g.accuracy != null ? g.accuracy.toFixed(1) + ' m' : '—'}</span></div>
+    <div class="row"><span class="label">Satellites</span><span class="value">${g.satellites ?? '—'}</span></div>
+  `;
+}
+
+function renderCalibrationCard(c) {
+  const el = document.getElementById('card-calibration').querySelector('.card-body');
+  if (!c || c.status === 'no_data') { el.textContent = 'No data'; return; }
+  const s = c.status;
+  const badge = s === 'calibrated' ? '<span class="diag-dot dot-ok">Calibrated</span>' : s === 'uncalibrated' ? '<span style="color:var(--warn)">Uncalibrated</span>' : s === 'recalibrating' ? '<span style="color:var(--warn)">Recalibrating</span>' : s;
+  const pct = c.percent != null ? c.percent : 0;
+  el.innerHTML = `
+    <div class="row"><span class="label">Status</span><span class="value">${badge}</span></div>
+    ${c.percent != null ? `<div class="row"><span class="label">Progress</span><span class="value"><div class="progress-bar" style="width:100%;height:6px"><div class="progress-fill" style="width:${pct}%"></div></div></span></div>` : ''}
+    <div class="row"><span class="label">Pitch</span><span class="value">${c.pitch != null ? c.pitch.toFixed(3) + ' rad' : '—'}</span></div>
+    <div class="row"><span class="label">Roll</span><span class="value">${c.roll != null ? c.roll.toFixed(3) + ' rad' : '—'}</span></div>
+    <div class="row"><span class="label">Yaw</span><span class="value">${c.yaw != null ? c.yaw.toFixed(3) + ' rad' : '—'}</span></div>
+    <div class="row"><span class="label">Blocks</span><span class="value">${c.valid_blocks ?? '—'}</span></div>
+  `;
+}
+
+function renderNetworkCard(n) {
+  const el = document.getElementById('card-network').querySelector('.card-body');
+  if (!n || !n.type) { el.textContent = 'No data'; return; }
+  el.innerHTML = `
+    <div class="row"><span class="label">Type</span><span class="value">${n.type}</span></div>
+    <div class="row"><span class="label">Signal</span><span class="value">${n.strength || '—'}</span></div>
+    <div class="row"><span class="label">Metered</span><span class="value">${n.metered != null ? (n.metered ? 'Yes' : 'No') : '—'}</span></div>
+  `;
+}
+
+function renderSunnylinkCard(s) {
+  const el = document.getElementById('card-sunnylink').querySelector('.card-body');
+  if (!s) { el.textContent = 'No data'; return; }
+  const badge = !s.enabled ? '<span class="diag-dot dot-fail" style="padding:2px 6px;font-size:0.65rem">Disabled</span>'
+    : s.online ? '<span class="diag-dot dot-ok" style="padding:2px 6px;font-size:0.65rem">Online</span>'
+    : '<span class="diag-dot dot-fail" style="padding:2px 6px;font-size:0.65rem">Offline</span>';
+  el.innerHTML = `
+    <div class="row"><span class="label">Status</span><span class="value">${badge}</span></div>
+    <div class="row"><span class="label">Dongle ID</span><span class="value" style="font-size:0.72rem">${s.dongle_id || '—'}</span></div>
+    <div class="row"><span class="label">Registered</span><span class="value">${s.registered ? 'Yes' : 'No'}</span></div>
+    <div class="row"><span class="label">Temp Fault</span><span class="value">${s.temp_fault ? 'Yes' : 'No'}</span></div>
+    <div class="row"><span class="label">Ready</span><span class="value">${s.ready ? '<span class="diag-dot dot-ok">Yes</span>' : '<span class="diag-dot dot-fail">No</span>'}</span></div>
+  `;
+}
+
+function renderStorageCard(st) {
+  const el = document.getElementById('card-storage').querySelector('.card-body');
+  if (!st) { el.textContent = 'No data'; return; }
+  function bar(pct) { return `<div class="progress-bar" style="width:100%;height:5px"><div class="progress-fill" style="width:${Math.min(pct,100)}%"></div></div>`; }
+  function fmtGb(b) { return (b / 1073741824).toFixed(1) + ' GB'; }
+  function row(label, u) {
+    if (!u) return '';
+    return `<div class="row"><span class="label">${label}</span><span class="value">${fmtGb(u.used)} / ${fmtGb(u.total)} ${bar(u.pct)}</span></div>`;
+  }
+  el.innerHTML = row('Internal', st.root) + row('Data', st.data) + row('Logs', st.logs) + row('Models', st.models) + row('Crashes', st.crashes);
+}
+
+/* ── Reset Web UI ── */
+function resetWebUI() {
+  showModal('Reset Web UI', '<p>Clear all local data (theme, auto-refresh, cached state) and reload the page?</p>', [
+    { label: 'Cancel', cls: '' },
+    { label: 'Reset', action: 'doResetWebUI()', cls: 'btn-danger' },
+  ]);
+}
+
+function doResetWebUI() {
+  localStorage.clear();
+  toast('Local storage cleared. Reloading...', 'info');
+  setTimeout(() => location.reload(), 500);
+}
+
 function rebootDevice() {
   showModal('Reboot Device', '<p>Reboot the device now?</p>', [
     { label: 'Cancel', cls: '' },
@@ -261,7 +344,7 @@ function stopDashboardPoll() {}   // kept for loadPage() call-site compatibility
 
 async function loadDashboard() {
   try {
-    const [device, caps, status, activeModel, telemetry, diag, updateStatus] = await Promise.all([
+    const [device, caps, status, activeModel, telemetry, diag, updateStatus, gps, calibration, network, sunnylink, storage] = await Promise.all([
       api('/api/device'),
       api('/api/capabilities'),
       api('/api/status'),
@@ -269,6 +352,11 @@ async function loadDashboard() {
       api('/api/telemetry', { silent: true }).catch(() => null),
       api('/api/diag', { silent: true }).catch(() => null),
       api('/api/update', { silent: true }).catch(() => null),
+      api('/api/gps', { silent: true }).catch(() => null),
+      api('/api/calibration', { silent: true }).catch(() => null),
+      api('/api/network', { silent: true }).catch(() => null),
+      api('/api/sunnylink', { silent: true }).catch(() => null),
+      api('/api/storage', { silent: true }).catch(() => null),
     ]);
 
     document.getElementById('card-device').querySelector('.card-body').innerHTML = `
@@ -280,7 +368,9 @@ async function loadDashboard() {
       <div class="row"><span class="label">Commit</span><span class="value">${device.git_commit ? device.git_commit.slice(0, 8) : '—'}</span></div>
       <div class="row"><span class="label">Date</span><span class="value" style="font-size:0.72rem">${device.git_commit_date ? device.git_commit_date.split(' ').slice(0, 2).join(' ') : '—'}</span></div>
       <div class="row"><span class="label">Dirty</span><span class="value">${fmtBool(device.is_dirty)}</span></div>
-      ${updateStatus?.available ? `<div class="row"><span class="label">Update</span><span class="value"><span class="badge-restart" style="background:var(--green,#4caf50);color:#fff">AVAILABLE</span> <span style="font-size:0.7rem;color:var(--text-dim)">${escHtml(updateStatus.description)}</span></span></div>` : ''}
+      <div class="row"><span class="label">Update</span><span class="value">${updateStatus?.available
+        ? `<span class="badge-restart" style="background:var(--green,#4caf50);color:#fff">AVAILABLE</span> <span style="font-size:0.7rem;color:var(--text-dim)">${escHtml(updateStatus.description)}</span>`
+        : `<span style="color:var(--text-dim)">No update available</span>`}</span></div>
     `;
 
     document.getElementById('card-capabilities').querySelector('.card-body').innerHTML = `
@@ -312,6 +402,11 @@ async function loadDashboard() {
     renderTelemetryCard(telemetry);
     renderSystemCard(telemetry);
     renderDiagCard(diag);
+    renderGpsCard(gps);
+    renderCalibrationCard(calibration);
+    renderNetworkCard(network);
+    renderSunnylinkCard(sunnylink);
+    renderStorageCard(storage);
   } catch (e) {
     document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-status .card-body, #card-model .card-body')
       .forEach(el => el.textContent = 'Failed to load.');

@@ -20,6 +20,7 @@
     </div>
     <div class="nav-refresh">
       <button class="nav-refresh-btn" id="theme-cycle-btn" onclick="cycleTheme()" title="Toggle theme">&#9775;</button>
+      <button class="nav-refresh-btn" id="reset-ui-btn" onclick="resetWebUI()" title="Reset Web UI">&#8634;</button>
       <button class="nav-refresh-btn" id="refresh-now-btn" onclick="refreshNow()" title="Refresh now">&#8635;</button>
       <select id="refresh-interval-select" onchange="setAutoRefresh(this.value)">
         <option value="0">Off</option>
@@ -63,6 +64,26 @@
         </div>
         <div class="card card-wide" id="card-diag">
           <h3>Services <span id="diag-summary-badge"></span></h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-gps">
+          <h3>GPS</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-calibration">
+          <h3>Calibration</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-network">
+          <h3>Network</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-sunnylink">
+          <h3>Sunnylink</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card card-wide" id="card-storage">
+          <h3>Storage</h3>
           <div class="card-body">Loading...</div>
         </div>
       </div>
