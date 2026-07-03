@@ -243,12 +243,6 @@ async function updateLogsErrorBadge() {
   } catch (_) {}
 }
 
-function toggleMetric(checked) {
-  api('/api/params/IsMetric', { method: 'POST', body: JSON.stringify({ value: checked ? '1' : '0' }) })
-    .then(() => toast('Units updated', 'success'))
-    .catch(() => toast('Failed to update units', 'error'));
-}
-
 function rebootDevice() {
   showModal('Reboot Device', '<p>Reboot the device now?</p>', [
     { label: 'Cancel', cls: '' },
@@ -301,7 +295,6 @@ async function loadDashboard() {
     document.getElementById('card-status').querySelector('.card-body').innerHTML = `
       <div class="row"><span class="label">Web UI</span><span class="value">${fmtBool(status.enabled)}</span></div>
       <div class="row"><span class="label">Offroad</span><span class="value">${fmtBool(status.is_offroad)}</span></div>
-      <div class="row"><span class="label">Metric</span><span class="value"><label class="toggle" style="margin:0"><input type="checkbox" ${status.is_metric ? 'checked' : ''} onchange="toggleMetric(this.checked)"><span class="slider"></span></label></span></div>
       <div class="row" style="margin-top:0.5rem;display:flex;gap:0.4rem;flex-wrap:wrap">
         <button class="btn btn-sm" onclick="restartOpenpilot()">Restart OP</button>
         <button class="btn btn-sm btn-danger" onclick="rebootDevice()">Reboot</button>

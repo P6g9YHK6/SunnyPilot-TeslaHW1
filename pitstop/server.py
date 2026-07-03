@@ -570,9 +570,18 @@ class PitStopServer:
       except Exception:
         return ""
       return v.decode("utf-8", errors="replace").strip() if isinstance(v, bytes) else (v or "")
-    desc = _getstr("UpdaterNewDescription")
+
+    update_available = self.params.get_bool("UpdateAvailable")
+    current_desc = _getstr("UpdaterCurrentDescription")
+    new_desc = _getstr("UpdaterNewDescription")
     fork_url = _getstr("UpdaterForkUrl")
-    return web.json_response({"available": bool(desc), "description": desc, "fork_url": fork_url})
+
+    # Patchwork: upstream compares remote hash instead of FINALIZED vs BASEDIR,
+    # so UpdateAvailable can be True even when staged FINALIZED == running BASEDIR.
+    # Guard with description equality.
+    available = update_available and new_desc != current_desc
+
+    return web.json_response({"available": available, "current_description": current_desc, "description": new_desc, "fork_url": fork_url})
 
   async def handle_system_reboot(self, request):
     import subprocess
