@@ -829,6 +829,8 @@ html[data-theme="hc"] .btn-download { border-width: 2px; }
 .backup-item:hover { border-color: var(--border-mid); }
 .backup-item .info { flex: 1; min-width: 0; }
 .backup-item .name { font-size: 0.875rem; font-weight: 500; }
+.backup-fname { font-size: 0.72rem; color: var(--text-muted); font-weight: 400; }
+.backup-item.has-label { border-left: 3px solid var(--accent); }
 .backup-item .meta { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.15rem; }
 .backup-actions-row { display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; }
 

@@ -535,11 +535,19 @@ class PitStopServer:
       for fname in sorted(os.listdir(backup_dir)):
         fpath = os.path.join(backup_dir, fname)
         if os.path.isfile(fpath):
-          backups.append({
+          info = {
             "name": fname,
             "size": os.path.getsize(fpath),
             "mtime": os.path.getmtime(fpath),
-          })
+          }
+          try:
+            with open(fpath) as f:
+              data = json.load(f)
+              if "label" in data:
+                info["label"] = data["label"]
+          except Exception:
+            pass
+          backups.append(info)
     return web.json_response(backups)
 
   async def handle_backup_create(self, request):
@@ -570,6 +578,30 @@ class PitStopServer:
       raise web.HTTPNotFound(text=f"Backup '{name}' not found")
       os.remove(fpath)
     return web.json_response({"status": "deleted"})
+
+  async def handle_backup_set_label(self, request):
+    name = request.match_info.get("name")
+    if not name:
+      raise web.HTTPBadRequest(text="Missing name")
+    try:
+      body = await request.json()
+    except Exception:
+      raise web.HTTPBadRequest(text="Invalid JSON") from None
+    label = body.get("label")
+    if label is None:
+      raise web.HTTPBadRequest(text="Missing 'label'")
+    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
+    fpath = os.path.normpath(os.path.join(backup_dir, name))
+    if not fpath.startswith(backup_dir + os.sep):
+      raise web.HTTPBadRequest(text="Invalid backup name")
+    if not os.path.isfile(fpath):
+      raise web.HTTPNotFound(text=f"Backup '{name}' not found")
+    with open(fpath) as f:
+      data = json.load(f)
+    data["label"] = label
+    with open(fpath, "w") as f:
+      json.dump(data, f)
+    return web.json_response({"status": "ok", "label": label})
 
   async def handle_backup_download(self, request):
     name = request.match_info.get("name")
@@ -1065,6 +1097,7 @@ class PitStopServer:
     app.router.add_post("/api/backup/create", self.handle_backup_create)
     app.router.add_post("/api/backup/restore", self.handle_backup_restore)
     app.router.add_delete("/api/backup/{name}", self.handle_backup_delete)
+    app.router.add_post("/api/backup/{name}/label", self.handle_backup_set_label)
     app.router.add_get("/api/backup/download/{name}", self.handle_backup_download)
 
     # Models
