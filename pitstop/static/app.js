@@ -1528,13 +1528,15 @@ async function loadBackups() {
     for (const b of backups) {
       const date = new Date(b.mtime * 1000).toLocaleString();
       const size = fmtSize(b.size);
+      const label = b.label || '';
       html += `
-        <div class="backup-item">
+        <div class="backup-item${label ? ' has-label' : ''}">
           <div class="info">
-            <div class="name">${b.name}</div>
+            <div class="name">${label ? `${escHtml(label)} <span class="backup-fname">${b.name}</span>` : b.name}</div>
             <div class="meta">${date} &middot; ${size}</div>
           </div>
           <div class="backup-actions-row">
+            <button class="btn btn-sm" onclick="setBackupLabel('${b.name}')">Label</button>
             <button class="btn btn-download btn-sm" onclick="downloadBackup('${b.name}')">Download</button>
             <button class="btn btn-primary btn-sm" onclick="restoreBackup('${b.name}')">Restore</button>
             <button class="btn btn-danger btn-sm" onclick="deleteBackup('${b.name}')">Delete</button>
@@ -1553,6 +1555,30 @@ async function createBackup() {
     toast('Backup created: ' + res.name, 'success');
     loadBackups();
   } catch (e) { toast('Backup failed: ' + (e.message || e), 'error'); }
+}
+
+async function setBackupLabel(name) {
+  showModal('Label Backup', `
+    <p>Set a label for <b>${escHtml(name)}</b></p>
+    <input type="text" id="backup-label-input" class="param-edit-input" placeholder="My backup label" style="margin-top:0.5rem">
+  `, [
+    { label: 'Cancel', cls: '' },
+    { label: 'Save', action: `doSetBackupLabel('${name}')`, cls: 'btn-primary' },
+  ]);
+  setTimeout(() => document.getElementById('backup-label-input')?.focus(), 100);
+}
+
+async function doSetBackupLabel(name) {
+  const input = document.getElementById('backup-label-input');
+  const label = input ? input.value.trim() : '';
+  try {
+    await api(`/api/backup/${encodeURIComponent(name)}/label`, {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    });
+    toast(label ? 'Label saved' : 'Label removed', 'success');
+    loadBackups();
+  } catch (e) { toast('Failed to save label', 'error'); }
 }
 
 async function downloadBackup(name) {
