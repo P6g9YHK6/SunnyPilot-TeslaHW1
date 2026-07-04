@@ -56,9 +56,27 @@ function refreshNow() {
 }
 
 function setAutoRefresh(seconds) {
+  if (seconds === 'custom') {
+    const current = localStorage.getItem('pitstop_refresh_v2');
+    const curVal = current && current !== '0' ? parseFloat(current) : 5;
+    showNumberModal({
+      title: 'Custom Refresh Interval',
+      value: curVal,
+      min: 0.5,
+      max: 300,
+      step: 0.5,
+      suffix: 's',
+      onSave: (v) => {
+        const sel = document.getElementById('refresh-interval-select');
+        if (sel) sel.value = String(v);
+        setAutoRefresh(String(v));
+      }
+    });
+    return;
+  }
   clearInterval(autoRefreshTimer);
   autoRefreshTimer = null;
-  const s = parseInt(seconds, 10);
+  const s = parseFloat(seconds);
   localStorage.setItem('pitstop_refresh_v2', s);
   if (s > 0) {
     autoRefreshTimer = setInterval(() => loadPage(currentPage), s * 1000);
@@ -685,6 +703,60 @@ function nmConfirm() {
   if (_nmKey) {
     queueChange(_nmKey, String(_nmVal), _nmLabel, _nmNeedsCycle);
   }
+}
+
+/* ---- Generic number selector modal (with callback) ---- */
+let _nmCallback = null;
+let _nmCbVal = 0, _nmCbMin = -Infinity, _nmCbMax = Infinity, _nmCbStep = 1;
+let _nmCbSuffix = '';
+
+function showNumberModal({title, value, min, max, step, suffix, onSave}) {
+  _nmCallback = onSave;
+  _nmCbVal = parseFloat(value) || 0;
+  _nmCbMin = min !== undefined ? parseFloat(min) : -Infinity;
+  _nmCbMax = max !== undefined ? parseFloat(max) : Infinity;
+  _nmCbStep = parseFloat(step) || 1;
+  _nmCbSuffix = suffix || '';
+
+  const precision = String(_nmCbStep).includes('.') ? String(_nmCbStep).split('.')[1].length : 0;
+  const fmtD = v => parseFloat(v.toFixed(precision));
+  const d1 = fmtD(_nmCbStep), d10 = fmtD(_nmCbStep * 10);
+  const minAttr = isFinite(_nmCbMin) ? `min="${_nmCbMin}"` : '';
+  const maxAttr = isFinite(_nmCbMax) ? `max="${_nmCbMax}"` : '';
+
+  const body = `
+    <div class="num-modal">
+      <input type="number" id="nmc-input" class="num-input" value="${_nmCbVal}" step="${_nmCbStep}" ${minAttr} ${maxAttr} oninput="nmcInputChange(this.value)">
+      <div class="num-btns">
+        <button class="btn btn-sm" onclick="nmcStep(-10)">&#8722;${d10}</button>
+        <button class="btn btn-sm" onclick="nmcStep(-1)">&#8722;${d1}</button>
+        <button class="btn btn-sm" onclick="nmcStep(1)">+${d1}</button>
+        <button class="btn btn-sm" onclick="nmcStep(10)">+${d10}</button>
+      </div>
+    </div>`;
+
+  showModal(title, body, [
+    { label: 'Cancel', action: '', cls: '' },
+    { label: 'OK', action: 'nmcConfirm', cls: 'btn-primary' },
+  ]);
+  setTimeout(() => document.getElementById('nmc-input')?.select(), 50);
+}
+
+function nmcInputChange(v) {
+  const p = String(_nmCbStep).includes('.') ? String(_nmCbStep).split('.')[1].length : 0;
+  _nmCbVal = parseFloat(parseFloat(v).toFixed(p)) || 0;
+}
+
+function nmcStep(n) {
+  const precision = String(_nmCbStep).includes('.') ? String(_nmCbStep).split('.')[1].length : 0;
+  _nmCbVal = parseFloat(Math.min(_nmCbMax, Math.max(_nmCbMin, _nmCbVal + n * _nmCbStep)).toFixed(precision));
+  const inp = document.getElementById('nmc-input');
+  if (inp) inp.value = _nmCbVal;
+}
+
+function nmcConfirm() {
+  if (_nmCallback) _nmCallback(_nmCbVal);
+  _nmCallback = null;
 }
 
 /* ---- Build title with suffix ---- */
