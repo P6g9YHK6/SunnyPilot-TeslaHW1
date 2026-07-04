@@ -696,6 +696,9 @@ function op_fork_menu() {
 }
 
 function op_submodule_update() {
+  # Sync submodule remote URLs from .gitmodules — required when switching branches
+  # that point submodules to different remotes (e.g. commaai/panda vs sunnyhaibin/panda).
+  git submodule sync --recursive
   # Unshallow any shallow submodules before updating — shallow submodules
   # can't fetch rewritten/rebased commits that aren't reachable at depth 1.
   git submodule foreach --recursive \
