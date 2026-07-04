@@ -450,7 +450,7 @@ function op_update_fork() {
   cd "$rp" || return
   op_run_command git fetch origin
   op_run_command git merge --ff-only "origin/$branch"
-  op_run_command git submodule update --init --recursive
+  op_submodule_update
 }
 
 function op_fork_ahead_behind() {
@@ -695,6 +695,14 @@ function op_fork_menu() {
   echo ""
 }
 
+function op_submodule_update() {
+  # Unshallow any shallow submodules before updating — shallow submodules
+  # can't fetch rewritten/rebased commits that aren't reachable at depth 1.
+  git submodule foreach --recursive \
+    'git rev-parse --is-shallow-repository 2>/dev/null | grep -q true && git fetch --unshallow 2>/dev/null; true'
+  git submodule update --init --recursive
+}
+
 function op_use_fork() {
   local i=$1 rp branch
 
@@ -706,19 +714,19 @@ function op_use_fork() {
     branch="${UNDECLARED_BRANCHES[$idx]}"
     cd "$rp" || return
     op_run_command git checkout -f "$branch"
-    op_run_command git submodule update --init --recursive
+    op_submodule_update
   else
     rp=$(op_repo_path $i)
     mkdir -p "/data/${FORKS_DIR}"
     if [ ! -d "$rp" ]; then
       op_run_command git clone -b "${BRANCHES[$i]}" --depth 1 --single-branch \
-        --recurse-submodules --shallow-submodules \
+        --recurse-submodules \
         "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "$rp"
     else
       cd "$rp" || return
       op_run_command git fetch origin "${BRANCHES[$i]}:${BRANCHES[$i]}" --depth 1
       op_run_command git checkout -f "${BRANCHES[$i]}"
-      op_run_command git submodule update --init --recursive
+      op_submodule_update
     fi
   fi
 
@@ -866,7 +874,7 @@ function op_fork_from_url() {
     mkdir -p "/data/${FORKS_DIR}"
     if [ ! -d "$rp" ]; then
       op_run_command git clone -b "$branch" --depth 1 --single-branch \
-        --recurse-submodules --shallow-submodules \
+        --recurse-submodules \
         "https://github.com/${owner}/${repo}.git" "$rp"
     else
       op_run_command git -C "$rp" fetch origin "$branch:$branch" --depth 1
