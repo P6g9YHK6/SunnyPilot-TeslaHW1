@@ -1535,6 +1535,7 @@ async function loadBackups() {
             <div class="meta">${date} &middot; ${size}</div>
           </div>
           <div class="backup-actions-row">
+            <button class="btn btn-download btn-sm" onclick="downloadBackup('${b.name}')">Download</button>
             <button class="btn btn-primary btn-sm" onclick="restoreBackup('${b.name}')">Restore</button>
             <button class="btn btn-danger btn-sm" onclick="deleteBackup('${b.name}')">Delete</button>
           </div>
@@ -1552,6 +1553,16 @@ async function createBackup() {
     toast('Backup created: ' + res.name, 'success');
     loadBackups();
   } catch (e) { toast('Backup failed: ' + (e.message || e), 'error'); }
+}
+
+async function downloadBackup(name) {
+  const a = document.createElement('a');
+  a.href = `/api/backup/download/${encodeURIComponent(name)}`;
+  a.download = name;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 async function restoreBackup(name) {
