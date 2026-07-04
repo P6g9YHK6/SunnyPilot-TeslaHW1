@@ -1,6 +1,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
+  --font-scale: 1;
   /* Background layers */
   --bg:       #07090e;
   --surface:  #0d1117;
@@ -135,7 +136,7 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale));
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   background-image: radial-gradient(ellipse 120% 60% at 50% -10%, rgba(91,157,248,0.06) 0%, transparent 70%);
@@ -265,6 +266,7 @@ nav {
 .nav-refresh-btn.spinning { animation: spin 0.5s linear; }
 
 #theme-cycle-btn { font-size: 1rem; }
+.font-scale-btn { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em; }
 
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
