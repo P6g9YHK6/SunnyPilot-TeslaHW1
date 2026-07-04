@@ -1053,7 +1053,7 @@ function renderSettingsUI() {
         return (sub.items || []).some(itemMatches);
       });
 
-      if (!sectionMatch && !panelMatch && !sectionItems.length && !matchingSubPanels.length) continue;
+      if (!sectionItems.length && !matchingSubPanels.length) continue;
 
       const sectionCount = (section.items || []).length;
       let sectionHtml = '';
