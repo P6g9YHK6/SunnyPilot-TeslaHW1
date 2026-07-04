@@ -804,10 +804,15 @@ function op_use_fork() {
 }
 
 function op_fork_from_url() {
-  # Parse: https://github.com/owner/repo[.git], git@github.com:owner/repo[.git],
+  # Parse: https://github.com/owner/repo[/tree/branch][.git], git@github.com:owner/repo[.git],
   #        owner/repo, or owner/repo:branch
   local raw="$1" owner repo branch
   raw="${raw%.git}"
+
+  # Extract branch from GitHub /tree/<branch> URL pattern
+  if [[ "$raw" =~ ^https?://[^/]+/[^/]+/[^/]+/tree/([^/]+) ]]; then
+    branch="${BASH_REMATCH[1]}"
+  fi
 
   # Extract branch suffix (owner/repo:branch — only for non-URL forms)
   if [[ ! "$raw" =~ ^https?:// ]] && [[ ! "$raw" =~ ^git@ ]] && [[ "$raw" =~ ^([^:]+):([^:]+)$ ]]; then
