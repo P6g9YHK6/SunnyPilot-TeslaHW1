@@ -68,7 +68,7 @@ function setAutoRefresh(seconds) {
       suffix: 's',
       onSave: (v) => {
         const sel = document.getElementById('refresh-interval-select');
-        if (sel) sel.value = String(v);
+        if (sel) ensureSelectOption(sel, String(v));
         setAutoRefresh(String(v));
       }
     });
@@ -86,9 +86,27 @@ function setAutoRefresh(seconds) {
   }
 }
 
+function ensureSelectOption(sel, value) {
+  for (let i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === value) return;
+  }
+  const opt = document.createElement('option');
+  opt.value = value;
+  opt.textContent = value + 's';
+  sel.appendChild(opt);
+  sel.value = value;
+}
+
 function restartAutoRefresh() {
   const sel = document.getElementById('refresh-interval-select');
   if (sel) setAutoRefresh(sel.value);
+}
+
+function adjFont(delta) {
+  let scale = parseFloat(localStorage.getItem('pitstop_font_scale')) || 1;
+  scale = Math.round(Math.min(Math.max(scale + delta, 0.7), 1.6) * 100) / 100;
+  localStorage.setItem('pitstop_font_scale', scale);
+  document.documentElement.style.setProperty('--font-scale', scale);
 }
 
 /* ---------- API helper ---------- */
@@ -1794,8 +1812,11 @@ function cycleTheme() {
   const saved = localStorage.getItem('pitstop_refresh_v2');
   const sel = document.getElementById('refresh-interval-select');
   if (sel && saved && saved !== '0') {
-    sel.value = saved;
+    ensureSelectOption(sel, saved);
     setAutoRefresh(saved);
   }
+  /* Font scale */
+  const fs = localStorage.getItem('pitstop_font_scale');
+  if (fs) adjFont(0);
 })();
 loadDashboard();
