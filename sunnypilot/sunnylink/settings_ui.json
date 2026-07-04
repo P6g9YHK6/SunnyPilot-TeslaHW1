@@ -572,13 +572,6 @@
               "widget": "toggle",
               "title": "Dynamic Experimental Control",
               "description": "Let the model decide when to use sunnypilot ACC or sunnypilot End to End Longitudinal.",
-              "visibility": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
-                }
-              ],
               "enablement": [
                 {
                   "type": "capability",
@@ -943,23 +936,6 @@
               "widget": "toggle",
               "title": "Vision",
               "description": "Use vision path predictions to estimate the appropriate speed to drive through turns ahead.",
-              "visibility": [
-                {
-                  "type": "any",
-                  "conditions": [
-                    {
-                      "type": "capability",
-                      "field": "has_longitudinal_control",
-                      "equals": true
-                    },
-                    {
-                      "type": "capability",
-                      "field": "has_icbm",
-                      "equals": true
-                    }
-                  ]
-                }
-              ],
               "enablement": [
                 {
                   "type": "any",
@@ -983,23 +959,6 @@
               "widget": "toggle",
               "title": "Map",
               "description": "Use map data to estimate the appropriate speed to drive through turns ahead.",
-              "visibility": [
-                {
-                  "type": "any",
-                  "conditions": [
-                    {
-                      "type": "capability",
-                      "field": "has_longitudinal_control",
-                      "equals": true
-                    },
-                    {
-                      "type": "capability",
-                      "field": "has_icbm",
-                      "equals": true
-                    }
-                  ]
-                }
-              ],
               "enablement": [
                 {
                   "type": "any",
