@@ -450,7 +450,7 @@ function op_update_fork() {
   cd "$rp" || return
   op_run_command git fetch origin
   op_run_command git merge --ff-only "origin/$branch"
-  op_run_command git submodule update --init --recursive
+  op_submodule_update
 }
 
 function op_fork_ahead_behind() {
@@ -695,6 +695,17 @@ function op_fork_menu() {
   echo ""
 }
 
+function op_submodule_update() {
+  # Sync submodule remote URLs from .gitmodules — required when switching branches
+  # that point submodules to different remotes (e.g. commaai/panda vs sunnyhaibin/panda).
+  git submodule sync --recursive
+  # Unshallow any shallow submodules before updating — shallow submodules
+  # can't fetch rewritten/rebased commits that aren't reachable at depth 1.
+  git submodule foreach --recursive \
+    'git rev-parse --is-shallow-repository 2>/dev/null | grep -q true && git fetch --unshallow 2>/dev/null; true'
+  git submodule update --init --recursive
+}
+
 function op_use_fork() {
   local i=$1 rp branch
 
@@ -706,19 +717,19 @@ function op_use_fork() {
     branch="${UNDECLARED_BRANCHES[$idx]}"
     cd "$rp" || return
     op_run_command git checkout -f "$branch"
-    op_run_command git submodule update --init --recursive
+    op_submodule_update
   else
     rp=$(op_repo_path $i)
     mkdir -p "/data/${FORKS_DIR}"
     if [ ! -d "$rp" ]; then
       op_run_command git clone -b "${BRANCHES[$i]}" --depth 1 --single-branch \
-        --recurse-submodules --shallow-submodules \
+        --recurse-submodules \
         "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "$rp"
     else
       cd "$rp" || return
-      op_run_command git fetch origin "${BRANCHES[$i]}:${BRANCHES[$i]}" --depth 1
-      op_run_command git checkout -f "${BRANCHES[$i]}"
-      op_run_command git submodule update --init --recursive
+      op_run_command git fetch origin "${BRANCHES[$i]}" --depth 1
+      op_run_command git checkout -B "${BRANCHES[$i]}" FETCH_HEAD
+      op_submodule_update
     fi
   fi
 
@@ -804,10 +815,15 @@ function op_use_fork() {
 }
 
 function op_fork_from_url() {
-  # Parse: https://github.com/owner/repo[.git], git@github.com:owner/repo[.git],
+  # Parse: https://github.com/owner/repo[/tree/branch][.git], git@github.com:owner/repo[.git],
   #        owner/repo, or owner/repo:branch
   local raw="$1" owner repo branch
   raw="${raw%.git}"
+
+  # Extract branch from GitHub /tree/<branch> URL pattern
+  if [[ "$raw" =~ ^https?://[^/]+/[^/]+/[^/]+/tree/([^/]+) ]]; then
+    branch="${BASH_REMATCH[1]}"
+  fi
 
   # Extract branch suffix (owner/repo:branch — only for non-URL forms)
   if [[ ! "$raw" =~ ^https?:// ]] && [[ ! "$raw" =~ ^git@ ]] && [[ "$raw" =~ ^([^:]+):([^:]+)$ ]]; then
@@ -861,10 +877,10 @@ function op_fork_from_url() {
     mkdir -p "/data/${FORKS_DIR}"
     if [ ! -d "$rp" ]; then
       op_run_command git clone -b "$branch" --depth 1 --single-branch \
-        --recurse-submodules --shallow-submodules \
+        --recurse-submodules \
         "https://github.com/${owner}/${repo}.git" "$rp"
     else
-      op_run_command git -C "$rp" fetch origin "$branch:$branch" --depth 1
+      op_run_command git -C "$rp" fetch origin "$branch" --depth 1
     fi
     op_scan_undeclared
     local idx
