@@ -492,6 +492,7 @@ let settingsParamCache = {};
 let settingsStatus = { is_offroad: true, is_metric: false };
 let reEvalPending = false;
 let settingsStatusInterval = null;
+let settingsSearchQuery = '';
 
 /* ---- Pending changes queue ---- */
 let pendingChanges = {};
@@ -945,32 +946,68 @@ function renderSettingsUI() {
     return String(val) === String(sub.trigger_condition);
   }
 
+  const q = settingsSearchQuery;
+  function itemMatches(item) {
+    if (!q) return true;
+    const title = (item.title || '').toLowerCase();
+    const desc = (item.description || '').replace(/<[^>]+>/g, ' ').toLowerCase();
+    const key = (item.key || '').toLowerCase();
+    return title.includes(q) || desc.includes(q) || key.includes(q);
+  }
+
   let html = '';
+  let totalItems = 0;
+  let visibleItems = 0;
   for (const panel of schema.panels || []) {
     if (!evaluateRules(panel.visibility, caps, pc, st)) continue;
-    html += `<div class="panel"><div class="panel-header">${panel.label}</div>`;
+    const panelLabel = (panel.label || '').toLowerCase();
+    const panelMatch = !q || panelLabel.includes(q);
+
+    let panelHtml = '';
     for (const section of panel.sections || []) {
       if (!evaluateRules(section.visibility, caps, pc, st)) continue;
       const sectionEnabled = evaluateRules(section.enablement, caps, pc, st);
-      html += `<div class="panel-section">`;
-      if (section.title) html += `<div class="section-title">${section.title}</div>`;
-      if (section.description) html += `<div class="section-desc">${section.description}</div>`;
-      html += renderSubItems(section.items, caps, pc, st, 0, !sectionEnabled);
-      for (const sub of section.sub_panels || []) {
-        if (!subPanelVisible(sub)) continue;
-        if (sub.title || sub.label) html += `<div class="section-title">${sub.title || sub.label}</div>`;
-        html += renderSubItems(sub.items, caps, pc, st, 0, !sectionEnabled);
+      const sectionTitle = (section.title || '').toLowerCase();
+      const sectionDesc = (section.description || '').toLowerCase();
+      const sectionMatch = panelMatch || !q || sectionTitle.includes(q) || sectionDesc.includes(q);
+
+      const sectionItems = (section.items || []).filter(itemMatches);
+      const matchingSubPanels = (section.sub_panels || []).filter(sub => {
+        if (!subPanelVisible(sub)) return false;
+        if (sectionMatch || panelMatch) return true;
+        return (sub.items || []).some(itemMatches);
+      });
+
+      if (!sectionMatch && !panelMatch && !sectionItems.length && !matchingSubPanels.length) continue;
+
+      const sectionCount = (section.items || []).length;
+      let sectionHtml = '';
+      if (section.title) sectionHtml += `<div class="section-title">${section.title}</div>`;
+      if (section.description) sectionHtml += `<div class="section-desc">${section.description}</div>`;
+      sectionHtml += renderSubItems(sectionItems, caps, pc, st, 0, !sectionEnabled);
+      totalItems += sectionCount;
+      visibleItems += sectionItems.length;
+      for (const sub of matchingSubPanels) {
+        if (sub.title || sub.label) sectionHtml += `<div class="section-title">${sub.title || sub.label}</div>`;
+        const subItems = (sub.items || []).filter(itemMatches);
+        totalItems += (sub.items || []).length;
+        visibleItems += subItems.length;
+        sectionHtml += renderSubItems(subItems, caps, pc, st, 0, !sectionEnabled);
       }
-      html += `</div>`;
+      panelHtml += `<div class="panel-section">${sectionHtml}</div>`;
     }
-    html += `</div>`;
+    if (!panelHtml) continue;
+    html += `<div class="panel"><div class="panel-header">${panel.label}</div>${panelHtml}</div>`;
   }
 
   /* vehicle_settings: filter by current car brand if capability data available */
   const carBrand = (caps.brand || '').toLowerCase();
   for (const [brand, vs] of Object.entries(schema.vehicle_settings || {})) {
     if (carBrand && brand.toLowerCase() !== carBrand) continue;
-    const items = vs.items || vs;
+    const items = (vs.items || vs).filter(itemMatches);
+    const vsCount = (vs.items || vs).length;
+    totalItems += vsCount;
+    visibleItems += items.length;
     if (!items || !items.length) continue;
     html += `<div class="panel"><div class="panel-header">Vehicle Settings: ${brand}</div>`;
     html += `<div class="panel-section">`;
@@ -979,6 +1016,9 @@ function renderSettingsUI() {
   }
 
   container.innerHTML = html;
+
+  const countEl = document.getElementById('settings-search-count');
+  if (countEl) countEl.textContent = q ? `${visibleItems} / ${totalItems}` : '';
 
   /* Wire up toggle events — queue change, don't apply immediately */
   container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
@@ -1048,6 +1088,11 @@ function maybeReEval() {
     reEvalPending = false;
     renderSettingsUI();
   });
+}
+
+function onSettingsSearchInput() {
+  settingsSearchQuery = (document.getElementById('settings-search')?.value || '').toLowerCase().trim();
+  renderSettingsUI();
 }
 
 /* ============ MODELS ============ */
