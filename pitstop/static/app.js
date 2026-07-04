@@ -312,6 +312,75 @@ function renderStorageCard(st) {
   el.innerHTML = row('Internal', st.root) + row('Data', st.data) + row('Logs', st.logs) + row('Models', st.models) + row('Crashes', st.crashes);
 }
 
+/* ── Speeds Card ── */
+function renderSpeedsCard(s) {
+  const el = document.getElementById('card-speeds').querySelector('.card-body');
+  if (!s) { el.textContent = 'No data'; return; }
+  const kmh = v => v != null ? (v * 3.6).toFixed(2) : '—';
+  const ms2 = v => v != null ? v.toFixed(2) : '—';
+  const m = v => v != null ? v.toFixed(1) : '—';
+  const grid = (fl, fr, rl, rr) => `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+      <span>FL: ${kmh(fl)}</span><span style="text-align:right">FR: ${kmh(fr)}</span>
+      <span>RL: ${kmh(rl)}</span><span style="text-align:right">RR: ${kmh(rr)}</span>
+    </div>`;
+  el.innerHTML = `
+    <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Wheel Speeds</div>
+    ${s.wheels ? grid(s.wheels.fl, s.wheels.fr, s.wheels.rl, s.wheels.rr) : '<span style="font-size:0.7rem;color:var(--text-dim)">No data</span>'}
+    <hr style="margin:4px 0;border-color:var(--border)">
+    <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Ego / Cruise</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+      <span>Ego: ${kmh(s.ego?.speed)}</span><span style="text-align:right">Accel: ${ms2(s.ego?.aEgo)} m/s²</span>
+      <span>Set: ${kmh(s.cruise?.setSpeed)}</span><span style="text-align:right">Cluster: ${kmh(s.cruise?.clusterSpeed)}</span>
+    </div>
+    <hr style="margin:4px 0;border-color:var(--border)">
+    <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Plan</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+      <span>vTarget: ${kmh(s.plan?.vTarget)}</span><span style="text-align:right">vCruise: ${kmh(s.plan?.vCruise)}</span>
+      <span>vMax: ${kmh(s.plan?.vMax)}</span><span style="text-align:right">vCurvature: ${kmh(s.plan?.vCurvature)}</span>
+      <span>aTarget: ${ms2(s.plan?.aTarget)}</span><span></span>
+    </div>
+    <hr style="margin:4px 0;border-color:var(--border)">
+    <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Lead</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+      <span>vLead: ${kmh(s.lead?.vLead)}</span><span style="text-align:right">vLeadK: ${kmh(s.lead?.vLeadK)}</span>
+      <span>vRel: ${kmh(s.lead?.vRel)}</span><span style="text-align:right">dRel: ${m(s.lead?.dRel)} m</span>
+    </div>
+  `;
+}
+
+/* ── Speed Limits Card ── */
+function renderSpeedLimitsCard(s) {
+  const el = document.getElementById('card-speed-limits').querySelector('.card-body');
+  if (!s) { el.textContent = 'No data'; return; }
+  const kmh = v => v != null ? (v * 3.6).toFixed(1) + ' km/h' : '—';
+  const m = v => v != null ? v.toFixed(0) + ' m' : '—';
+  const yesno = v => v != null ? (v ? 'Yes' : 'No') : '—';
+  el.innerHTML = `
+    <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Car / Map</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+      <span>Car: ${kmh(s.carSpeedLimit)}</span><span></span>
+      <span>Map: ${kmh(s.map?.speedLimit)}</span><span style="text-align:right">Map Valid: ${yesno(s.map?.valid)}</span>
+      <span>Ahead: ${kmh(s.map?.speedLimitAhead)}</span><span style="text-align:right">Dist: ${m(s.map?.aheadDist)}</span>
+      <span>Ahead Valid: ${yesno(s.map?.aheadValid)}</span><span></span>
+    </div>
+    <hr style="margin:4px 0;border-color:var(--border)">
+    <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Resolver</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+      <span>Limit: ${kmh(s.limit?.speedLimit)}</span><span style="text-align:right">Final: ${kmh(s.limit?.speedLimitFinal)}</span>
+      <span>Offset: ${kmh(s.limit?.speedLimitOffset)}</span><span style="text-align:right">Dist: ${m(s.limit?.distToSpeedLimit)}</span>
+      <span>Valid: ${yesno(s.limit?.valid)}</span><span></span>
+    </div>
+    <hr style="margin:4px 0;border-color:var(--border)">
+    <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">SP Targets</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+      <span>vTarget: ${kmh(s.planSP?.vTarget)}</span><span style="text-align:right">ICBM: ${kmh(s.icbmVtarget)}</span>
+      <span>SCC Vision: ${kmh(s.planSP?.sccVisionVTarget)}</span><span style="text-align:right">SCC Map: ${kmh(s.planSP?.sccMapVTarget)}</span>
+      <span>SLA: ${kmh(s.planSP?.speedLimitAssistVTarget)}</span><span></span>
+    </div>
+  `;
+}
+
 /* ── Reset Web UI ── */
 function resetWebUI() {
   showModal('Reset Web UI', '<p>Clear all local data (theme, auto-refresh, cached state) and reload the page?</p>', [
@@ -344,7 +413,7 @@ function stopDashboardPoll() {}   // kept for loadPage() call-site compatibility
 
 async function loadDashboard() {
   try {
-    const [device, caps, status, activeModel, telemetry, diag, updateStatus, gps, calibration, network, sunnylink, storage] = await Promise.all([
+    const [device, caps, status, activeModel, telemetry, diag, updateStatus, gps, calibration, network, sunnylink, storage, speeds] = await Promise.all([
       api('/api/device'),
       api('/api/capabilities'),
       api('/api/status'),
@@ -357,6 +426,7 @@ async function loadDashboard() {
       api('/api/network', { silent: true }).catch(() => null),
       api('/api/sunnylink', { silent: true }).catch(() => null),
       api('/api/storage', { silent: true }).catch(() => null),
+      api('/api/speeds', { silent: true }).catch(() => null),
     ]);
 
     document.getElementById('card-device').querySelector('.card-body').innerHTML = `
@@ -407,6 +477,8 @@ async function loadDashboard() {
     renderNetworkCard(network);
     renderSunnylinkCard(sunnylink);
     renderStorageCard(storage);
+    renderSpeedsCard(speeds);
+    renderSpeedLimitsCard(speeds);
   } catch (e) {
     document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-status .card-body, #card-model .card-body')
       .forEach(el => el.textContent = 'Failed to load.');

@@ -70,6 +70,7 @@ class PitStopServer:
     self._diag = None   # cached diagnostic snapshot
     self._gps_location = None
     self._calibration = None
+    self._speed_data = None
     for target in (
       self._model_manager_loop,
       self._device_state_loop,
@@ -100,7 +101,7 @@ class PitStopServer:
   def _diag_loop(self):
     """Single background thread for service health, active alert, and process list."""
     try:
-      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState'])
+      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState', 'carState', 'longitudinalPlanSP', 'liveMapDataSP', 'carStateSP', 'selfdriveStateSP'])
       while self._running:
         sm.update(2000)
         services = []
@@ -144,6 +145,76 @@ class PitStopServer:
             'roll': lc.rpyCalib[1] if len(lc.rpyCalib) > 1 else None,
             'yaw': lc.rpyCalib[2] if len(lc.rpyCalib) > 2 else None,
           }
+        # speed data
+        cs = sm['carState'] if sm.seen['carState'] else None
+        lp = sm['longitudinalPlan'] if sm.seen['longitudinalPlan'] else None
+        radar = sm['radarState'] if sm.seen['radarState'] else None
+        lpsp = sm['longitudinalPlanSP'] if sm.seen['longitudinalPlanSP'] else None
+        mapsp = sm['liveMapDataSP'] if sm.seen['liveMapDataSP'] else None
+        cssp = sm['carStateSP'] if sm.seen['carStateSP'] else None
+        sdsps = sm['selfdriveStateSP'] if sm.seen['selfdriveStateSP'] else None
+
+        lead = None
+        if radar is not None:
+          ld = radar.leadOne
+          if ld is not None:
+            lead = {"vLead": ld.vLead, "vLeadK": ld.vLeadK, "vRel": ld.vRel, "dRel": ld.dRel}
+
+        plan_sp = None
+        if lpsp is not None:
+          plan_sp = {"vTarget": lpsp.vTarget}
+          if lpsp.smartCruiseControl is not None:
+            plan_sp["sccVisionVTarget"] = lpsp.smartCruiseControl.vision.vTarget
+            plan_sp["sccMapVTarget"] = lpsp.smartCruiseControl.map.vTarget
+          if lpsp.speedLimit is not None:
+            plan_sp["speedLimitAssistVTarget"] = lpsp.speedLimit.assist.vTarget
+
+        slr = lpsp.speedLimit.resolver if lpsp is not None and lpsp.speedLimit is not None else None
+
+        icbm_vtarget = None
+        if sdsps is not None and sdsps.intelligentCruiseButtonManagement is not None:
+          icbm_vtarget = sdsps.intelligentCruiseButtonManagement.vTarget
+
+        self._speed_data = {
+          "ego": {
+            "speed": cs.vEgo if cs else None,
+            "aEgo": cs.aEgo if cs else None,
+            "standstill": cs.standstill if cs else None,
+          },
+          "cruise": {
+            "setSpeed": cs.vCruise if cs else None,
+            "clusterSpeed": cs.vCruiseCluster if cs else None,
+          },
+          "wheels": {
+            k: getattr(cs.wheelSpeeds, k) if cs else None
+            for k in ("fl", "fr", "rl", "rr")
+          } if cs else None,
+          "lead": lead,
+          "plan": {
+            "vTarget": lp.vTarget if lp is not None else None,
+            "vCruise": lp.vCruise if lp is not None else None,
+            "vMax": lp.vMax if lp is not None else None,
+            "vCurvature": lp.vCurvature if lp is not None else None,
+            "aTarget": lp.aTarget if lp is not None else None,
+          },
+          "planSP": plan_sp,
+          "limit": {
+            "speedLimit": slr.speedLimit if slr is not None else None,
+            "speedLimitFinal": slr.speedLimitFinal if slr is not None else None,
+            "speedLimitOffset": slr.speedLimitOffset if slr is not None else None,
+            "distToSpeedLimit": slr.distToSpeedLimit if slr is not None else None,
+            "valid": slr.speedLimitValid if slr is not None else None,
+          },
+          "map": {
+            "speedLimit": mapsp.speedLimit if mapsp is not None else None,
+            "valid": mapsp.speedLimitValid if mapsp is not None else None,
+            "speedLimitAhead": mapsp.speedLimitAhead if mapsp is not None else None,
+            "aheadValid": mapsp.speedLimitAheadValid if mapsp is not None else None,
+            "aheadDist": mapsp.speedLimitAheadDistance if mapsp is not None else None,
+          },
+          "carSpeedLimit": cssp.speedLimit if cssp is not None else None,
+          "icbmVtarget": icbm_vtarget,
+        }
     except Exception:
       logger.warning("diag loop error", exc_info=True)
 
@@ -236,6 +307,9 @@ class PitStopServer:
       "models": _usage(Paths.model_root()),
       "crashes": _usage(Paths.crash_log_root()),
     })
+
+  async def handle_speeds(self, request):
+    return web.json_response(self._speed_data or {})
 
   # ---- System ----
 
@@ -958,6 +1032,7 @@ class PitStopServer:
     app.router.add_get("/api/network", self.handle_network)
     app.router.add_get("/api/sunnylink", self.handle_sunnylink)
     app.router.add_get("/api/storage", self.handle_storage)
+    app.router.add_get("/api/speeds", self.handle_speeds)
 
     # Params
     app.router.add_get("/api/params", self.handle_params_list)
