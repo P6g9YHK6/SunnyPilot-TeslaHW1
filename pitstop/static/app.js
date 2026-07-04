@@ -643,12 +643,45 @@ function getDisabledReason(item, caps, paramCache, status, forceDisabled) {
   const rules = item.enablement || [];
   for (const r of rules) {
     if (evaluateRule(r, caps, paramCache, status)) continue;
-    if (r.type === 'offroad_only') return 'Requires offroad mode';
-    if (r.type === 'not_engaged') return 'Cannot change while driving';
-    if (r.type === 'capability') return 'Not supported by this vehicle';
-    if (r.type === 'param') return 'Requires another setting to be enabled first';
-    if (r.type === 'param_compare') return 'Another setting value is out of range';
-    if (r.type === 'any' || r.type === 'all' || r.type === 'not') return 'Not available in this configuration';
+    const reason = explainRule(r, caps, paramCache, status);
+    if (reason) return reason;
+  }
+  return '';
+}
+
+function explainRule(rule, caps, paramCache, status) {
+  if (rule.type === 'offroad_only') return 'Requires offroad mode';
+  if (rule.type === 'not_engaged') return 'Cannot change while driving';
+  if (rule.type === 'capability') return `Requires: ${rule.field}`;
+  if (rule.type === 'param') {
+    const eq = rule.equals;
+    if (eq === true || eq === 'true') return `Requires: ${rule.key}`;
+    if (eq === false || eq === 'false') return `Requires: ${rule.key} off`;
+    return `Requires: ${rule.key} = ${eq}`;
+  }
+  if (rule.type === 'param_compare') return `Requires: ${rule.key} ${rule.op} ${rule.value}`;
+  if (rule.type === 'not') {
+    const inner = explainRule(rule.condition, caps, paramCache, status);
+    if (inner) return `Requires: not (${inner.replace(/^Requires:\s*/i, '')})`;
+    return '';
+  }
+  if (rule.type === 'any') {
+    const reasons = rule.conditions.map(c => {
+      if (evaluateRule(c, caps, paramCache, status)) return null;
+      return explainRule(c, caps, paramCache, status);
+    }).filter(Boolean);
+    if (reasons.length === 1) return reasons[0];
+    if (reasons.length > 1) return `Requires: ${reasons.join(' or ')}`;
+    return '';
+  }
+  if (rule.type === 'all') {
+    for (const c of rule.conditions) {
+      if (!evaluateRule(c, caps, paramCache, status)) {
+        const inner = explainRule(c, caps, paramCache, status);
+        if (inner) return inner;
+      }
+    }
+    return '';
   }
   return '';
 }
