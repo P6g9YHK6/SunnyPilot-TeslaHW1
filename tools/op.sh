@@ -725,7 +725,7 @@ function op_use_fork() {
     else
       cd "$rp" || return
       op_run_command git fetch origin "${BRANCHES[$i]}" --depth 1
-      op_run_command git checkout -B "${BRANCHES[$i]}" "origin/${BRANCHES[$i]}"
+      op_run_command git checkout -B "${BRANCHES[$i]}" FETCH_HEAD
       op_submodule_update
     fi
   fi
