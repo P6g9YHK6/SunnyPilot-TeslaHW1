@@ -724,7 +724,7 @@ function op_use_fork() {
         "https://github.com/${FORKS[$i]}/${REPOS[$i]}.git" "$rp"
     else
       cd "$rp" || return
-      op_run_command git fetch origin "${BRANCHES[$i]}:${BRANCHES[$i]}" --depth 1
+      op_run_command git fetch origin "+${BRANCHES[$i]}:${BRANCHES[$i]}" --depth 1
       op_run_command git checkout -f "${BRANCHES[$i]}"
       op_submodule_update
     fi
@@ -877,7 +877,7 @@ function op_fork_from_url() {
         --recurse-submodules \
         "https://github.com/${owner}/${repo}.git" "$rp"
     else
-      op_run_command git -C "$rp" fetch origin "$branch:$branch" --depth 1
+      op_run_command git -C "$rp" fetch origin "+$branch:$branch" --depth 1
     fi
     op_scan_undeclared
     local idx
