@@ -79,7 +79,10 @@ function setAutoRefresh(seconds) {
   const s = parseFloat(seconds);
   localStorage.setItem('pitstop_refresh_v2', s);
   if (s > 0) {
-    autoRefreshTimer = setInterval(() => loadPage(currentPage), s * 1000);
+    autoRefreshTimer = setInterval(() => {
+      if (currentPage === 'settings' && Object.keys(pendingChanges).length > 0) return;
+      loadPage(currentPage);
+    }, s * 1000);
   }
 }
 
