@@ -3,7 +3,7 @@ import os
 import argparse
 import threading
 import numpy as np
-from inputs import UnpluggedError, get_gamepad
+from inputs import UnpluggedError, get_gamepad, devices as input_devices
 
 from cereal import messaging
 from openpilot.common.params import Params
@@ -11,7 +11,7 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.system.hardware import HARDWARE
 from openpilot.tools.lib.kbhit import KBHit
 
-EXPO = 0.4
+EXPO = 0.7
 
 
 class Keyboard:
@@ -50,13 +50,30 @@ class Joystick:
       steer_axis = 'ABS_RX'
       # TODO: once the longcontrol API is finalized, we can replace this with outputting gas/brake and steering
       self.flip_map = {'ABS_RZ': accel_axis}
+      accel_range = (0., 255.)
+      steer_range = (0., 255.)
     else:
-      accel_axis = 'ABS_RX'
-      steer_axis = 'ABS_Z'
-      self.flip_map = {'ABS_RY': accel_axis}
+      try:
+        _name = input_devices.gamepads[0].name if input_devices.gamepads else ''
+      except Exception:
+        _name = ''
+      if 'Xbox' in _name or 'X-Box' in _name:
+        # Mirror PC flip convention: LT direct (brake), RT flipped negative (throttle).
+        # Pre-seed combined range [-255, 255] so neutral (0) = 0 accel at startup.
+        accel_axis = 'ABS_Z'
+        steer_axis = 'ABS_RX'
+        self.flip_map = {'ABS_RZ': accel_axis}
+        accel_range = (-255., 255.)
+        steer_range = (-32768., 32767.)
+      else:
+        accel_axis = 'ABS_RX'
+        steer_axis = 'ABS_Z'
+        self.flip_map = {'ABS_RY': accel_axis}
+        accel_range = (0., 255.)
+        steer_range = (0., 255.)
 
-    self.min_axis_value = {accel_axis: 0., steer_axis: 0.}
-    self.max_axis_value = {accel_axis: 255., steer_axis: 255.}
+    self.min_axis_value = {accel_axis: accel_range[0], steer_axis: steer_range[0]}
+    self.max_axis_value = {accel_axis: accel_range[1], steer_axis: steer_range[1]}
     self.axes_values = {accel_axis: 0., steer_axis: 0.}
     self.axes_order = [accel_axis, steer_axis]
     self.cancel = False
@@ -84,7 +101,7 @@ class Joystick:
       self.min_axis_value[event[0]] = min(event[1], self.min_axis_value[event[0]])
 
       norm = -float(np.interp(event[1], [self.min_axis_value[event[0]], self.max_axis_value[event[0]]], [-1., 1.]))
-      norm = norm if abs(norm) > 0.03 else 0.  # center can be noisy, deadzone of 3%
+      norm = norm if abs(norm) > 0.10 else 0.  # center can be noisy, deadzone of 10%
       self.axes_values[event[0]] = EXPO * norm ** 3 + (1 - EXPO) * norm  # less action near center for fine control
     else:
       return False

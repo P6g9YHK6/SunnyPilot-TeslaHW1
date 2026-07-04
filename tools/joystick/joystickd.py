@@ -11,6 +11,8 @@ from openpilot.common.swaglog import cloudlog
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 MAX_LAT_ACCEL = 3.0
+MAX_ACCEL = 2.5      # m/s²
+SMOOTH_ALPHA = 0.2   # EMA weight: ~45 ms time constant at 100 Hz
 
 
 def joystickd_thread():
@@ -23,6 +25,7 @@ def joystickd_thread():
   pm = messaging.PubMaster(['carControl', 'controlsState'])
 
   rk = Ratekeeper(100, print_delay_threshold=None)
+  smoothed_axes = [0.0, 0.0]
   while 1:
     sm.update(0)
 
@@ -45,8 +48,12 @@ def joystickd_thread():
     else:
       joystick_axes = [0.0, 0.0]
 
+    smoothed_axes = [SMOOTH_ALPHA * r + (1 - SMOOTH_ALPHA) * s
+                     for r, s in zip(joystick_axes, smoothed_axes)]
+    joystick_axes = smoothed_axes
+
     if CC.longActive:
-      actuators.accel = 4.0 * float(np.clip(joystick_axes[0], -1, 1))
+      actuators.accel = MAX_ACCEL * float(np.clip(joystick_axes[0], -1, 1))
       actuators.longControlState = LongCtrlState.pid if sm['carState'].vEgo > CP.vEgoStopping else LongCtrlState.stopping
       CC.cruiseControl.resume = actuators.accel > 0.0
 
