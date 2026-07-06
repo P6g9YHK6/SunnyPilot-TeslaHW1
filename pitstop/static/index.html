@@ -9,7 +9,8 @@
 <body>
   <nav id="nav">
     <div class="nav-brand">PitStop</div>
-    <div class="nav-links">
+    <button class="nav-hamburger" id="nav-hamburger" onclick="toggleNavMenu()" aria-label="Menu">&#9776;</button>
+    <div class="nav-links" id="nav-links">
       <button class="nav-btn active" data-page="dashboard">Dashboard</button>
       <button class="nav-btn" data-page="settings">Settings</button>
       <button class="nav-btn" data-page="models">Models</button>
@@ -50,10 +51,6 @@
           <h3>Capabilities</h3>
           <div class="card-body">Loading...</div>
         </div>
-        <div class="card" id="card-status">
-          <h3>Status</h3>
-          <div class="card-body">Loading...</div>
-        </div>
         <div class="card" id="card-model">
           <h3>Active Model</h3>
           <div class="card-body">Loading...</div>
@@ -64,10 +61,6 @@
         </div>
         <div class="card" id="card-system">
           <h3>Device</h3>
-          <div class="card-body">Loading...</div>
-        </div>
-        <div class="card card-wide" id="card-diag">
-          <h3>Services <span id="diag-summary-badge"></span></h3>
           <div class="card-body">Loading...</div>
         </div>
         <div class="card" id="card-gps">
@@ -86,10 +79,6 @@
           <h3>Sunnylink</h3>
           <div class="card-body">Loading...</div>
         </div>
-        <div class="card card-wide" id="card-storage">
-          <h3>Storage</h3>
-          <div class="card-body">Loading...</div>
-        </div>
         <div class="card" id="card-speeds">
           <h3>Speeds</h3>
           <div class="card-body">Loading...</div>
@@ -98,13 +87,28 @@
           <h3>Speed Limits</h3>
           <div class="card-body">Loading...</div>
         </div>
+        <div class="card card-wide" id="card-diag">
+          <h3>Services <span id="diag-summary-badge"></span></h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card card-wide" id="card-storage">
+          <h3>Storage</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card card-wide" id="card-processes">
+          <h3>Processes</h3>
+          <div class="card-body">Loading...</div>
+        </div>
       </div>
     </div>
 
     <div id="page-settings" class="page">
       <h1>Settings</h1>
       <div class="settings-toolbar">
-        <input type="text" id="settings-search" placeholder="Search settings…" oninput="onSettingsSearchInput()">
+        <div class="search-wrap">
+          <input type="text" id="settings-search" placeholder="Search settings…" oninput="onSettingsSearchInput()">
+          <button class="search-clear" id="settings-search-clear" onclick="clearSettingsSearch()" title="Clear search">&#10005;</button>
+        </div>
         <span id="settings-search-count"></span>
       </div>
       <div id="settings-panels">Loading settings...</div>
@@ -135,7 +139,10 @@
         <span id="model-cache-size"></span>
       </div>
 
-      <input type="text" id="model-search" class="model-search-input" placeholder="Search models…" oninput="filterModels()">
+      <div class="search-wrap search-wrap--full">
+        <input type="text" id="model-search" placeholder="Search models…" oninput="filterModels()">
+        <button class="search-clear" id="model-search-clear" onclick="clearModelSearch()" title="Clear search">&#10005;</button>
+      </div>
 
       <div id="model-list"></div>
     </div>
@@ -153,6 +160,8 @@
       <h1>Backup & Restore</h1>
       <div class="backup-actions">
         <button class="btn btn-primary" onclick="createBackup()">Create Backup</button>
+        <button class="btn btn-sm" onclick="uploadBackup()">Upload Backup</button>
+        <input type="file" id="backup-file-input" accept=".json" style="display:none" onchange="onBackupFileSelected(event)">
       </div>
       <div id="backup-list">Loading backups...</div>
     </div>
@@ -165,6 +174,7 @@
           <button class="log-src-btn" data-src="journal">Services</button>
           <button class="log-src-btn" data-src="kernel">Kernel</button>
           <button class="log-src-btn" data-src="crash">Crashes</button>
+          <button class="log-src-btn" data-src="pitstop">Pitstop</button>
         </div>
         <div class="log-levels" id="log-levels">
           <button class="log-lvl-btn active" data-level="0">All</button>

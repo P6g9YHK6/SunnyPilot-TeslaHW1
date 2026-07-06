@@ -12,7 +12,12 @@ function fmtSize(bytes) {
 let currentPage = 'dashboard';
 let autoRefreshTimer = null;
 
+function toggleNavMenu() {
+  document.getElementById('nav-links').classList.toggle('open');
+}
+
 function navigateTo(page) {
+  document.getElementById('nav-links')?.classList.remove('open');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`.nav-btn[data-page="${page}"]`)?.classList.add('active');
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -36,23 +41,28 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
   });
 });
 
-function loadPage(name) {
+let _pageLoaded = {};
+
+function loadPage(name, force) {
   if (name !== 'settings') { stopSettingsStatusPoll(); discardPendingChanges(); }
   if (name !== 'dashboard') stopDashboardPoll();
   if (name !== 'models') stopModelsProgressPoll();
   if (name === 'dashboard') loadDashboard();
-  if (name === 'settings') loadSettings();
-  if (name === 'models') loadModels();
-  if (name === 'params') loadParams();
-  if (name === 'backup') loadBackups();
-  if (name === 'logs') loadLogs();
+  else if (force || !_pageLoaded[name]) {
+    _pageLoaded[name] = true;
+    if (name === 'settings') loadSettings();
+    else if (name === 'models') loadModels();
+    else if (name === 'params') loadParams();
+    else if (name === 'backup') loadBackups();
+    else if (name === 'logs') loadLogs();
+  }
 }
 
 function refreshNow() {
   const btn = document.getElementById('refresh-now-btn');
   btn.classList.add('spinning');
   setTimeout(() => btn.classList.remove('spinning'), 600);
-  loadPage(currentPage);
+  loadPage(currentPage, true);
 }
 
 function setAutoRefresh(seconds) {
@@ -88,7 +98,7 @@ function setAutoRefresh(seconds) {
 
 function ensureSelectOption(sel, value) {
   for (let i = 0; i < sel.options.length; i++) {
-    if (sel.options[i].value === value) return;
+    if (sel.options[i].value === value) { sel.value = value; return; }
   }
   const opt = document.createElement('option');
   opt.value = value;
@@ -114,20 +124,38 @@ async function api(path, opts = {}) {
   const silent = opts.silent;
   const fetchOpts = { ...opts };
   delete fetchOpts.silent;
+  const isFormData = fetchOpts.body instanceof FormData;
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    fetchOpts.signal = controller.signal;
     const res = await fetch(path, {
-      headers: { 'Accept': 'application/json', ...(fetchOpts.body ? { 'Content-Type': 'application/json' } : {}) },
+      headers: { 'Accept': 'application/json', ...(fetchOpts.body && !isFormData ? { 'Content-Type': 'application/json' } : {}) },
       ...fetchOpts,
     });
+    clearTimeout(timeout);
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || res.statusText);
+      throw new Error(text || `${res.status} ${res.statusText}`);
     }
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('application/json')) return await res.json();
     return await res.text();
   } catch (e) {
-    if (!silent) toast(e.message, 'error');
+    if (!silent) {
+      const isNetError = e.name === 'AbortError'
+        || e.message.includes('Failed to fetch')
+        || e.message.includes('NetworkError')
+        || e.message.includes('TypeError')
+        || e.message.includes('network');
+      if (isNetError) {
+        const ts = new Date().toLocaleTimeString();
+        const reason = e.name === 'AbortError' ? 'timeout' : 'unreachable';
+        toast(`Error: ${path} @ ${ts} — ${reason}`, 'error');
+      } else {
+        toast(`Error: ${e.message}`, 'error');
+      }
+    }
     throw e;
   }
 }
@@ -213,7 +241,7 @@ function renderTelemetryCard(t) {
   `;
 }
 
-function renderSystemCard(t) {
+function renderSystemCard(t, status) {
   const el = document.getElementById('card-system').querySelector('.card-body');
   if (!t) { el.textContent = 'No data'; return; }
   const dev = t.device || {};
@@ -224,10 +252,18 @@ function renderSystemCard(t) {
     <div class="row"><span class="label">Free</span><span class="value">${fmtPct(dev.free_space_pct)}</span></div>
     ${dev.network_type ? `<div class="row"><span class="label">Network</span><span class="value">${dev.network_type}</span></div>` : ''}
     ${dev.thermal_status ? `<div class="row"><span class="label">Thermal</span><span class="value">${dev.thermal_status}</span></div>` : ''}
+    ${status ? `
+    <div class="row"><span class="label">Web UI</span><span class="value">${fmtBool(status.enabled)}</span></div>
+    <div class="row"><span class="label">Offroad</span><span class="value">${fmtBool(status.is_offroad)}</span></div>
+    ` : ''}
+    <div class="row" style="margin-top:0.5rem;display:flex;gap:0.4rem;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="restartOpenpilot()">Restart OP</button>
+      <button class="btn btn-sm btn-danger" onclick="rebootDevice()">Reboot</button>
+    </div>
   `;
 }
 
-/* ── Diagnostic card (services / alert / processes / error badge) ── */
+/* ── Diagnostic card (services / alert / error badge) ── */
 function renderDiagCard(d) {
   const body = document.getElementById('card-diag').querySelector('.card-body');
   const badge = document.getElementById('diag-summary-badge');
@@ -238,7 +274,7 @@ function renderDiagCard(d) {
   badge.textContent = ok ? 'OK' : 'ISSUES';
 
   let alertHtml = '';
-  if (d.alert && d.alert.text1) {
+  if (d.alert && d.alert.text1 && d.alert.type && !d.alert.type.includes('startupNoCar')) {
     const cls = d.alert.status === 'critical' ? 'diag-alert-crit' : 'diag-alert-warn';
     alertHtml = `<div class="diag-alert ${cls}">${escHtml(d.alert.text1)}${d.alert.text2 ? ' — ' + escHtml(d.alert.text2) : ''}</div>`;
   }
@@ -258,14 +294,23 @@ function renderDiagCard(d) {
     </div>`;
   }).join('');
 
-  const badProcs = (d.processes || []).filter(p => p.should_run && !p.running);
-  const procsHtml = badProcs.length
-    ? '<div class="diag-section-title">Dead processes</div>' +
-      badProcs.map(p => `<div class="diag-row diag-row-dead"><span class="diag-svc-name">${escHtml(p.name)}</span><span class="diag-dot dot-fail" style="font-size:0.65rem;padding:1px 4px">DEAD</span></div>`).join('')
-    : '';
-
-  body.innerHTML = alertHtml + svcRows + procsHtml;
+  body.innerHTML = alertHtml + svcRows;
   updateLogsErrorBadge();
+}
+
+/* ── Processes card ── */
+function renderProcessesCard(d) {
+  const el = document.getElementById('card-processes').querySelector('.card-body');
+  if (!d || !d.processes) { el.textContent = 'No data'; return; }
+  const allProcs = d.processes.sort((a, b) => {
+    if (a.running !== b.running) return a.running ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  el.innerHTML = allProcs.map(p => {
+    const dotCls = p.running ? 'dot-ok' : 'dot-fail';
+    const label = p.running ? 'RUN' : 'DEAD';
+    return `<div class="row${p.running ? '' : ' row-dead'}"><span class="label">${escHtml(p.name)}</span><span class="value"><span class="diag-dot ${dotCls}" style="font-size:0.55rem;padding:0 0.3rem">${label}</span></span></div>`;
+  }).join('');
 }
 
 async function updateLogsErrorBadge() {
@@ -491,15 +536,6 @@ async function loadDashboard() {
       <div class="row"><span class="label">ICBM</span><span class="value">${fmtBool(caps.has_icbm)}</span></div>
     `;
 
-    document.getElementById('card-status').querySelector('.card-body').innerHTML = `
-      <div class="row"><span class="label">Web UI</span><span class="value">${fmtBool(status.enabled)}</span></div>
-      <div class="row"><span class="label">Offroad</span><span class="value">${fmtBool(status.is_offroad)}</span></div>
-      <div class="row" style="margin-top:0.5rem;display:flex;gap:0.4rem;flex-wrap:wrap">
-        <button class="btn btn-sm" onclick="restartOpenpilot()">Restart OP</button>
-        <button class="btn btn-sm btn-danger" onclick="rebootDevice()">Reboot</button>
-      </div>
-    `;
-
     document.getElementById('card-model').querySelector('.card-body').innerHTML = `
       <div class="row"><span class="label">Model</span><span class="value">${activeModel.displayName || activeModel.internalName || '—'}</span></div>
       <div class="row"><span class="label">Runner</span><span class="value">${activeModel.runner !== undefined ? fmtRunner(activeModel.runner) : 'Stock'}</span></div>
@@ -509,8 +545,9 @@ async function loadDashboard() {
     `;
 
     renderTelemetryCard(telemetry);
-    renderSystemCard(telemetry);
+    renderSystemCard(telemetry, status);
     renderDiagCard(diag);
+    renderProcessesCard(diag);
     renderGpsCard(gps);
     renderCalibrationCard(calibration);
     renderNetworkCard(network);
@@ -519,7 +556,7 @@ async function loadDashboard() {
     renderSpeedsCard(speeds);
     renderSpeedLimitsCard(speeds);
   } catch (e) {
-    document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-status .card-body, #card-model .card-body')
+    document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-model .card-body')
       .forEach(el => el.textContent = 'Failed to load.');
   }
 }
@@ -532,6 +569,7 @@ let settingsStatus = { is_offroad: true, is_metric: false };
 let reEvalPending = false;
 let settingsStatusInterval = null;
 let settingsSearchQuery = '';
+let settingsFavorites = [];
 
 /* ---- Pending changes queue ---- */
 let pendingChanges = {};
@@ -581,7 +619,11 @@ async function applyPendingChanges() {
   }));
   const failed = results.filter(r => r.status === 'rejected').length;
   const succeeded = results.filter(r => r.status === 'fulfilled');
-  succeeded.forEach(r => { delete pendingChanges[r.value]; });
+  succeeded.forEach(r => {
+    const change = pendingChanges[r.value];
+    if (change) settingsParamCache[r.value] = change.newValue;
+    delete pendingChanges[r.value];
+  });
   if (failed) {
     toast(`${failed} setting${failed !== 1 ? 's' : ''} failed to save`, 'error');
   } else {
@@ -616,7 +658,7 @@ function queueChange(key, newValue, label, needsCycle) {
 function evaluateRule(rule, caps, paramCache, status) {
   const t = rule.type;
   if (t === 'offroad_only') return !!status.is_offroad;
-  if (t === 'not_engaged') return !status.is_offroad;
+  if (t === 'not_engaged') return !status.engaged;
   if (t === 'capability') return caps[rule.field] === rule.equals;
   if (t === 'param') {
     const v = paramCache[rule.key];
@@ -736,7 +778,7 @@ function openNumModal(key, val, min, max, step, label, needsCycle) {
 
   showModal(label, body, [
     { label: 'Cancel', action: '', cls: '' },
-    { label: 'OK', action: 'nmConfirm', cls: 'btn-primary' },
+    { label: 'OK', action: 'nmConfirm()', cls: 'btn-primary' },
   ]);
   setTimeout(() => document.getElementById('nm-input')?.select(), 50);
 }
@@ -791,7 +833,7 @@ function showNumberModal({title, value, min, max, step, suffix, onSave}) {
 
   showModal(title, body, [
     { label: 'Cancel', action: '', cls: '' },
-    { label: 'OK', action: 'nmcConfirm', cls: 'btn-primary' },
+    { label: 'OK', action: 'nmcConfirm()', cls: 'btn-primary' },
   ]);
   setTimeout(() => document.getElementById('nmc-input')?.select(), 50);
 }
@@ -925,8 +967,11 @@ function renderSettingItem(item, caps, paramCache, status, depth, forceDisabled 
     detailBtn = `<button class="item-detail-btn" onclick="showModal('${safeTitle}','<p>${safeDetails}</p>',[{label:'Close',action:'',cls:'btn-primary'}])" title="More info">i</button>`;
   }
 
+  const isFav = key && settingsFavorites.includes(key);
+  const favBtn = key ? `<button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleSettingsFav('${key}', this)" title="Favorite">${isFav ? '★' : '☆'}</button>` : '';
+
   let html = `<div class="section-item ${extraClasses}"${indentStyle}>`;
-  html += `<div class="item-info"><div class="item-title">${title}${detailBtn}${needsCycle}${offroadOnly}${blockedBadge}${reasonBadge}</div>${descHtml}</div>`;
+  html += `<div class="item-info"><div class="item-title">${title}${favBtn}${detailBtn}${needsCycle}${offroadOnly}${blockedBadge}${reasonBadge}</div>${descHtml}</div>`;
   html += `<div class="item-control">${controlHtml}</div>`;
   html += `</div>`;
 
@@ -967,7 +1012,7 @@ function startSettingsStatusPoll() {
   settingsStatusInterval = setInterval(async () => {
     try {
       const s = await api('/api/status', { silent: true });
-      if (s.is_offroad !== settingsStatus.is_offroad || s.is_metric !== settingsStatus.is_metric) {
+      if (s.is_offroad !== settingsStatus.is_offroad || s.is_metric !== settingsStatus.is_metric || s.engaged !== settingsStatus.engaged) {
         settingsStatus = s;
         maybeReEval();
       }
@@ -1035,9 +1080,12 @@ async function loadSettings() {
     });
     await Promise.all(paramPromises);
 
+    try { settingsFavorites = await api('/api/settings/favorites'); } catch { settingsFavorites = []; }
+
     renderSettingsUI();
   } catch (e) {
-    container.innerHTML = '<p>Could not load settings schema.</p>';
+    console.error('loadSettings error:', e);
+    container.innerHTML = '<p>Could not load settings schema.</p><pre style="color:var(--red);font-size:0.8rem;margin-top:0.5rem">' + e.message + '</pre>';
   }
 }
 
@@ -1082,6 +1130,37 @@ function renderSettingsUI() {
   }
 
   let html = '';
+
+  /* Favorites panel */
+  if (settingsFavorites.length) {
+    const favSet = new Set(settingsFavorites);
+    const favItems = [];
+    function collectFav(items) {
+      if (!items) return;
+      items.forEach(item => {
+        if (item.key && favSet.has(item.key) && evaluateRules(item.visibility, caps, pc, st)) {
+          favItems.push(item);
+        }
+        if (item.sub_items) collectFav(item.sub_items);
+      });
+    }
+    (schema.panels || []).forEach(p => {
+      (p.sections || []).forEach(s => {
+        collectFav(s.items);
+        (s.sub_panels || []).forEach(sp => collectFav(sp.items));
+      });
+      collectFav(p.items);
+      (p.sub_panels || []).forEach(sp => collectFav(sp.items));
+    });
+    Object.values(schema.vehicle_settings || {}).forEach(v => collectFav(v.items || v));
+    if (favItems.length) {
+      let favHtml = `<div class="panel"><div class="panel-header">&#11088; Favorites</div><div class="panel-section">`;
+      favHtml += renderSubItems(favItems, caps, pc, st, 0);
+      favHtml += `</div></div>`;
+      html += favHtml;
+    }
+  }
+
   let totalItems = 0;
   let visibleItems = 0;
   for (const panel of schema.panels || []) {
@@ -1218,7 +1297,24 @@ function maybeReEval() {
 
 function onSettingsSearchInput() {
   settingsSearchQuery = (document.getElementById('settings-search')?.value || '').toLowerCase().trim();
+  toggleSearchClear('settings');
   renderSettingsUI();
+}
+function clearSettingsSearch() {
+  document.getElementById('settings-search').value = '';
+  settingsSearchQuery = '';
+  toggleSearchClear('settings');
+  renderSettingsUI();
+}
+function clearModelSearch() {
+  document.getElementById('model-search').value = '';
+  document.getElementById('model-search-clear').classList.remove('visible');
+  filterModels();
+}
+function toggleSearchClear(prefix) {
+  const inp = document.getElementById(prefix + '-search');
+  const btn = document.getElementById(prefix + '-search-clear');
+  if (inp && btn) btn.classList.toggle('visible', inp.value.length > 0);
 }
 
 /* ============ MODELS ============ */
@@ -1315,6 +1411,7 @@ function renderBundleList(bundles, active, favorites) {
 
 const filterModels = debounce(() => {
   if (!modelsData) return;
+  toggleSearchClear('model');
   const query = document.getElementById('model-search').value.toLowerCase();
   const bundles = (modelsData.bundles || []).filter(b =>
     (b.displayName || '').toLowerCase().includes(query) ||
@@ -1426,6 +1523,16 @@ async function toggleFav(ref, btn) {
   btn.classList.toggle('active');
   btn.textContent = btn.classList.contains('active') ? '★' : '☆';
   if (modelsData) modelsData.favorites = refs;
+}
+
+async function toggleSettingsFav(key, btn) {
+  if (!key) return;
+  let refs = [...settingsFavorites];
+  if (refs.includes(key)) { refs = refs.filter(r => r !== key); }
+  else { refs.push(key); }
+  await api('/api/settings/favorites', { method: 'POST', body: JSON.stringify({ refs }) });
+  settingsFavorites = refs;
+  renderSettingsUI();
 }
 
 async function checkCacheSize() {
@@ -1600,6 +1707,25 @@ async function loadBackups() {
   }
 }
 
+function uploadBackup() {
+  document.getElementById('backup-file-input').click();
+}
+
+async function onBackupFileSelected(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  try {
+    const res = await api('/api/backup/upload', { method: 'POST', body: formData });
+    toast('Backup uploaded: ' + res.name, 'success');
+    loadBackups();
+  } catch (e) {
+    toast('Upload failed: ' + (e.message || e), 'error');
+  }
+  event.target.value = '';
+}
+
 async function createBackup() {
   try {
     const res = await api('/api/backup/create', { method: 'POST' });
@@ -1759,7 +1885,7 @@ const onLogSearch = debounce(() => loadLogs(), 350);
       srcWrap.querySelectorAll('.log-src-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       logSource = btn.dataset.src;
-      const showLevel = logSource === 'swaglog';
+      const showLevel = logSource === 'swaglog' || logSource === 'pitstop';
       const showProc  = logSource === 'swaglog' || logSource === 'journal';
       if (lvlWrap) lvlWrap.style.display = showLevel ? '' : 'none';
       const procWrap = document.getElementById('log-proc-wrap');
