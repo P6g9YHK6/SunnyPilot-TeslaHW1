@@ -27,7 +27,8 @@ EXTERNAL_PORT = 80  # iptables redirects :80 → :PORT
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 PARAMS_METADATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sunnypilot", "sunnylink", "params_metadata.json")
-BACKUP_DIR_NAME = "pitstop_backups"
+PITSTOP_DATA_DIR = "/data/pitstop"
+BACKUP_DIR_NAME = "backups"
 
 SWAGGER_HTML = """<!DOCTYPE html>
 <html>
@@ -53,6 +54,36 @@ SwaggerUIBundle({
 </html>"""
 
 
+@web.middleware
+async def access_log_middleware(request, handler):
+  if request.path == "/api/logs":
+    return await handler(request)
+  t0 = time.time()
+  try:
+    response = await handler(request)
+    elapsed = (time.time() - t0) * 1000
+    if request.path.startswith("/api/"):
+      status = response.status
+      msg = f"[{status}] {request.method} {request.path} ({elapsed:.0f}ms)"
+      if status >= 500:
+        logger.error(msg)
+      elif status >= 400:
+        logger.warning(msg)
+      else:
+        logger.info(msg)
+    return response
+  except web.HTTPException as ex:
+    elapsed = (time.time() - t0) * 1000
+    if request.path.startswith("/api/"):
+      logger.warning(f"[{ex.status}] {request.method} {request.path} ({elapsed:.0f}ms)")
+    raise
+  except Exception:
+    elapsed = (time.time() - t0) * 1000
+    if request.path.startswith("/api/"):
+      logger.exception(f"[500] {request.method} {request.path} ({elapsed:.0f}ms)")
+    raise
+
+
 class PitStopServer:
   # Key services selfdrived monitors (subset — excludes sensors/GPS/ignored)
   _WATCHED_SERVICES = [
@@ -71,6 +102,8 @@ class PitStopServer:
     self._gps_location = None
     self._calibration = None
     self._speed_data = None
+    self._is_engaged = False
+    os.makedirs(PITSTOP_DATA_DIR, exist_ok=True)
     for target in (
       self._model_manager_loop,
       self._device_state_loop,
@@ -80,6 +113,7 @@ class PitStopServer:
       threading.Thread(target=target, daemon=True).start()
 
   def _subscriber_loop(self, topic, attr, field):
+    logger.info(f"[LOOP] {topic} subscriber started")
     try:
       sock = messaging.sub_sock(topic, conflate=True, timeout=1000)
       while self._running:
@@ -88,6 +122,7 @@ class PitStopServer:
           setattr(self, attr, getattr(msg, field))
     except Exception:
       logger.warning(f"{topic} subscriber not available")
+    logger.info(f"[LOOP] {topic} subscriber stopped")
 
   def _model_manager_loop(self):
     self._subscriber_loop('modelManagerSP', '_model_state', 'modelManagerSP')
@@ -100,6 +135,7 @@ class PitStopServer:
 
   def _diag_loop(self):
     """Single background thread for service health, active alert, and process list."""
+    logger.info("[LOOP] diagnostic monitor started")
     try:
       sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState', 'carState', 'longitudinalPlanSP', 'liveMapDataSP', 'carStateSP', 'selfdriveStateSP'])
       while self._running:
@@ -121,6 +157,7 @@ class PitStopServer:
           'status': str(sd.alertStatus).split('.')[-1],
           'type': str(sd.alertType),
         } if sm.seen['selfdriveState'] else None
+        self._is_engaged = bool(sd.enabled) if sm.seen['selfdriveState'] else False
         processes = []
         if sm.seen['managerState']:
           for p in sm['managerState'].processes:
@@ -360,6 +397,7 @@ class PitStopServer:
       "enabled": self.params.get_bool("PitStopEnabled"),
       "is_offroad": self.params.get_bool("IsOffroad"),
       "is_metric": self.params.get_bool("IsMetric"),
+      "engaged": self._is_engaged,
       "version": 1,
     })
 
@@ -432,16 +470,36 @@ class PitStopServer:
     sv = str(str_value)
     if isinstance(current, bool) or (current is None and sv in ("0", "1")):
       self.params.put_bool(key, sv in ("1", "true", "yes"))
+      logger.debug(f"[PARAM] {key} -> bool({sv in ('1', 'true', 'yes')})")
     elif isinstance(current, int):
       self.params.put(key, int(sv))
+      logger.debug(f"[PARAM] {key} -> int({sv})")
     elif isinstance(current, float):
       self.params.put(key, float(sv))
+      logger.debug(f"[PARAM] {key} -> float({sv})")
     elif isinstance(current, (dict, list)):
       self.params.put(key, json.loads(sv))
+      logger.debug(f"[PARAM] {key} -> json({sv})")
     elif isinstance(current, bytes):
       self.params.put(key, sv.encode("utf-8"))
+      logger.debug(f"[PARAM] {key} -> bytes({sv})")
+    elif current is None:
+      ptype = self.params.get_type(key)
+      if ptype == ParamKeyType.FLOAT:
+        self.params.put(key, float(sv))
+        logger.debug(f"[PARAM] {key} -> float({sv}) (type=FLOAT)")
+      elif ptype == ParamKeyType.INT:
+        self.params.put(key, int(sv))
+        logger.debug(f"[PARAM] {key} -> int({sv}) (type=INT)")
+      elif ptype == ParamKeyType.BOOL:
+        self.params.put_bool(key, sv in ("1", "true", "yes"))
+        logger.debug(f"[PARAM] {key} -> bool({sv in ('1', 'true', 'yes')}) (type=BOOL)")
+      else:
+        self.params.put(key, sv)
+        logger.debug(f"[PARAM] {key} -> str({sv}) (type=other)")
     else:
       self.params.put(key, sv)
+      logger.debug(f"[PARAM] {key} -> str({sv}) (fallback)")
 
   async def handle_param_get(self, request):
     key = request.match_info.get("key")
@@ -466,6 +524,7 @@ class PitStopServer:
       self._smart_put(key, str(value))
     except (ValueError, TypeError) as e:
       raise web.HTTPBadRequest(text=str(e)) from None
+    logger.info(f"[PARAM] {key} = {value}")
     return web.json_response({"key": key, "status": "ok"})
 
   async def handle_param_put_bool(self, request):
@@ -481,6 +540,7 @@ class PitStopServer:
       self.params.put_bool(key, value)
     except Exception as e:
       raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
+    logger.info(f"[PARAM] {key} = {value} (bool)")
     return web.json_response({"key": key, "value": value, "status": "ok"})
 
   async def handle_param_put_int(self, request):
@@ -496,6 +556,7 @@ class PitStopServer:
       self.params.put(key, int(value))
     except Exception as e:
       raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
+    logger.info(f"[PARAM] {key} = {int(value)} (int)")
     return web.json_response({"key": key, "value": int(value), "status": "ok"})
 
   async def handle_param_put_float(self, request):
@@ -511,6 +572,7 @@ class PitStopServer:
       self.params.put(key, float(value))
     except Exception as e:
       raise web.HTTPBadRequest(text=f"Cannot set '{key}': {e}") from None
+    logger.info(f"[PARAM] {key} = {float(value)} (float)")
     return web.json_response({"key": key, "value": float(value), "status": "ok"})
 
   # ---- Settings ----
@@ -529,7 +591,7 @@ class PitStopServer:
   # ---- Backup ----
 
   async def handle_backup_list(self, request):
-    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
+    backup_dir = os.path.join(PITSTOP_DATA_DIR, BACKUP_DIR_NAME)
     backups = []
     if os.path.isdir(backup_dir):
       for fname in sorted(os.listdir(backup_dir)):
@@ -551,7 +613,7 @@ class PitStopServer:
     return web.json_response(backups)
 
   async def handle_backup_create(self, request):
-    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
+    backup_dir = os.path.join(PITSTOP_DATA_DIR, BACKUP_DIR_NAME)
     os.makedirs(backup_dir, exist_ok=True)
     config = {}
     for k in self.params.all_keys(ParamKeyFlag.PERSISTENT):
@@ -564,20 +626,47 @@ class PitStopServer:
     fpath = os.path.join(backup_dir, fname)
     with open(fpath, "w") as f:
       json.dump({"created": time.time(), "params": config}, f)
+    logger.info(f"[BACKUP] created {fname} ({len(config)} params)")
     return web.json_response({"name": fname, "status": "created"})
 
   async def handle_backup_delete(self, request):
     name = request.match_info.get("name")
     if not name:
       raise web.HTTPBadRequest(text="Missing name")
-    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
+    backup_dir = os.path.join(PITSTOP_DATA_DIR, BACKUP_DIR_NAME)
     fpath = os.path.normpath(os.path.join(backup_dir, name))
     if not fpath.startswith(backup_dir + os.sep):
       raise web.HTTPBadRequest(text="Invalid backup name")
     if not os.path.isfile(fpath):
       raise web.HTTPNotFound(text=f"Backup '{name}' not found")
-      os.remove(fpath)
+    os.remove(fpath)
+    logger.info(f"[BACKUP] deleted {name}")
     return web.json_response({"status": "deleted"})
+
+  async def handle_backup_upload(self, request):
+    backup_dir = os.path.join(PITSTOP_DATA_DIR, BACKUP_DIR_NAME)
+    os.makedirs(backup_dir, exist_ok=True)
+    reader = await request.multipart()
+    field = await reader.next()
+    if field is None or field.name != "file":
+      raise web.HTTPBadRequest(text="Missing file field")
+    filename = field.filename or f"backup-upload-{int(time.time())}.json"
+    if not filename.endswith(".json"):
+      filename += ".json"
+    data = await field.read()
+    try:
+      parsed = json.loads(data)
+    except json.JSONDecodeError:
+      raise web.HTTPBadRequest(text="Invalid JSON file")
+    if not isinstance(parsed, dict) or "params" not in parsed:
+      raise web.HTTPBadRequest(text="Not a valid backup file (missing 'params')")
+    fpath = os.path.normpath(os.path.join(backup_dir, filename))
+    if not fpath.startswith(backup_dir + os.sep):
+      raise web.HTTPBadRequest(text="Invalid filename")
+    with open(fpath, "wb") as f:
+      f.write(data)
+    logger.info(f"[BACKUP] uploaded {filename} ({len(data)} bytes)")
+    return web.json_response({"name": filename, "status": "uploaded"})
 
   async def handle_backup_set_label(self, request):
     name = request.match_info.get("name")
@@ -590,7 +679,7 @@ class PitStopServer:
     label = body.get("label")
     if label is None:
       raise web.HTTPBadRequest(text="Missing 'label'")
-    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
+    backup_dir = os.path.join(PITSTOP_DATA_DIR, BACKUP_DIR_NAME)
     fpath = os.path.normpath(os.path.join(backup_dir, name))
     if not fpath.startswith(backup_dir + os.sep):
       raise web.HTTPBadRequest(text="Invalid backup name")
@@ -601,13 +690,14 @@ class PitStopServer:
     data["label"] = label
     with open(fpath, "w") as f:
       json.dump(data, f)
+    logger.info(f"[BACKUP] {name} labeled \"{label}\"")
     return web.json_response({"status": "ok", "label": label})
 
   async def handle_backup_download(self, request):
     name = request.match_info.get("name")
     if not name:
       raise web.HTTPBadRequest(text="Missing name")
-    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
+    backup_dir = os.path.join(PITSTOP_DATA_DIR, BACKUP_DIR_NAME)
     fpath = os.path.normpath(os.path.join(backup_dir, name))
     if not fpath.startswith(backup_dir + os.sep):
       raise web.HTTPBadRequest(text="Invalid backup name")
@@ -625,7 +715,7 @@ class PitStopServer:
     name = body.get("name")
     if not name:
       raise web.HTTPBadRequest(text="Missing 'name'")
-    backup_dir = os.path.join(Paths.comma_home(), BACKUP_DIR_NAME)
+    backup_dir = os.path.join(PITSTOP_DATA_DIR, BACKUP_DIR_NAME)
     fpath = os.path.normpath(os.path.join(backup_dir, name))
     if not fpath.startswith(backup_dir + os.sep):
       raise web.HTTPBadRequest(text="Invalid backup name")
@@ -640,6 +730,7 @@ class PitStopServer:
         restored += 1
       except Exception:
         logger.exception(f"Failed to restore param {key}")
+    logger.info(f"[BACKUP] restored {name} ({restored} params)")
     return web.json_response({"restored": restored, "status": "ok"})
 
   # ---- Models ----
@@ -711,9 +802,10 @@ class PitStopServer:
         deleted.append(fname + '.chunkmanifest')
         for i in range(num_chunks):
           chunk = f"{base}.chunk{i+1:02d}of{num_chunks:02d}"
-          if os.path.isfile(chunk):
-            os.remove(chunk)
-            deleted.append(os.path.basename(chunk))
+      if os.path.isfile(chunk):
+        os.remove(chunk)
+        deleted.append(os.path.basename(chunk))
+    logger.info(f"[MODEL] deleted {name} ({len(deleted)} files)")
     return web.json_response({"status": "ok", "deleted": deleted, "bundle": name})
 
   async def handle_models_active(self, request):
@@ -731,10 +823,12 @@ class PitStopServer:
     if index is None:
       raise web.HTTPBadRequest(text="Missing 'index'")
     self.params.put("ModelManager_DownloadIndex", int(index))
+    logger.info(f"[MODEL] selected index {index}")
     return web.json_response({"status": "ok", "index": index})
 
   async def handle_models_select_default(self, request):
     self.params.remove("ModelManager_ActiveBundle")
+    logger.info("[MODEL] reset to default")
     return web.json_response({"status": "ok"})
 
   async def handle_models_progress(self, request):
@@ -749,14 +843,17 @@ class PitStopServer:
 
   async def handle_models_cancel(self, request):
     self.params.remove("ModelManager_DownloadIndex")
+    logger.info("[MODEL] download cancelled")
     return web.json_response({"status": "ok"})
 
   async def handle_models_refresh(self, request):
     self.params.remove("ModelManager_LastSyncTime")
+    logger.info("[MODEL] refresh triggered")
     return web.json_response({"status": "ok"})
 
   async def handle_models_cache_clear(self, request):
     self.params.put_bool("ModelManager_ClearCache", True)
+    logger.info("[MODEL] cache clear requested")
     return web.json_response({"status": "ok"})
 
   async def handle_models_favorites(self, request):
@@ -772,6 +869,28 @@ class PitStopServer:
         raise web.HTTPBadRequest(text="Invalid JSON") from None
       refs = body.get("refs", [])
       self.params.put("ModelManager_Favs", ";".join(refs))
+      logger.info(f"[MODEL] favorites saved ({len(refs)} refs)")
+      return web.json_response({"status": "ok", "count": len(refs)})
+
+  async def handle_settings_favorites(self, request):
+    fpath = os.path.join(PITSTOP_DATA_DIR, "settings_favs.json")
+    if request.method == "GET":
+      try:
+        with open(fpath) as f:
+          refs = json.load(f)
+      except (FileNotFoundError, json.JSONDecodeError):
+        refs = []
+      return web.json_response(refs)
+    else:
+      try:
+        body = await request.json()
+      except Exception:
+        raise web.HTTPBadRequest(text="Invalid JSON") from None
+      refs = body.get("refs", [])
+      os.makedirs(PITSTOP_DATA_DIR, exist_ok=True)
+      with open(fpath, "w") as f:
+        json.dump(refs, f)
+      logger.info(f"[SETTINGS] favorites saved ({len(refs)} refs)")
       return web.json_response({"status": "ok", "count": len(refs)})
 
   # ---- System actions ----
@@ -799,11 +918,13 @@ class PitStopServer:
   async def handle_system_reboot(self, request):
     import subprocess
     subprocess.Popen(["sudo", "reboot"])
+    logger.info("[SYSTEM] reboot requested")
     return web.json_response({"status": "rebooting"})
 
   async def handle_system_restart(self, request):
     import subprocess
     subprocess.Popen(["sudo", "systemctl", "restart", "comma"])
+    logger.info("[SYSTEM] restart requested")
     return web.json_response({"status": "restarting"})
 
   # ---- CAN API (fused) ----
@@ -834,6 +955,7 @@ class PitStopServer:
     result = self._can_handler.send_signal(msg_name, values, bus)
     if result is None:
       raise web.HTTPBadRequest(text=f"Unknown message: {msg_name}")
+    logger.info(f"[CAN] signal {msg_name} ({len(values)} values)")
     return web.json_response(result)
 
   async def handle_can_batch_send(self, request):
@@ -850,6 +972,8 @@ class PitStopServer:
       bus = item.get("bus", 0)
       result = self._can_handler.send_signal(msg_name, values, bus)
       results.append({"message": msg_name, "ok": result is not None})
+    ok = sum(1 for r in results if r["ok"])
+    logger.info(f"[CAN] batch {len(results)} signals ({ok} ok)")
     return web.json_response(results)
 
   async def handle_can_raw_send(self, request):
@@ -867,6 +991,7 @@ class PitStopServer:
     except ValueError:
       raise web.HTTPBadRequest(text="Invalid hex data") from None
     self._can_handler.send_raw(int(address), data, int(bus))
+    logger.info(f"[CAN] raw 0x{int(address):X} ({len(data)} bytes) bus:{bus}")
     return web.json_response({"address": int(address), "data": data.hex(), "bus": int(bus)})
 
   # ---- OpenAPI / Swagger ----
@@ -1018,6 +1143,55 @@ class PitStopServer:
       pass
     return entries
 
+  def _read_pitstop(self, limit=500, min_level=0, search=None):
+    fpath = "/tmp/pitstop.log"
+    entries = []
+    search_lc = search.lower() if search else None
+    LVL_MAP = {'CRITICAL': 50, 'ERROR': 40, 'WARNING': 30, 'INFO': 20, 'DEBUG': 10}
+    try:
+      with open(fpath, 'r', errors='replace') as f:
+        for line in f:
+          line = line.rstrip('\n\r')
+          if not line:
+            continue
+          # Parse "LEVEL:name:message" or "LEVEL:name:..."
+          lvl = 'INFO'
+          name = ''
+          msg = line
+          for possible_lvl in ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'):
+            if line.startswith(possible_lvl + ':'):
+              lvl = possible_lvl
+              rest = line[len(lvl)+1:]
+              colon = rest.find(':')
+              if colon > 0:
+                name = rest[:colon]
+                msg = rest[colon+1:]
+              else:
+                msg = rest
+              break
+          levelnum = LVL_MAP.get(lvl, 20)
+          if levelnum < min_level:
+            continue
+          if search_lc and search_lc not in msg.lower() and search_lc not in name.lower():
+            continue
+          entries.append({
+            'ts':       os.path.getmtime(fpath),
+            'level':    lvl,
+            'levelnum': levelnum,
+            'source':   'pitstop',
+            'process':  name,
+            'filename': 'pitstop.log',
+            'lineno':   0,
+            'msg':      msg,
+          })
+    except FileNotFoundError:
+      return []
+    except Exception as e:
+      logger.warning(f"Failed to read pitstop log: {e}")
+      return []
+    entries.reverse()
+    return entries[:limit]
+
   async def handle_logs(self, request):
     source  = request.rel_url.query.get('source', 'swaglog')
     search  = request.rel_url.query.get('search', '').strip() or None
@@ -1034,6 +1208,8 @@ class PitStopServer:
         entries = self._read_journal(limit=limit, search=search, kernel=True)
       elif source == 'crash':
         entries = self._read_crashes(limit=50, search=search)
+      elif source == 'pitstop':
+        entries = self._read_pitstop(limit=limit, min_level=min_level, search=search)
       else:
         entries = self._read_swaglog(limit=limit, min_level=min_level, search=search, proc=proc)
       return web.json_response(entries)
@@ -1065,6 +1241,7 @@ class PitStopServer:
 
   def build_app(self):
     app = web.Application()
+    app.middlewares.append(access_log_middleware)
 
     # System
     app.router.add_get("/api/status", self.handle_status)
@@ -1099,6 +1276,7 @@ class PitStopServer:
     app.router.add_delete("/api/backup/{name}", self.handle_backup_delete)
     app.router.add_post("/api/backup/{name}/label", self.handle_backup_set_label)
     app.router.add_get("/api/backup/download/{name}", self.handle_backup_download)
+    app.router.add_post("/api/backup/upload", self.handle_backup_upload)
 
     # Models
     app.router.add_get("/api/models", self.handle_models_list)
@@ -1112,6 +1290,10 @@ class PitStopServer:
     app.router.add_get("/api/models/favorites", self.handle_models_favorites)
     app.router.add_post("/api/models/favorites", self.handle_models_favorites)
     app.router.add_delete("/api/models/{name}", self.handle_models_delete)
+
+    # Settings favorites
+    app.router.add_get("/api/settings/favorites", self.handle_settings_favorites)
+    app.router.add_post("/api/settings/favorites", self.handle_settings_favorites)
 
     # System actions
     app.router.add_get("/api/update", self.handle_update_status)
@@ -1150,8 +1332,10 @@ def _setup_port_redirect():
 
 
 def main():
-  logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
   logger.setLevel(logging.INFO)
+  handler = logging.FileHandler("/tmp/pitstop.log")
+  handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+  logger.addHandler(handler)
 
   _setup_port_redirect()
   server = PitStopServer()
