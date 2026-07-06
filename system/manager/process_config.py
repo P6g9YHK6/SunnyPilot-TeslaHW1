@@ -173,7 +173,7 @@ procs = [
   PythonProcess("statsd_sp", "sunnypilot.sunnylink.statsd", and_(always_run, sunnylink_ready_shim)),
 
   # pitstop
-  PythonProcess("pitstop", "pitstop.server", use_pitstop),
+  PythonProcess("pitstop", "pitstop.server", always_run, enabled=True),
 ]
 
 # sunnypilot
