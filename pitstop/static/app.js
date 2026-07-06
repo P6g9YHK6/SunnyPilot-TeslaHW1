@@ -331,7 +331,7 @@ async function updateLogsErrorBadge() {
 /* ── New dashboard card renderers ── */
 function renderGpsCard(g) {
   const el = document.getElementById('card-gps').querySelector('.card-body');
-  if (!g || g.status === 'no_fix') { el.innerHTML = '<div class="row"><span class="label">Fix</span><span class="value">No GPS fix</span></div>'; return; }
+  if (!g || g.error) { el.innerHTML = '<div class="row"><span class="label">Fix</span><span class="value">No GPS fix</span></div>'; return; }
   el.innerHTML = `
     <div class="row"><span class="label">Fix</span><span class="value">${g.has_fix ? '<span class="diag-dot dot-ok">OK</span>' : '<span class="diag-dot dot-fail">No</span>'}</span></div>
     <div class="row"><span class="label">Lat</span><span class="value">${g.latitude != null ? g.latitude.toFixed(5) : '—'}</span></div>
@@ -346,7 +346,7 @@ function renderGpsCard(g) {
 
 function renderCalibrationCard(c) {
   const el = document.getElementById('card-calibration').querySelector('.card-body');
-  if (!c || c.status === 'no_data') { el.textContent = 'No data'; return; }
+  if (!c || c.error) { el.textContent = 'No data'; return; }
   const s = c.status;
   const badge = s === 'calibrated' ? '<span class="diag-dot dot-ok">Calibrated</span>' : s === 'uncalibrated' ? '<span style="color:var(--warn)">Uncalibrated</span>' : s === 'recalibrating' ? '<span style="color:var(--warn)">Recalibrating</span>' : s;
   const pct = c.percent != null ? c.percent : 0;
@@ -366,44 +366,30 @@ function renderNetworkCard(n) {
 
   const sigDot = n.strength === 'great' ? 'dot-ok' : n.strength === 'good' ? 'dot-warn' : 'dot-fail';
 
-  let rows = `
-    <div class="row" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
-      <span class="label">Type</span><span class="value">${n.type}</span>
-      <span class="label">Signal</span><span class="value"><span class="diag-dot ${sigDot}" style="font-size:0.55rem;padding:0 0.4rem">${n.strength}</span></span>
-      <span class="label">Metered</span><span class="value">${n.metered != null ? (n.metered ? 'Yes' : 'No') : '—'}</span>
-    </div>
-  `;
-
-  if (n.tech || n.net_state) {
-    rows += `
-      <div class="row"><span class="label">Technology</span><span class="value">${n.tech || '—'}</span>
-      <span class="label" style="margin-left:1rem">State</span><span class="value">${n.net_state || '—'}</span></div>
-    `;
-  }
-
-  if (n.device_ip || n.gateway) {
-    rows += `
-      <div class="row"><span class="label">Device IP</span><span class="value">${n.device_ip || '—'}</span>
-      <span class="label" style="margin-left:1rem">Gateway</span><span class="value">${n.gateway || '—'}</span></div>
-    `;
-  }
-
-  const cloudStr = n.last_athena_ping != null ? `${n.last_athena_ping}s ago` : 'offline';
+  const cloudStr = n.last_athena_ping != null ? `${fmtDuration(n.last_athena_ping)} ago` : 'offline';
   const txStr = n.wwanTx != null ? fmtSize(n.wwanTx) : '—';
   const rxStr = n.wwanRx != null ? fmtSize(n.wwanRx) : '—';
-  rows += `
-    <div class="row"><span class="label">Cloud</span><span class="value">${cloudStr}</span>
-    <span class="label" style="margin-left:1rem">Tx</span><span class="value">${txStr}</span>
-    <span class="label" style="margin-left:1rem">Rx</span><span class="value">${rxStr}</span></div>
+
+  let rows = `
+    <div class="row"><span class="label">Type</span><span class="value">${n.type}</span></div>
+    <div class="row"><span class="label">Signal</span><span class="value"><span class="diag-dot ${sigDot}" style="font-size:0.55rem;padding:0 0.4rem">${n.strength}</span></span></div>
+    <div class="row"><span class="label">Metered</span><span class="value">${n.metered != null ? (n.metered ? 'Yes' : 'No') : '—'}</span></div>
+    ${n.tech ? `<div class="row"><span class="label">Technology</span><span class="value">${n.tech}</span></div>` : ''}
+    ${n.net_state ? `<div class="row"><span class="label">State</span><span class="value">${n.net_state}</span></div>` : ''}
+    ${n.device_ip ? `<div class="row"><span class="label">Device IP</span><span class="value">${n.device_ip}</span></div>` : ''}
+    ${n.gateway ? `<div class="row"><span class="label">Gateway</span><span class="value">${n.gateway}</span></div>` : ''}
+    <div class="row"><span class="label">Cloud</span><span class="value">${cloudStr}</span></div>
+    <div class="row"><span class="label">Tx</span><span class="value">${txStr}</span></div>
+    <div class="row"><span class="label">Rx</span><span class="value">${rxStr}</span></div>
   `;
 
   if (n.hotspot && n.hotspot.active) {
     rows += `
       <div class="diag-section-title" style="margin-top:0.6rem">Hotspot</div>
-      <div class="row"><span class="label">Status</span><span class="value"><span class="diag-dot dot-ok" style="font-size:0.55rem;padding:0 0.4rem">ACTIVE</span></span>
-      <span class="label" style="margin-left:1rem">SSID</span><span class="value">${n.hotspot.ssid || '—'}</span></div>
-      <div class="row"><span class="label">Password</span><span class="value">${n.hotspot.password || '—'}</span>
-      <span class="label" style="margin-left:1rem">Gateway</span><span class="value">${n.hotspot.gateway || '—'}</span></div>
+      <div class="row"><span class="label">Status</span><span class="value"><span class="diag-dot dot-ok" style="font-size:0.55rem;padding:0 0.4rem">ACTIVE</span></span></div>
+      <div class="row"><span class="label">SSID</span><span class="value">${n.hotspot.ssid || '—'}</span></div>
+      <div class="row"><span class="label">Password</span><span class="value">${n.hotspot.password || '—'}</span></div>
+      <div class="row"><span class="label">Gateway</span><span class="value">${n.hotspot.gateway || '—'}</span></div>
       <div class="row"><span class="label">Clients</span><span class="value">${n.hotspot.clients != null ? n.hotspot.clients : '—'}</span></div>
     `;
   }
@@ -616,6 +602,15 @@ let settingsFavorites = [];
 /* ---- Pending changes queue ---- */
 let pendingChanges = {};
 // shape: { [key]: { oldValue, newValue, label, needsCycle } }
+
+function fmtDuration(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m < 60) return `${m}m ${s}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
 
 function fmtPendingVal(v) {
   if (v === null || v === undefined) return '—';
@@ -1591,7 +1586,7 @@ async function checkCacheSize() {
 async function checkDownloadProgress() {
   try {
     const progress = await api('/api/models/progress');
-    if (!progress || progress.status === 'no_data') {
+    if (!progress || progress.error) {
       document.getElementById('model-dl-progress').classList.add('hidden');
       return;
     }
