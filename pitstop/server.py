@@ -267,14 +267,16 @@ class PitStopServer:
       return None
 
   async def handle_diag(self, request):
-    return web.json_response(self._diag or {})
+    if self._diag is None:
+      return web.json_response({"error": "no diag data"}, status=503)
+    return web.json_response(self._diag)
 
   # ---- New endpoints (GPS / Calibration / Network / Sunnylink / Storage) ----
 
   async def handle_gps(self, request):
     g = self._gps_location
     if g is None:
-      return web.json_response({"status": "no_fix"})
+      return web.json_response({"error": "no gps fix"}, status=503)
     return web.json_response({
       "latitude": g.latitude,
       "longitude": g.longitude,
@@ -291,12 +293,14 @@ class PitStopServer:
     })
 
   async def handle_calibration(self, request):
-    return web.json_response(self._calibration or {"status": "no_data"})
+    if self._calibration is None:
+      return web.json_response({"error": "no calibration data"}, status=503)
+    return web.json_response(self._calibration)
 
   async def handle_network(self, request):
     ds = self._device_state
     if ds is None:
-      return web.json_response({})
+      return web.json_response({"error": "no device state"}, status=503)
 
     result = {
       "type": str(ds.networkType).split('.')[-1],
@@ -321,7 +325,7 @@ class PitStopServer:
     try:
       ping_ns = ds.lastAthenaPingTime
       if ping_ns:
-        result["last_athena_ping"] = max(0, int((time.time_ns() - ping_ns) / 1_000_000_000))
+        result["last_athena_ping"] = max(0, int((time.monotonic_ns() - ping_ns) / 1_000_000_000))
     except Exception:
       pass
 
@@ -432,7 +436,9 @@ class PitStopServer:
     })
 
   async def handle_speeds(self, request):
-    return web.json_response(self._speed_data or {})
+    if self._speed_data is None:
+      return web.json_response({"error": "no speed data"}, status=503)
+    return web.json_response(self._speed_data)
 
   # ---- System ----
 
@@ -532,7 +538,7 @@ class PitStopServer:
       keys = sorted(k.decode("utf-8") for k in self.params.all_keys())
       return web.json_response({k: {} for k in keys})
     except Exception:
-      return web.json_response({})
+      return web.json_response({"error": "failed to list params"}, status=500)
 
   def _param_to_str(self, raw) -> str:
     """Normalize any params.get() return value to a string the UI can use."""
@@ -919,7 +925,7 @@ class PitStopServer:
 
   async def handle_models_progress(self, request):
     if self._model_state is None:
-      return web.json_response({"status": "no_data"})
+      return web.json_response({"error": "no model state"}, status=503)
     state = self._model_state.to_dict()
     return web.json_response({
       "selectedBundle": state.get("selectedBundle"),
@@ -1086,9 +1092,9 @@ class PitStopServer:
       with open(crash_log) as f:
         content = f.read()
     except FileNotFoundError:
-      content = ""
+      return web.json_response({"error": "no error log"}, status=404)
     except Exception as e:
-      content = f"Error reading log: {e}"
+      return web.json_response({"error": f"failed to read log: {e}"}, status=500)
     return web.json_response({"path": crash_log, "content": content})
 
   # ---- Unified log reader ----
