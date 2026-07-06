@@ -350,6 +350,14 @@ class PitStopServer:
     except Exception:
       pass
 
+    try:
+      mac_out = subprocess.run(["cat", "/sys/class/net/wlan0/address"], capture_output=True, text=True, timeout=3)
+      mac = mac_out.stdout.strip()
+      if mac:
+        result["mac"] = mac
+    except Exception:
+      pass
+
     # Hotspot info
     hotspot = {"active": False}
     try:

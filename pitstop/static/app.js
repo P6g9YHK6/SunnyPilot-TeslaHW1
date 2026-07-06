@@ -250,8 +250,6 @@ function renderSystemCard(t, status) {
     <div class="row"><span class="label">CPU</span><span class="value">${fmtPct(dev.cpu_pct)}</span></div>
     <div class="row"><span class="label">RAM</span><span class="value">${fmtPct(dev.memory_pct)}</span></div>
     <div class="row"><span class="label">Temp</span><span class="value">${fmtTemp(dev.temp_c)}</span></div>
-    <div class="row"><span class="label">Free</span><span class="value">${fmtPct(dev.free_space_pct)}</span></div>
-    ${dev.network_type ? `<div class="row"><span class="label">Network</span><span class="value">${dev.network_type}</span></div>` : ''}
     ${dev.thermal_status ? `<div class="row"><span class="label">Thermal</span><span class="value">${dev.thermal_status}</span></div>` : ''}
     ${status ? `
     <div class="row"><span class="label">Web UI</span><span class="value">${fmtBool(status.enabled)}</span></div>
@@ -367,8 +365,6 @@ function renderNetworkCard(n) {
   const sigDot = n.strength === 'great' ? 'dot-ok' : n.strength === 'good' ? 'dot-warn' : 'dot-fail';
 
   const cloudStr = n.last_athena_ping != null ? `${fmtDuration(n.last_athena_ping)} ago` : 'offline';
-  const txStr = n.wwanTx != null ? fmtSize(n.wwanTx) : '—';
-  const rxStr = n.wwanRx != null ? fmtSize(n.wwanRx) : '—';
 
   let rows = `
     <div class="row"><span class="label">Type</span><span class="value">${n.type}</span></div>
@@ -376,12 +372,17 @@ function renderNetworkCard(n) {
     <div class="row"><span class="label">Metered</span><span class="value">${n.metered != null ? (n.metered ? 'Yes' : 'No') : '—'}</span></div>
     ${n.tech ? `<div class="row"><span class="label">Technology</span><span class="value">${n.tech}</span></div>` : ''}
     ${n.net_state ? `<div class="row"><span class="label">State</span><span class="value">${n.net_state}</span></div>` : ''}
+    ${n.mac ? `<div class="row"><span class="label">MAC</span><span class="value">${n.mac}</span></div>` : ''}
     ${n.device_ip ? `<div class="row"><span class="label">Device IP</span><span class="value">${n.device_ip}</span></div>` : ''}
     ${n.gateway ? `<div class="row"><span class="label">Gateway</span><span class="value">${n.gateway}</span></div>` : ''}
     <div class="row"><span class="label">Cloud</span><span class="value">${cloudStr}</span></div>
-    <div class="row"><span class="label">Tx</span><span class="value">${txStr}</span></div>
-    <div class="row"><span class="label">Rx</span><span class="value">${rxStr}</span></div>
   `;
+  if (n.wwanTx || n.wwanRx) {
+    rows += `
+    <div class="row"><span class="label">Tx</span><span class="value">${n.wwanTx != null ? fmtSize(n.wwanTx) : '—'}</span></div>
+    <div class="row"><span class="label">Rx</span><span class="value">${n.wwanRx != null ? fmtSize(n.wwanRx) : '—'}</span></div>
+    `;
+  }
 
   if (n.hotspot && n.hotspot.active) {
     rows += `
@@ -412,7 +413,7 @@ function renderSunnylinkCard(s) {
   `;
 }
 
-function renderStorageCard(st) {
+function renderStorageCard(st, telemetry) {
   const el = document.getElementById('card-storage').querySelector('.card-body');
   if (!st) { el.textContent = 'No data'; return; }
   function bar(pct) { return `<div class="progress-bar" style="width:100%;height:5px"><div class="progress-fill" style="width:${Math.min(pct,100)}%"></div></div>`; }
@@ -421,7 +422,8 @@ function renderStorageCard(st) {
     if (!u) return '';
     return `<div class="row"><span class="label">${label}</span><span class="value">${fmtGb(u.used)} / ${fmtGb(u.total)} ${bar(u.pct)}</span></div>`;
   }
-  el.innerHTML = row('Internal', st.root) + row('Data', st.data) + row('Logs', st.logs) + row('Models', st.models) + row('Crashes', st.crashes);
+  const freePct = telemetry?.device?.free_space_pct != null ? fmtPct(telemetry.device.free_space_pct) : null;
+  el.innerHTML = (freePct ? `<div class="row"><span class="label">Free</span><span class="value">${freePct}</span></div>` : '') + row('Internal', st.root) + row('Data', st.data) + row('Logs', st.logs) + row('Models', st.models) + row('Crashes', st.crashes);
 }
 
 /* ── Speeds Card ── */
@@ -580,7 +582,7 @@ async function loadDashboard() {
     renderCalibrationCard(calibration);
     renderNetworkCard(network);
     renderSunnylinkCard(sunnylink);
-    renderStorageCard(storage);
+    renderStorageCard(storage, telemetry);
     renderSpeedsCard(speeds);
     renderSpeedLimitsCard(speeds);
   } catch (e) {
