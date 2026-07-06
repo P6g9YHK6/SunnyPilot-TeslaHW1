@@ -28,8 +28,6 @@ PORT = 8080
 EXTERNAL_PORT = 80  # iptables redirects :80 → :PORT
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-PARAMS_METADATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sunnypilot", "sunnylink", "params_metadata.json")
-PITSTOP_DATA_DIR = "/data/pitstop"
 BACKUP_DIR_NAME = "backups"
 
 SWAGGER_HTML = """<!DOCTYPE html>
@@ -106,6 +104,16 @@ class PitStopServer:
     self._speed_data = None
     self._is_engaged = False
     self._static_version = self._hash_static()
+    # Verify pitstop data directory is accessible
+    if not os.path.isdir(PITSTOP_DATA_DIR):
+      raise SystemExit(f"ERROR: {PITSTOP_DATA_DIR} does not exist")
+    try:
+      test_file = os.path.join(PITSTOP_DATA_DIR, ".write_test")
+      with open(test_file, "w") as f:
+        f.write("test")
+      os.remove(test_file)
+    except Exception as e:
+      raise SystemExit(f"ERROR: {PITSTOP_DATA_DIR} is not writable: {e}")
     for target in (
       self._model_manager_loop,
       self._device_state_loop,
@@ -559,8 +567,9 @@ class PitStopServer:
     try:
       keys = sorted(k.decode("utf-8") for k in self.params.all_keys())
       return web.json_response({k: {} for k in keys})
-    except Exception:
-      return web.json_response({"error": "failed to list params"}, status=500)
+    except Exception as e:
+      logger.exception("failed to list params")
+      return web.json_response({"error": f"failed to list params: {e}"}, status=500)
 
   def _param_to_str(self, raw) -> str:
     """Normalize any params.get() return value to a string the UI can use."""
@@ -696,6 +705,8 @@ class PitStopServer:
       schema = generate_schema()
     except FileNotFoundError:
       raise web.HTTPNotFound(text="settings_ui.json not found") from None
+    except (json.JSONDecodeError, ValueError) as e:
+      raise web.HTTPInternalServerError(text=f"settings_ui.json is corrupted: {e}") from None
     return web.json_response(schema)
 
   async def handle_capabilities(self, request):
@@ -916,9 +927,12 @@ class PitStopServer:
         deleted.append(fname + '.chunkmanifest')
         for i in range(num_chunks):
           chunk = f"{base}.chunk{i+1:02d}of{num_chunks:02d}"
-      if os.path.isfile(chunk):
-        os.remove(chunk)
-        deleted.append(os.path.basename(chunk))
+          if os.path.isfile(chunk):
+            try:
+              os.remove(chunk)
+              deleted.append(os.path.basename(chunk))
+            except Exception as e:
+              logger.warning(f"[MODEL] failed to remove chunk {chunk}: {e}")
     logger.info(f"[MODEL] deleted {name} ({len(deleted)} files)")
     return web.json_response({"status": "ok", "deleted": deleted, "bundle": name})
 
@@ -1286,7 +1300,6 @@ class PitStopServer:
           if search_lc and search_lc not in msg.lower() and search_lc not in name.lower():
             continue
           entries.append({
-            'ts':       os.path.getmtime(fpath),
             'level':    lvl,
             'levelnum': levelnum,
             'source':   'pitstop',
@@ -1360,7 +1373,7 @@ class PitStopServer:
     app.router.add_get("/api/telemetry", self.handle_telemetry)
     app.router.add_get("/api/diag", self.handle_diag)
 
-    # New endpoints
+    # Telemetry / GPS / Storage
     app.router.add_get("/api/gps", self.handle_gps)
     app.router.add_get("/api/calibration", self.handle_calibration)
     app.router.add_get("/api/network", self.handle_network)
