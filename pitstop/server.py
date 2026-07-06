@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -104,6 +105,7 @@ class PitStopServer:
     self._calibration = None
     self._speed_data = None
     self._is_engaged = False
+    self._static_version = self._hash_static()
     os.makedirs(PITSTOP_DATA_DIR, exist_ok=True)
     for target in (
       self._model_manager_loop,
@@ -112,6 +114,18 @@ class PitStopServer:
       self._gps_location_loop,
     ):
       threading.Thread(target=target, daemon=True).start()
+
+  @staticmethod
+  def _hash_static():
+    h = hashlib.md5()
+    for f in ('app.js', 'index.html', 'style.css'):
+      p = os.path.join(STATIC_DIR, f)
+      try:
+        with open(p, 'rb') as fh:
+          h.update(fh.read())
+      except FileNotFoundError:
+        pass
+    return h.hexdigest()[:8]
 
   def _subscriber_loop(self, topic, attr, field):
     logger.info(f"[LOOP] {topic} subscriber started")
@@ -499,6 +513,7 @@ class PitStopServer:
       "is_metric": self.params.get_bool("IsMetric"),
       "engaged": self._is_engaged,
       "version": 1,
+      "webVersion": self._static_version,
     })
 
   async def handle_device(self, request):

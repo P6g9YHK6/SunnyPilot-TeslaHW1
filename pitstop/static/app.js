@@ -11,6 +11,7 @@ function fmtSize(bytes) {
 /* ---------- Navigation ---------- */
 let currentPage = 'dashboard';
 let autoRefreshTimer = null;
+let _webVersion = null;
 
 function toggleNavMenu() {
   document.getElementById('nav-links').classList.toggle('open');
@@ -56,7 +57,21 @@ function loadPage(name, force) {
     else if (name === 'params') loadParams();
     else if (name === 'backup') loadBackups();
     else if (name === 'logs') loadLogs();
+    fetchAndCheckVersion();
   }
+}
+
+function _checkWebVersion(v) {
+  if (!v) return;
+  if (_webVersion === null) { _webVersion = v; return; }
+  if (_webVersion !== v) {
+    const banner = document.getElementById('web-version-banner');
+    if (banner) banner.style.display = 'block';
+  }
+}
+
+function fetchAndCheckVersion() {
+  api('/api/status', { silent: true }).then(s => _checkWebVersion(s?.webVersion)).catch(() => {});
 }
 
 function refreshNow() {
@@ -542,6 +557,8 @@ async function loadDashboard() {
       api('/api/storage', { silent: true }).catch(() => null),
       api('/api/speeds', { silent: true }).catch(() => null),
     ]);
+
+    _checkWebVersion(status?.webVersion);
 
     document.getElementById('card-device').querySelector('.card-body').innerHTML = `
       <div class="row"><span class="label">Dongle ID</span><span class="value">${device.dongle_id || '—'}</span></div>
