@@ -50,12 +50,16 @@ function loadPage(name, force) {
   if (name !== 'dashboard') stopDashboardPoll();
   if (name !== 'models') stopModelsProgressPoll();
   if (name === 'dashboard') loadDashboard();
+  else if (name === 'backup') {
+    _pageLoaded[name] = true;
+    loadBackups();
+    fetchAndCheckVersion();
+  }
   else if (force || !_pageLoaded[name]) {
     _pageLoaded[name] = true;
     if (name === 'settings') loadSettings();
     else if (name === 'models') loadModels();
     else if (name === 'params') loadParams();
-    else if (name === 'backup') loadBackups();
     else if (name === 'logs') loadLogs();
     fetchAndCheckVersion();
   }
