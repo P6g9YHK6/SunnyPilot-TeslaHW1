@@ -604,13 +604,6 @@
                   "value": 2,
                   "label": "Relaxed"
                 }
-              ],
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
-                }
               ]
             },
             {

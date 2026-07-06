@@ -39,8 +39,9 @@ sections:
       label: Standard
     - value: 2
       label: Relaxed
-    enablement:
-    - $ref: '#/macros/longitudinal'
+    # Always enabled — this is a stock openpilot feature, not dependent on sunnypilot longitudinal control.
+    # Gating it behind has_longitudinal_control would hide it on cars where only stock OP longitudinal
+    # is available but the sunnylink capability doesn't reflect that. Keep it universal.
   - key: IntelligentCruiseButtonManagement
     widget: toggle
     title: Intelligent Cruise Button Management (ICBM) (Alpha)
