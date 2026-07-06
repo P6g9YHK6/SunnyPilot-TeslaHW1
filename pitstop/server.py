@@ -106,7 +106,6 @@ class PitStopServer:
     self._speed_data = None
     self._is_engaged = False
     self._static_version = self._hash_static()
-    os.makedirs(PITSTOP_DATA_DIR, exist_ok=True)
     for target in (
       self._model_manager_loop,
       self._device_state_loop,
