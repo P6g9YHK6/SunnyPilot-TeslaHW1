@@ -23,6 +23,7 @@ function navigateTo(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + page)?.classList.add('active');
   currentPage = page;
+  localStorage.setItem('pitstop_last_page', page);
   loadPage(page);
   restartAutoRefresh();
 }
@@ -362,11 +363,52 @@ function renderCalibrationCard(c) {
 function renderNetworkCard(n) {
   const el = document.getElementById('card-network').querySelector('.card-body');
   if (!n || !n.type) { el.textContent = 'No data'; return; }
-  el.innerHTML = `
-    <div class="row"><span class="label">Type</span><span class="value">${n.type}</span></div>
-    <div class="row"><span class="label">Signal</span><span class="value">${n.strength || '—'}</span></div>
-    <div class="row"><span class="label">Metered</span><span class="value">${n.metered != null ? (n.metered ? 'Yes' : 'No') : '—'}</span></div>
+
+  const sigDot = n.strength === 'great' ? 'dot-ok' : n.strength === 'good' ? 'dot-warn' : 'dot-fail';
+
+  let rows = `
+    <div class="row" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+      <span class="label">Type</span><span class="value">${n.type}</span>
+      <span class="label">Signal</span><span class="value"><span class="diag-dot ${sigDot}" style="font-size:0.55rem;padding:0 0.4rem">${n.strength}</span></span>
+      <span class="label">Metered</span><span class="value">${n.metered != null ? (n.metered ? 'Yes' : 'No') : '—'}</span>
+    </div>
   `;
+
+  if (n.tech || n.net_state) {
+    rows += `
+      <div class="row"><span class="label">Technology</span><span class="value">${n.tech || '—'}</span>
+      <span class="label" style="margin-left:1rem">State</span><span class="value">${n.net_state || '—'}</span></div>
+    `;
+  }
+
+  if (n.device_ip || n.gateway) {
+    rows += `
+      <div class="row"><span class="label">Device IP</span><span class="value">${n.device_ip || '—'}</span>
+      <span class="label" style="margin-left:1rem">Gateway</span><span class="value">${n.gateway || '—'}</span></div>
+    `;
+  }
+
+  const cloudStr = n.last_athena_ping != null ? `${n.last_athena_ping}s ago` : 'offline';
+  const txStr = n.wwanTx != null ? fmtSize(n.wwanTx) : '—';
+  const rxStr = n.wwanRx != null ? fmtSize(n.wwanRx) : '—';
+  rows += `
+    <div class="row"><span class="label">Cloud</span><span class="value">${cloudStr}</span>
+    <span class="label" style="margin-left:1rem">Tx</span><span class="value">${txStr}</span>
+    <span class="label" style="margin-left:1rem">Rx</span><span class="value">${rxStr}</span></div>
+  `;
+
+  if (n.hotspot && n.hotspot.active) {
+    rows += `
+      <div class="diag-section-title" style="margin-top:0.6rem">Hotspot</div>
+      <div class="row"><span class="label">Status</span><span class="value"><span class="diag-dot dot-ok" style="font-size:0.55rem;padding:0 0.4rem">ACTIVE</span></span>
+      <span class="label" style="margin-left:1rem">SSID</span><span class="value">${n.hotspot.ssid || '—'}</span></div>
+      <div class="row"><span class="label">Password</span><span class="value">${n.hotspot.password || '—'}</span>
+      <span class="label" style="margin-left:1rem">Gateway</span><span class="value">${n.hotspot.gateway || '—'}</span></div>
+      <div class="row"><span class="label">Clients</span><span class="value">${n.hotspot.clients != null ? n.hotspot.clients : '—'}</span></div>
+    `;
+  }
+
+  el.innerHTML = rows;
 }
 
 function renderSunnylinkCard(s) {
@@ -1945,4 +1987,7 @@ function cycleTheme() {
   const fs = localStorage.getItem('pitstop_font_scale');
   if (fs) adjFont(0);
 })();
-loadDashboard();
+
+/* Restore last active tab on refresh */
+const lastPage = localStorage.getItem('pitstop_last_page') || 'dashboard';
+navigateTo(lastPage);
