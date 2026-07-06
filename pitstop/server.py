@@ -1456,4 +1456,8 @@ def main():
 
 
 if __name__ == "__main__":
-  main()
+  raise SystemExit(
+    "ERROR: pitstop.server must not be started directly.\n"
+    "It is managed by the system manager (manager.py).\n"
+    "For manual testing use: /usr/local/venv/bin/python3 -m pitstop.server"
+  )
