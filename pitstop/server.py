@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import subprocess
 import threading
 import time
 
@@ -296,11 +297,96 @@ class PitStopServer:
     ds = self._device_state
     if ds is None:
       return web.json_response({})
-    return web.json_response({
+
+    result = {
       "type": str(ds.networkType).split('.')[-1],
       "strength": str(ds.networkStrength).split('.')[-1],
       "metered": bool(ds.networkMetered),
-    })
+    }
+
+    try:
+      ni = ds.networkInfo
+      result["tech"] = str(ni.technology) if ni.technology else None
+      result["net_state"] = str(ni.state) if ni.state else None
+    except Exception:
+      pass
+
+    try:
+      ns = ds.networkStats
+      result["wwanTx"] = ns.wwanTx
+      result["wwanRx"] = ns.wwanRx
+    except Exception:
+      pass
+
+    try:
+      ping_ns = ds.lastAthenaPingTime
+      if ping_ns:
+        result["last_athena_ping"] = max(0, int((time.time_ns() - ping_ns) / 1_000_000_000))
+    except Exception:
+      pass
+
+    # Device IP / gateway (fast shell commands)
+    try:
+      ip_out = subprocess.run(["ip", "-4", "addr", "show", "scope", "global"], capture_output=True, text=True, timeout=3)
+      for line in ip_out.stdout.split('\n'):
+        parts = line.strip().split()
+        if parts and parts[0] == 'inet':
+          result["device_ip"] = parts[1].split('/')[0]
+          break
+    except Exception:
+      pass
+
+    try:
+      gw_out = subprocess.run(["ip", "route", "show", "default"], capture_output=True, text=True, timeout=3)
+      for line in gw_out.stdout.split('\n'):
+        parts = line.strip().split()
+        if len(parts) >= 3:
+          result["gateway"] = parts[2]
+          break
+    except Exception:
+      pass
+
+    # Hotspot info
+    hotspot = {"active": False}
+    try:
+      active = subprocess.run(["nmcli", "-t", "connection", "show", "--active"], capture_output=True, text=True, timeout=3)
+      hotspot["active"] = "Hotspot:" in active.stdout
+    except Exception:
+      pass
+
+    if hotspot["active"]:
+      try:
+        show = subprocess.run(["nmcli", "-s", "-t", "connection", "show", "Hotspot"], capture_output=True, text=True, timeout=3)
+        for line in show.stdout.split('\n'):
+          if line.startswith("802-11-wireless.ssid:"):
+            hotspot["ssid"] = line.split(':', 1)[1].strip()
+          elif line.startswith("802-11-wireless-security.psk:"):
+            hotspot["password"] = line.split(':', 1)[1].strip()
+      except Exception:
+        pass
+
+      hotspot["gateway"] = "100.100.0.1"
+
+      try:
+        with open("/var/lib/misc/dnsmasq.leases") as f:
+          data = f.read().strip()
+          hotspot["clients"] = len([l for l in data.split('\n') if l]) if data else 0
+      except FileNotFoundError:
+        try:
+          with open("/var/lib/NetworkManager/dnsmasq-wlan0.leases") as f:
+            data = f.read().strip()
+            hotspot["clients"] = len([l for l in data.split('\n') if l]) if data else 0
+        except FileNotFoundError:
+          try:
+            arp = subprocess.run(["ip", "neigh", "show", "dev", "wlan0"], capture_output=True, text=True, timeout=3)
+            hotspot["clients"] = len([l for l in arp.stdout.split('\n') if 'REACHABLE' in l])
+          except Exception:
+            hotspot["clients"] = 0
+      except Exception:
+        hotspot["clients"] = 0
+
+    result["hotspot"] = hotspot
+    return web.json_response(result)
 
   async def handle_sunnylink(self, request):
     def _gp(key):
@@ -916,13 +1002,11 @@ class PitStopServer:
     return web.json_response({"available": available, "current_description": current_desc, "description": new_desc, "fork_url": fork_url})
 
   async def handle_system_reboot(self, request):
-    import subprocess
     subprocess.Popen(["sudo", "reboot"])
     logger.info("[SYSTEM] reboot requested")
     return web.json_response({"status": "rebooting"})
 
   async def handle_system_restart(self, request):
-    import subprocess
     subprocess.Popen(["sudo", "systemctl", "restart", "comma"])
     logger.info("[SYSTEM] restart requested")
     return web.json_response({"status": "restarting"})
@@ -1062,7 +1146,6 @@ class PitStopServer:
     return entries[:limit]
 
   def _read_journal(self, limit=500, search=None, proc=None, kernel=False):
-    import subprocess
     cmd = ['journalctl', '-o', 'json', f'-n{limit}', '--no-pager']
     if kernel:
       cmd.append('-k')
