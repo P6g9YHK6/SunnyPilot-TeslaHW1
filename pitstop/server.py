@@ -1045,8 +1045,8 @@ class PitStopServer:
     return web.json_response({"available": available, "current_description": current_desc, "description": new_desc, "fork_url": fork_url})
 
   async def handle_system_reboot(self, request):
-    subprocess.Popen(["sudo", "reboot"])
-    logger.info("[SYSTEM] reboot requested")
+    Params().put_bool("DoReboot", True)
+    logger.info("[SYSTEM] clean reboot requested via PitStop")
     return web.json_response({"status": "rebooting"})
 
   async def handle_system_restart(self, request):
