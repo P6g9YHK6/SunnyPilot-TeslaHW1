@@ -1708,33 +1708,55 @@ function renderFingerprintDiagnostics() {
   const { steps, result } = fingerprintDiag;
 
   let pathwayHtml = '<div class="fp-pathway">';
-  const pathSteps = ['Manual', 'Cached', 'FW', 'CAN', 'Result'];
   steps.forEach((step, i) => {
-    const isResult = i === steps.length - 1;
-    const next = isResult ? 'Result' : pathSteps[i + 1];
-    const statusIcon = step.status === 'active' || step.status === 'success' ? '●' : step.status === 'failed' ? '✗' : '○';
-    const statusClass = step.status === 'active' ? 'fp-active' : step.status === 'success' ? 'fp-success' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
+    const statusIcon = step.status === 'winner' ? '●' : step.status === 'overridden' ? '◌' : step.status === 'completed' ? '●' : step.status === 'failed' ? '✗' : '○';
+    const statusClass = step.status === 'winner' ? 'fp-winner' : step.status === 'overridden' ? 'fp-overridden' : step.status === 'completed' ? 'fp-completed' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
     pathwayHtml += `<div class="fp-path-step ${statusClass}">${statusIcon} ${step.title}</div>`;
-    if (!isResult) {
+    if (i < steps.length - 1) {
       pathwayHtml += '<div class="fp-path-arrow">─►</div>';
     }
   });
+  if (result && result.fingerprint) {
+    pathwayHtml += '<div class="fp-path-arrow">─►</div>';
+    pathwayHtml += `<div class="fp-path-step fp-result-step">${result.fingerprint}</div>`;
+  }
   pathwayHtml += '</div>';
   document.getElementById('fp-pathway').innerHTML = pathwayHtml;
 
   let stepsHtml = '';
   steps.forEach(step => {
-    const statusIcon = step.status === 'active' || step.status === 'success' ? '●' : step.status === 'failed' ? '✗' : '○';
-    const statusClass = step.status === 'active' ? 'fp-active' : step.status === 'success' ? 'fp-success' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
+    const statusIcon = step.status === 'winner' ? '●' : step.status === 'overridden' ? '◌' : step.status === 'completed' ? '●' : step.status === 'failed' ? '✗' : '○';
+    const statusClass = step.status === 'winner' ? 'fp-winner' : step.status === 'overridden' ? 'fp-overridden' : step.status === 'completed' ? 'fp-completed' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
 
-    let debugHtml = '';
-    if (step.debug && Object.keys(step.debug).length > 0) {
-      debugHtml += '<div class="fp-debug">';
-      for (const [key, value] of Object.entries(step.debug)) {
+    let actualFlowHtml = '';
+    if (step.actual_flow && Object.keys(step.actual_flow).length > 0) {
+      actualFlowHtml += '<div class="fp-actual-flow">';
+      for (const [key, value] of Object.entries(step.actual_flow)) {
         const displayValue = value === null ? 'null' : value === undefined ? 'N/A' : String(value);
-        debugHtml += `<div class="fp-debug-row"><span class="fp-debug-key">${key}:</span><span class="fp-debug-value">${displayValue}</span></div>`;
+        actualFlowHtml += `<div class="fp-flow-row"><span class="fp-flow-key">${key}:</span><span class="fp-flow-value">${displayValue}</span></div>`;
       }
-      debugHtml += '</div>';
+      actualFlowHtml += '</div>';
+    }
+
+    let failureReasonsHtml = '';
+    if (step.failure_reasons && step.failure_reasons.length > 0) {
+      failureReasonsHtml += '<div class="fp-failure-reasons">';
+      failureReasonsHtml += '<div class="fp-failure-header">Why it would FAIL:</div>';
+      step.failure_reasons.forEach(reason => {
+        failureReasonsHtml += `<div class="fp-failure-item">├─ ${reason}</div>`;
+      });
+      failureReasonsHtml += '</div>';
+    }
+
+    let overrideNotice = '';
+    if (step.status === 'overridden' && step.overridden_by) {
+      const overrideStep = steps.find(s => s.id === step.overridden_by);
+      overrideNotice = `<div class="fp-override-notice">OVERRIDDEN by STEP ${step.overridden_by}: ${overrideStep ? overrideStep.title : ''}</div>`;
+    }
+
+    let winnerNotice = '';
+    if (step.status === 'winner') {
+      winnerNotice = `<div class="fp-winner-notice">✓ THIS STEP WON - Final fingerprint determined here</div>`;
     }
 
     stepsHtml += `
@@ -1744,9 +1766,12 @@ function renderFingerprintDiagnostics() {
           <span class="fp-step-title">STEP ${step.id}: ${step.title.toUpperCase()}</span>
           <span class="fp-step-status">${step.status.toUpperCase()}</span>
         </div>
-        <div class="fp-step-reason">${step.reason}</div>
-        <div class="fp-step-logic">${step.logic}</div>
-        ${debugHtml}
+        <div class="fp-decision-logic">Decision: ${step.decision_logic}</div>
+        <div class="fp-action">Action: ${step.action}</div>
+        ${winnerNotice}
+        ${overrideNotice}
+        ${actualFlowHtml}
+        ${failureReasonsHtml}
       </div>
     `;
   });
@@ -1761,6 +1786,7 @@ function renderFingerprintDiagnostics() {
         <div class="fp-result-header">
           <span class="fp-result-icon">${resultIcon}</span>
           <span class="fp-result-title">${result.status === 'mock' ? 'MOCK (fallback)' : result.status.toUpperCase()}</span>
+          ${result.winner_step ? `<span class="fp-winner-badge">Winner: Step ${result.winner_step}</span>` : ''}
         </div>
         <div class="fp-result-summary">
           ${result.fingerprint ? `${result.fingerprint}` : 'No fingerprint'} ${result.source ? `• Source: ${result.source}` : ''} ${result.is_fuzzy_match !== null ? `• Fuzzy: ${result.is_fuzzy_match ? 'Yes' : 'No'}` : ''}
