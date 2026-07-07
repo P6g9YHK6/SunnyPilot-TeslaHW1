@@ -174,9 +174,9 @@ nav {
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 0.875rem;
-  padding: 0 1.25rem;
-  height: 60px;          /* taller nav = easier thumb reach */
+  gap: 0.5rem;
+  padding: 0 0.875rem;
+  height: 48px;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -226,7 +226,7 @@ nav {
   .nav-links {
     display: none;
     position: absolute;
-    top: 60px;
+    top: 48px;
     left: 0;
     right: 0;
     flex-direction: column;
@@ -240,13 +240,13 @@ nav {
     overflow: visible;
   }
   .nav-links.open { display: flex; }
-  .nav-btn { padding: 0.6rem 0.75rem; width: 100%; }
+  .nav-btn { padding: 0.45rem 0.6rem; width: 100%; }
 }
 
 @media (min-width: 601px) {
   .nav-links {
     display: flex;
-    gap: 2px;
+    gap: 1px;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
@@ -261,9 +261,9 @@ nav {
   border: none;
   color: var(--text-muted);
   /* 44px min height for touch target */
-  min-height: 44px;
-  padding: 0 0.75rem;
-  font-size: 0.84rem;
+  min-height: 36px;
+  padding: 0 0.55rem;
+  font-size: 0.78rem;
   font-weight: 500;
   cursor: pointer;
   border-radius: var(--radius);
