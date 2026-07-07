@@ -546,7 +546,7 @@ function rebootDevice() {
 }
 
 function restartOpenpilot() {
-  showModal('Restart openpilot', '<p>Restart the openpilot stack? (soft restart, no reboot)</p>', [
+  showModal('Restart openpilot', '<p>Restart openpilot processes? (onroad cycle, no reboot)</p>', [
     { label: 'Cancel', cls: '' },
     { label: 'Restart', action: "api('/api/system/restart',{method:'POST'}).then(()=>toast('Restarting…','info'))", cls: 'btn-primary' },
   ]);

@@ -1044,8 +1044,8 @@ class PitStopServer:
     return web.json_response({"status": "rebooting"})
 
   async def handle_system_restart(self, request):
-    subprocess.Popen(["sudo", "systemctl", "restart", "comma"])
-    logger.info("[SYSTEM] restart requested")
+    Params().put_bool("OnroadCycleRequested", True)
+    logger.info("[SYSTEM] onroad cycle requested via PitStop")
     return web.json_response({"status": "restarting"})
 
   # ---- CAN API (fused) ----
