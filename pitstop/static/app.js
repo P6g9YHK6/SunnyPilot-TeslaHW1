@@ -286,6 +286,7 @@ function renderSystemCard(t, status) {
     ` : ''}
     <div class="row" style="margin-top:0.5rem;display:flex;gap:0.4rem;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="restartOpenpilot()">Restart OP</button>
+      <button class="btn btn-sm" onclick="restartPitstop()">Restart PitStop</button>
       <button class="btn btn-sm btn-danger" onclick="rebootDevice()">Reboot</button>
     </div>
   `;
@@ -549,6 +550,13 @@ function restartOpenpilot() {
   showModal('Restart openpilot', '<p>Restart openpilot processes? (onroad cycle, no reboot)</p>', [
     { label: 'Cancel', cls: '' },
     { label: 'Restart', action: "api('/api/system/restart',{method:'POST'}).then(()=>toast('Restarting…','info'))", cls: 'btn-primary' },
+  ]);
+}
+
+function restartPitstop() {
+  showModal('Restart PitStop', '<p>Restart the PitStop web server? (quick restart, no driving impact)</p>', [
+    { label: 'Cancel', cls: '' },
+    { label: 'Restart', action: "api('/api/system/restart-pitstop',{method:'POST'}).then(()=>toast('Restarting PitStop…','info'))", cls: 'btn-primary' },
   ]);
 }
 

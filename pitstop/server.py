@@ -1054,6 +1054,11 @@ class PitStopServer:
     logger.info("[SYSTEM] onroad cycle requested via PitStop")
     return web.json_response({"status": "restarting"})
 
+  async def handle_pitstop_restart(self, request):
+    logger.info("[SYSTEM] PitStop restart requested")
+    threading.Thread(target=lambda: (time.sleep(0.5), os._exit(0))).start()
+    return web.json_response({"status": "restarting"})
+
   # ---- CAN API (fused) ----
 
   async def handle_can_status(self, request):
@@ -1941,6 +1946,7 @@ class PitStopServer:
     app.router.add_get("/api/update", self.handle_update_status)
     app.router.add_post("/api/system/reboot", self.handle_system_reboot)
     app.router.add_post("/api/system/restart", self.handle_system_restart)
+    app.router.add_post("/api/system/restart-pitstop", self.handle_pitstop_restart)
 
     # CAN API (fused)
     app.router.add_get("/api/v1/status", self.handle_can_status)
