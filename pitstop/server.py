@@ -103,7 +103,7 @@ class PitStopServer:
     self._diag = None   # cached diagnostic snapshot
     self._gps_location = None
     self._calibration = None
-    self._speed_data = None
+    self._speed_data = {}
     self._is_engaged = False
     self._static_version = self._hash_static()
     # Verify pitstop data directory is accessible
@@ -206,76 +206,69 @@ class PitStopServer:
             'roll': lc.rpyCalib[1] if len(lc.rpyCalib) > 1 else None,
             'yaw': lc.rpyCalib[2] if len(lc.rpyCalib) > 2 else None,
           }
-        # speed data
-        cs = sm['carState'] if sm.seen['carState'] else None
-        lp = sm['longitudinalPlan'] if sm.seen['longitudinalPlan'] else None
-        radar = sm['radarState'] if sm.seen['radarState'] else None
-        lpsp = sm['longitudinalPlanSP'] if sm.seen['longitudinalPlanSP'] else None
-        mapsp = sm['liveMapDataSP'] if sm.seen['liveMapDataSP'] else None
-        cssp = sm['carStateSP'] if sm.seen['carStateSP'] else None
-        sdsps = sm['selfdriveStateSP'] if sm.seen['selfdriveStateSP'] else None
+        # speed data - each section is independent so partial data survives failures
+        self._speed_data = {}
 
-        lead = None
-        if radar is not None:
-          ld = radar.leadOne
-          if ld is not None:
-            lead = {"vLead": ld.vLead, "vLeadK": ld.vLeadK, "vRel": ld.vRel, "dRel": ld.dRel}
+        try:
+          cs = sm['carState'] if sm.seen['carState'] else None
+          if cs is not None:
+            self._speed_data["ego"] = {"speed": cs.vEgo, "aEgo": cs.aEgo, "standstill": cs.standstill}
+            self._speed_data["cruise"] = {"setSpeed": cs.vCruise, "clusterSpeed": cs.vCruiseCluster}
+            self._speed_data["wheels"] = {k: getattr(cs.wheelSpeeds, k, None) for k in ("fl", "fr", "rl", "rr")}
+        except Exception:
+          logger.warning("speed data (carState) error", exc_info=True)
 
-        plan_sp = None
-        if lpsp is not None:
-          plan_sp = {"vTarget": lpsp.vTarget}
-          if lpsp.smartCruiseControl is not None:
-            plan_sp["sccVisionVTarget"] = lpsp.smartCruiseControl.vision.vTarget
-            plan_sp["sccMapVTarget"] = lpsp.smartCruiseControl.map.vTarget
-          if lpsp.speedLimit is not None:
-            plan_sp["speedLimitAssistVTarget"] = lpsp.speedLimit.assist.vTarget
+        try:
+          radar = sm['radarState'] if sm.seen['radarState'] else None
+          if radar is not None and radar.leadOne is not None:
+            ld = radar.leadOne
+            self._speed_data["lead"] = {"vLead": ld.vLead, "vLeadK": ld.vLeadK, "vRel": ld.vRel, "dRel": ld.dRel}
+        except Exception:
+          logger.warning("speed data (lead) error", exc_info=True)
 
-        slr = lpsp.speedLimit.resolver if lpsp is not None and lpsp.speedLimit is not None else None
+        try:
+          lp = sm['longitudinalPlan'] if sm.seen['longitudinalPlan'] else None
+          if lp is not None:
+            self._speed_data["plan"] = {"vTarget": lp.vTarget, "vCruise": lp.vCruise, "vMax": lp.vMax, "vCurvature": lp.vCurvature, "aTarget": lp.aTarget}
+        except Exception:
+          logger.warning("speed data (plan) error", exc_info=True)
 
-        icbm_vtarget = None
-        if sdsps is not None and sdsps.intelligentCruiseButtonManagement is not None:
-          icbm_vtarget = sdsps.intelligentCruiseButtonManagement.vTarget
+        try:
+          lpsp = sm['longitudinalPlanSP'] if sm.seen['longitudinalPlanSP'] else None
+          if lpsp is not None:
+            sp = {"vTarget": lpsp.vTarget}
+            if lpsp.smartCruiseControl is not None:
+              sp["sccVisionVTarget"] = lpsp.smartCruiseControl.vision.vTarget
+              sp["sccMapVTarget"] = lpsp.smartCruiseControl.map.vTarget
+            if lpsp.speedLimit is not None:
+              sp["speedLimitAssistVTarget"] = lpsp.speedLimit.assist.vTarget
+              slr = lpsp.speedLimit.resolver
+              if slr is not None:
+                self._speed_data["limit"] = {"speedLimit": slr.speedLimit, "speedLimitFinal": slr.speedLimitFinal, "speedLimitOffset": slr.speedLimitOffset, "distToSpeedLimit": slr.distToSpeedLimit, "valid": slr.speedLimitValid}
+            self._speed_data["planSP"] = sp
+        except Exception:
+          logger.warning("speed data (planSP/limit) error", exc_info=True)
 
-        self._speed_data = {
-          "ego": {
-            "speed": cs.vEgo if cs else None,
-            "aEgo": cs.aEgo if cs else None,
-            "standstill": cs.standstill if cs else None,
-          },
-          "cruise": {
-            "setSpeed": cs.vCruise if cs else None,
-            "clusterSpeed": cs.vCruiseCluster if cs else None,
-          },
-          "wheels": {
-            k: getattr(cs.wheelSpeeds, k) if cs else None
-            for k in ("fl", "fr", "rl", "rr")
-          } if cs else None,
-          "lead": lead,
-          "plan": {
-            "vTarget": lp.vTarget if lp is not None else None,
-            "vCruise": lp.vCruise if lp is not None else None,
-            "vMax": lp.vMax if lp is not None else None,
-            "vCurvature": lp.vCurvature if lp is not None else None,
-            "aTarget": lp.aTarget if lp is not None else None,
-          },
-          "planSP": plan_sp,
-          "limit": {
-            "speedLimit": slr.speedLimit if slr is not None else None,
-            "speedLimitFinal": slr.speedLimitFinal if slr is not None else None,
-            "speedLimitOffset": slr.speedLimitOffset if slr is not None else None,
-            "distToSpeedLimit": slr.distToSpeedLimit if slr is not None else None,
-            "valid": slr.speedLimitValid if slr is not None else None,
-          },
-          "map": {
-            "speedLimit": mapsp.speedLimit if mapsp is not None else None,
-            "valid": mapsp.speedLimitValid if mapsp is not None else None,
-            "speedLimitAhead": mapsp.speedLimitAhead if mapsp is not None else None,
-            "aheadValid": mapsp.speedLimitAheadValid if mapsp is not None else None,
-            "aheadDist": mapsp.speedLimitAheadDistance if mapsp is not None else None,
-          },
-          "carSpeedLimit": cssp.speedLimit if cssp is not None else None,
-          "icbmVtarget": icbm_vtarget,
-        }
+        try:
+          mapsp = sm['liveMapDataSP'] if sm.seen['liveMapDataSP'] else None
+          if mapsp is not None:
+            self._speed_data["map"] = {"speedLimit": mapsp.speedLimit, "valid": mapsp.speedLimitValid, "speedLimitAhead": mapsp.speedLimitAhead, "aheadValid": mapsp.speedLimitAheadValid, "aheadDist": mapsp.speedLimitAheadDistance}
+        except Exception:
+          logger.warning("speed data (map) error", exc_info=True)
+
+        try:
+          cssp = sm['carStateSP'] if sm.seen['carStateSP'] else None
+          if cssp is not None:
+            self._speed_data["carSpeedLimit"] = cssp.speedLimit
+        except Exception:
+          logger.warning("speed data (carStateSP) error", exc_info=True)
+
+        try:
+          sdsps = sm['selfdriveStateSP'] if sm.seen['selfdriveStateSP'] else None
+          if sdsps is not None and sdsps.intelligentCruiseButtonManagement is not None:
+            self._speed_data["icbmVtarget"] = sdsps.intelligentCruiseButtonManagement.vTarget
+        except Exception:
+          logger.warning("speed data (icbm) error", exc_info=True)
     except Exception:
       logger.warning("diag loop error", exc_info=True)
 
