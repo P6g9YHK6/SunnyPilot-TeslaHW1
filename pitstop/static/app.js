@@ -55,6 +55,16 @@ function loadPage(name, force) {
     loadBackups();
     fetchAndCheckVersion();
   }
+  else if (name === 'vehicle') {
+    _pageLoaded[name] = true;
+    loadVehicle();
+    fetchAndCheckVersion();
+  }
+  else if (name === 'maps') {
+    _pageLoaded[name] = true;
+    loadMaps();
+    fetchAndCheckVersion();
+  }
   else if (force || !_pageLoaded[name]) {
     _pageLoaded[name] = true;
     if (name === 'settings') loadSettings();
@@ -1660,6 +1670,476 @@ async function checkDownloadProgress() {
       setTimeout(() => { loadModels(); }, 1000);
     }
   } catch {}
+}
+
+/* ============ VEHICLE ============ */
+let vehicleData = null;
+let vehiclePlatforms = null;
+let fingerprintDiag = null;
+
+async function loadVehicle() {
+  try {
+    const [vehicle, platforms] = await Promise.all([
+      api('/api/vehicle'),
+      api('/api/vehicle/platforms'),
+    ]);
+    vehicleData = vehicle;
+    vehiclePlatforms = platforms;
+    renderVehicleUI();
+  } catch (e) {
+    document.getElementById('vehicle-name').textContent = 'Error loading vehicle';
+  }
+  loadFingerprintDiagnostics();
+}
+
+async function loadFingerprintDiagnostics() {
+  try {
+    fingerprintDiag = await api('/api/vehicle/fingerprint_diagnostics');
+    renderFingerprintDiagnostics();
+  } catch (e) {
+    console.error('Failed to load fingerprint diagnostics:', e);
+  }
+}
+
+function renderFingerprintDiagnostics() {
+  const container = document.getElementById('fingerprint-workflow');
+  if (!container || !fingerprintDiag) return;
+
+  const { steps, result } = fingerprintDiag;
+
+  let pathwayHtml = '<div class="fp-pathway">';
+  const pathSteps = ['Manual', 'Cached', 'FW', 'CAN', 'Result'];
+  steps.forEach((step, i) => {
+    const isResult = i === steps.length - 1;
+    const next = isResult ? 'Result' : pathSteps[i + 1];
+    const statusIcon = step.status === 'active' || step.status === 'success' ? '●' : step.status === 'failed' ? '✗' : '○';
+    const statusClass = step.status === 'active' ? 'fp-active' : step.status === 'success' ? 'fp-success' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
+    pathwayHtml += `<div class="fp-path-step ${statusClass}">${statusIcon} ${step.title}</div>`;
+    if (!isResult) {
+      pathwayHtml += '<div class="fp-path-arrow">─►</div>';
+    }
+  });
+  pathwayHtml += '</div>';
+  document.getElementById('fp-pathway').innerHTML = pathwayHtml;
+
+  let stepsHtml = '';
+  steps.forEach(step => {
+    const statusIcon = step.status === 'active' || step.status === 'success' ? '●' : step.status === 'failed' ? '✗' : '○';
+    const statusClass = step.status === 'active' ? 'fp-active' : step.status === 'success' ? 'fp-success' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
+
+    let debugHtml = '';
+    if (step.debug && Object.keys(step.debug).length > 0) {
+      debugHtml += '<div class="fp-debug">';
+      for (const [key, value] of Object.entries(step.debug)) {
+        const displayValue = value === null ? 'null' : value === undefined ? 'N/A' : String(value);
+        debugHtml += `<div class="fp-debug-row"><span class="fp-debug-key">${key}:</span><span class="fp-debug-value">${displayValue}</span></div>`;
+      }
+      debugHtml += '</div>';
+    }
+
+    stepsHtml += `
+      <div class="fp-step ${statusClass}">
+        <div class="fp-step-header">
+          <span class="fp-step-icon">${statusIcon}</span>
+          <span class="fp-step-title">STEP ${step.id}: ${step.title.toUpperCase()}</span>
+          <span class="fp-step-status">${step.status.toUpperCase()}</span>
+        </div>
+        <div class="fp-step-reason">${step.reason}</div>
+        <div class="fp-step-logic">${step.logic}</div>
+        ${debugHtml}
+      </div>
+    `;
+  });
+
+  let resultHtml = '';
+  if (result) {
+    const isSuccess = result.status === 'fingerprinted' || result.status === 'manual';
+    const resultIcon = isSuccess ? '✓' : '✗';
+    const resultClass = isSuccess ? 'fp-success' : 'fp-failed';
+    resultHtml = `
+      <div class="fp-result ${resultClass}">
+        <div class="fp-result-header">
+          <span class="fp-result-icon">${resultIcon}</span>
+          <span class="fp-result-title">${result.status === 'mock' ? 'MOCK (fallback)' : result.status.toUpperCase()}</span>
+        </div>
+        <div class="fp-result-summary">
+          ${result.fingerprint ? `${result.fingerprint}` : 'No fingerprint'} ${result.source ? `• Source: ${result.source}` : ''} ${result.is_fuzzy_match !== null ? `• Fuzzy: ${result.is_fuzzy_match ? 'Yes' : 'No'}` : ''}
+        </div>
+        ${result.vin ? `<div class="fp-result-vin">VIN: ${result.vin}</div>` : ''}
+        ${fingerprintDiag.platform_info?.dbc_names ? `<div class="fp-result-dbc">DBC: ${fingerprintDiag.platform_info.dbc_names.join(', ')}</div>` : ''}
+      </div>
+    `;
+  }
+
+  container.innerHTML = stepsHtml + resultHtml;
+}
+
+function renderVehicleUI() {
+  if (!vehicleData) return;
+  const nameEl = document.getElementById('vehicle-name');
+  const badgeEl = document.getElementById('vehicle-status-badge');
+  const detailsEl = document.getElementById('vehicle-status-details');
+  const actionsEl = document.getElementById('vehicle-actions');
+
+  const { platform_bundle, fingerprint, status } = vehicleData;
+
+  let displayName = 'Unrecognized Vehicle';
+  let badgeText = '';
+  let badgeClass = 'badge-unrecognized';
+
+  if (status === 'manual' && platform_bundle) {
+    displayName = platform_bundle.name || 'Manual Selection';
+    badgeText = 'Manual';
+    badgeClass = 'badge-manual';
+  } else if (status === 'auto' && fingerprint) {
+    displayName = fingerprint;
+    badgeText = 'Auto-detected';
+    badgeClass = 'badge-auto';
+  }
+
+  nameEl.textContent = displayName;
+  badgeEl.textContent = badgeText;
+  badgeEl.className = 'vehicle-status-badge ' + badgeClass;
+
+  let detailsHtml = '';
+  if (status === 'auto' && fingerprint) {
+    detailsHtml += `<div class="detail-row"><span class="label">Fingerprint:</span><span class="value">${fingerprint}</span></div>`;
+  }
+  if (platform_bundle) {
+    detailsHtml += `<div class="detail-row"><span class="label">Platform:</span><span class="value">${platform_bundle.platform || '—'}</span></div>`;
+    detailsHtml += `<div class="detail-row"><span class="label">Make:</span><span class="value">${platform_bundle.make || '—'}</span></div>`;
+    detailsHtml += `<div class="detail-row"><span class="label">Brand:</span><span class="value">${platform_bundle.brand || '—'}</span></div>`;
+  }
+  detailsEl.innerHTML = detailsHtml;
+
+  let actionsHtml = '';
+  if (status === 'manual' || status === 'auto') {
+    actionsHtml += `<button class="btn btn-sm" onclick="openVehicleSelector()">Change Vehicle</button>`;
+  }
+  if (status === 'manual') {
+    actionsHtml += `<button class="btn btn-sm btn-danger" onclick="removeVehicleSelection()">Remove</button>`;
+  }
+  if (status === 'unrecognized') {
+    actionsHtml += `<button class="btn btn-sm" onclick="openVehicleSelector()">Select Vehicle</button>`;
+  }
+  actionsEl.innerHTML = actionsHtml;
+
+  renderVehicleList();
+}
+
+function renderVehicleList() {
+  if (!vehiclePlatforms) return;
+  const container = document.getElementById('vehicle-list');
+  const query = (document.getElementById('vehicle-search')?.value || '').toLowerCase();
+
+  const makes = {};
+  Object.entries(vehiclePlatforms).forEach(([name, data]) => {
+    if (query && !name.toLowerCase().includes(query) && !(data.make || '').toLowerCase().includes(query) && !(data.model || '').toLowerCase().includes(query)) {
+      return;
+    }
+    const make = data.make || 'Other';
+    if (!makes[make]) makes[make] = [];
+    makes[make].push({ name, ...data });
+  });
+
+  let html = '';
+  const sortedMakes = Object.keys(makes).sort();
+  sortedMakes.forEach(make => {
+    html += `<div class="vehicle-make-group">`;
+    html += `<div class="vehicle-make-header">${make}</div>`;
+    makes[make].forEach(p => {
+      const isCurrent = vehicleData?.platform_bundle?.name === p.name;
+      html += `<div class="vehicle-item ${isCurrent ? 'current' : ''}" onclick="selectVehicle('${p.name.replace(/'/g, "\\'")}')">
+        <div class="vehicle-item-name">${p.name}</div>
+        <div class="vehicle-item-meta">${(p.year || []).join(', ')} ${p.package ? '— ' + p.package : ''}</div>
+        ${isCurrent ? '<span class="current-badge">Current</span>' : ''}
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  if (!html) {
+    html = '<p style="color:var(--text-dim);padding:1rem">No vehicles match your search</p>';
+  }
+  container.innerHTML = html;
+}
+
+const filterVehicles = debounce(() => renderVehicleList(), 200);
+
+function clearVehicleSearch() {
+  const inp = document.getElementById('vehicle-search');
+  if (inp) inp.value = '';
+  renderVehicleList();
+  toggleSearchClear('vehicle');
+}
+
+function openVehicleSelector() {
+  document.getElementById('vehicle-current').style.display = 'none';
+  document.getElementById('vehicle-selector').style.display = 'block';
+  clearVehicleSearch();
+  if (!vehiclePlatforms) {
+    api('/api/vehicle/platforms').then(p => { vehiclePlatforms = p; renderVehicleList(); });
+  }
+}
+
+function closeVehicleSelector() {
+  document.getElementById('vehicle-selector').style.display = 'none';
+  document.getElementById('vehicle-current').style.display = 'block';
+}
+
+async function selectVehicle(platformName) {
+  const vehicle = vehiclePlatforms[platformName];
+  if (!vehicle) return;
+
+  const isOffroad = vehicleData?.is_offroad;
+  const offroadMsg = isOffroad
+    ? 'This setting will take effect immediately.'
+    : 'This setting will take effect once the device enters offroad state.';
+
+  showModal('Confirm Vehicle Selection',
+    `<p><b>${platformName}</b></p><p>${offroadMsg}</p>`,
+    [
+      { label: 'Cancel', cls: '' },
+      { label: 'Confirm', action: `doSelectVehicle('${platformName.replace(/'/g, "\\'")}')`, cls: 'btn-primary' },
+    ]
+  );
+}
+
+async function doSelectVehicle(platformName) {
+  try {
+    await api('/api/vehicle/select', { method: 'POST', body: JSON.stringify({ platform: platformName }) });
+    toast(`Selected ${platformName}`, 'success');
+    closeVehicleSelector();
+    loadVehicle();
+  } catch (e) {
+    toast(`Failed to select vehicle: ${e.message}`, 'error');
+  }
+}
+
+async function removeVehicleSelection() {
+  showModal('Remove Vehicle Selection', '<p>This will remove the manual vehicle selection and revert to auto-detection.</p>', [
+    { label: 'Cancel', cls: '' },
+    { label: 'Remove', action: 'doRemoveVehicleSelection()', cls: 'btn-danger' },
+  ]);
+}
+
+async function doRemoveVehicleSelection() {
+  try {
+    await api('/api/vehicle/select', { method: 'DELETE' });
+    toast('Vehicle selection removed', 'success');
+    loadVehicle();
+  } catch (e) {
+    toast(`Failed to remove: ${e.message}`, 'error');
+  }
+}
+
+/* ============ MAPS ============ */
+let mapsData = null;
+let mapsCountries = null;
+let mapsStates = null;
+
+async function loadMaps() {
+  try {
+    const [status, countries, states] = await Promise.all([
+      api('/api/osm/status'),
+      api('/api/osm/countries'),
+      api('/api/osm/states'),
+    ]);
+    mapsData = status;
+    mapsCountries = countries;
+    mapsStates = states;
+    renderMapsUI();
+    pollMapProgress();
+  } catch (e) {
+    document.getElementById('map-version').textContent = 'Error loading';
+  }
+}
+
+function renderMapsUI() {
+  if (!mapsData) return;
+
+  document.getElementById('map-version').textContent = mapsData.version || 'Unknown';
+
+  const sizeBytes = mapsData.size_bytes || 0;
+  let sizeText = '0 B';
+  if (sizeBytes >= 1024 * 1024 * 1024) {
+    sizeText = (sizeBytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  } else if (sizeBytes >= 1024 * 1024) {
+    sizeText = (sizeBytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+  document.getElementById('map-size').textContent = sizeText;
+
+  renderCountrySelect();
+  renderStateSelect();
+
+  if (mapsData.last_checked) {
+    const dt = new Date(mapsData.last_checked * 1000);
+    document.getElementById('map-last-checked').textContent = dt.toLocaleString();
+  } else {
+    document.getElementById('map-last-checked').textContent = 'Never';
+  }
+
+  updateMapProgress();
+}
+
+function renderCountrySelect() {
+  const select = document.getElementById('map-country-select');
+  select.innerHTML = '<option value="">Select a country</option>';
+
+  if (!mapsCountries) return;
+
+  const sorted = Object.entries(mapsCountries)
+    .map(([code, data]) => ({ code, full_name: data.full_name }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  sorted.forEach(({ code, full_name }) => {
+    const selected = mapsData?.country === code ? 'selected' : '';
+    select.innerHTML += `<option value="${code}" ${selected}>${full_name} (${code})</option>`;
+  });
+}
+
+function renderStateSelect() {
+  const select = document.getElementById('map-state-select');
+  const group = document.getElementById('map-state-group');
+
+  if (mapsData?.country !== 'US') {
+    group.style.display = 'none';
+    return;
+  }
+
+  group.style.display = 'block';
+  select.innerHTML = '<option value="">Select a state</option>';
+
+  if (!mapsStates) return;
+
+  const sorted = Object.entries(mapsStates)
+    .map(([code, data]) => ({ code, full_name: data.full_name }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  sorted.forEach(({ code, full_name }) => {
+    const selected = mapsData?.state === code ? 'selected' : '';
+    select.innerHTML += `<option value="${code}" ${selected}>${full_name}</option>`;
+  });
+}
+
+function onCountryChange() {
+  const select = document.getElementById('map-country-select');
+  const downloadBtn = document.getElementById('map-download-btn');
+
+  if (select.value === 'US') {
+    document.getElementById('map-state-group').style.display = 'block';
+  } else {
+    document.getElementById('map-state-group').style.display = 'none';
+    document.getElementById('map-state-select').value = '';
+  }
+
+  downloadBtn.disabled = !select.value;
+}
+
+function onStateChange() {
+  // State changed, no action needed until download
+}
+
+async function startMapDownload() {
+  const countrySelect = document.getElementById('map-country-select');
+  const stateSelect = document.getElementById('map-state-select');
+
+  const country = countrySelect.value;
+  const state = stateSelect.value || null;
+
+  if (!country) {
+    toast('Please select a country', 'error');
+    return;
+  }
+
+  showModal('Start Map Download',
+    '<p>This will start the download process and it might take a while to complete.</p>',
+    [
+      { label: 'Cancel', cls: '' },
+      { label: 'Start Download', action: 'doStartMapDownload()', cls: 'btn-primary' },
+    ]
+  );
+}
+
+async function doStartMapDownload() {
+  const countrySelect = document.getElementById('map-country-select');
+  const stateSelect = document.getElementById('map-state-select');
+
+  const country = countrySelect.value;
+  const state = stateSelect.value || null;
+
+  try {
+    await api('/api/osm/select', { method: 'POST', body: JSON.stringify({ country, state }) });
+    await api('/api/osm/download', { method: 'POST' });
+    toast('Map download started', 'success');
+    loadMaps();
+  } catch (e) {
+    toast(`Failed to start download: ${e.message}`, 'error');
+  }
+}
+
+async function deleteMaps() {
+  showModal('Delete All Maps',
+    '<p>This will delete ALL downloaded maps. Are you sure?</p>',
+    [
+      { label: 'Cancel', cls: '' },
+      { label: 'Yes, Delete', action: 'doDeleteMaps()', cls: 'btn-danger' },
+    ]
+  );
+}
+
+async function doDeleteMaps() {
+  try {
+    await api('/api/osm/delete', { method: 'POST' });
+    toast('Maps deleted', 'success');
+    loadMaps();
+  } catch (e) {
+    toast(`Failed to delete maps: ${e.message}`, 'error');
+  }
+}
+
+let mapProgressInterval = null;
+
+function pollMapProgress() {
+  if (mapProgressInterval) clearInterval(mapProgressInterval);
+  mapProgressInterval = setInterval(async () => {
+    if (!mapsData?.downloading) {
+      clearInterval(mapProgressInterval);
+      mapProgressInterval = null;
+      return;
+    }
+    try {
+      const status = await api('/api/osm/status');
+      mapsData = status;
+      updateMapProgress();
+    } catch {}
+  }, 2000);
+}
+
+function updateMapProgress() {
+  const progressSection = document.getElementById('map-progress');
+  const progressFill = document.getElementById('map-progress-fill');
+  const progressText = document.getElementById('map-progress-text');
+  const downloadSection = document.getElementById('map-download-section');
+
+  if (mapsData?.downloading) {
+    progressSection.style.display = 'block';
+    downloadSection.style.display = 'none';
+
+    const progress = mapsData.progress || {};
+    const total = progress.total_files || 0;
+    const done = progress.downloaded_files || 0;
+    let pct = 0;
+    if (total > 0) pct = Math.round((done / total) * 100);
+
+    progressFill.style.width = pct + '%';
+    progressText.textContent = `${pct}% (${done}/${total} files)`;
+
+    pollMapProgress();
+  } else {
+    progressSection.style.display = 'none';
+    downloadSection.style.display = 'block';
+  }
 }
 
 /* ============ PARAMS ============ */

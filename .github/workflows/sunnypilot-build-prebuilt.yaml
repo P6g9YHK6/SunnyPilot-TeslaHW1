@@ -108,7 +108,7 @@ jobs:
     concurrency:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
-    runs-on: [self-hosted, tici]
+    runs-on: [self-hosted, linux]
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}

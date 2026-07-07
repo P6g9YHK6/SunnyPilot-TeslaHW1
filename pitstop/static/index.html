@@ -11,7 +11,9 @@
     <div class="nav-brand">PitStop</div>
     <button class="nav-hamburger" id="nav-hamburger" onclick="toggleNavMenu()" aria-label="Menu">&#9776;</button>
     <div class="nav-links" id="nav-links">
-      <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="vehicle">Vehicle</button>
+      <button class="nav-btn" data-page="maps">Maps</button>
       <button class="nav-btn" data-page="settings">Settings</button>
       <button class="nav-btn" data-page="models">Models</button>
       <button class="nav-btn" data-page="params">Params</button>
@@ -103,6 +105,92 @@
         <div class="card card-wide" id="card-processes">
           <h3>Processes</h3>
           <div class="card-body">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-vehicle" class="page">
+      <h1>Vehicle</h1>
+      <p class="page-desc">Fingerprint and platform selection</p>
+      <div id="vehicle-content">
+        <div class="vehicle-current" id="vehicle-current">
+          <div class="vehicle-status-card">
+            <div class="vehicle-status-header">
+              <span class="vehicle-name" id="vehicle-name">Loading...</span>
+              <span class="vehicle-status-badge" id="vehicle-status-badge"></span>
+            </div>
+            <div class="vehicle-status-details" id="vehicle-status-details"></div>
+            <div class="vehicle-actions" id="vehicle-actions"></div>
+          </div>
+        </div>
+        <div class="vehicle-selector" id="vehicle-selector" style="display:none">
+          <div class="vehicle-selector-header">
+            <h3>Select Vehicle</h3>
+            <button class="btn btn-sm" onclick="closeVehicleSelector()">Cancel</button>
+          </div>
+          <div class="search-wrap">
+            <input type="text" id="vehicle-search" placeholder="Search vehicles..." oninput="filterVehicles()">
+            <button class="search-clear" id="vehicle-search-clear" onclick="clearVehicleSearch()">&#10005;</button>
+          </div>
+          <div class="vehicle-list" id="vehicle-list"></div>
+        </div>
+        <div class="vehicle-legend">
+          <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span> Auto-detected</div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--blue)"></span> Manual selection</div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span> Unrecognized</div>
+        </div>
+        <div class="fingerprint-section">
+          <h3>Fingerprinting Troubleshooting</h3>
+          <div class="fp-pathway" id="fp-pathway"></div>
+          <div class="fingerprint-workflow" id="fingerprint-workflow"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-maps" class="page">
+      <h1>Maps</h1>
+      <p class="page-desc">Offline map data for navigation</p>
+      <div id="maps-content">
+        <div class="map-version">
+          <span class="label">Mapd Version</span>
+          <span class="value" id="map-version">Loading...</span>
+        </div>
+        <div class="map-section">
+          <h3>Downloaded Maps</h3>
+          <div class="map-size-row">
+            <span id="map-size">Calculating...</span>
+            <button class="btn btn-sm btn-danger" id="map-delete-btn" onclick="deleteMaps()">DELETE</button>
+          </div>
+        </div>
+        <div class="map-section" id="map-download-section">
+          <h3>Download Map</h3>
+          <p class="section-desc">Select a region to download for offline use</p>
+          <div class="map-selectors">
+            <div class="map-select-group">
+              <label>Country</label>
+              <select id="map-country-select" onchange="onCountryChange()">
+                <option value="">Select a country</option>
+              </select>
+            </div>
+            <div class="map-select-group" id="map-state-group" style="display:none">
+              <label>State</label>
+              <select id="map-state-select" onchange="onStateChange()">
+                <option value="">Select a state</option>
+              </select>
+            </div>
+          </div>
+          <div class="map-download-info">
+            <span>Map downloads can be large (up to several GB)</span>
+            <button class="btn btn-sm btn-primary" id="map-download-btn" onclick="startMapDownload()" disabled>Download</button>
+          </div>
+        </div>
+        <div class="map-progress" id="map-progress" style="display:none">
+          <h3>Downloading Map</h3>
+          <div class="progress-bar"><div class="progress-fill" id="map-progress-fill"></div></div>
+          <div class="progress-text" id="map-progress-text">0%</div>
+        </div>
+        <div class="map-last-checked">
+          <span>Last checked: </span><span id="map-last-checked">Never</span>
         </div>
       </div>
     </div>
