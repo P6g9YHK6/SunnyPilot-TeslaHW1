@@ -121,7 +121,6 @@ class PitStopServer:
       self._device_state_loop,
       self._diag_loop,
       self._gps_location_loop,
-      self._car_state_loop,
     ):
       threading.Thread(target=target, daemon=True).start()
 
@@ -157,9 +156,6 @@ class PitStopServer:
 
   def _gps_location_loop(self):
     self._subscriber_loop('gpsLocationExternal', '_gps_location', 'gpsLocationExternal')
-
-  def _car_state_loop(self):
-    self._subscriber_loop('carState', '_car_state', 'carState')
 
   def _diag_loop(self):
     """Single background thread for service health, active alert, and process list."""
@@ -212,7 +208,7 @@ class PitStopServer:
           }
         # speed data
         try:
-          cs = self._car_state
+          sds = sm['selfdriveState'].deprecated if sm.seen['selfdriveState'] else None
           lp = sm['longitudinalPlan'] if sm.seen['longitudinalPlan'] else None
           radar = sm['radarState'] if sm.seen['radarState'] else None
           lpsp = sm['longitudinalPlanSP'] if sm.seen['longitudinalPlanSP'] else None
@@ -243,18 +239,14 @@ class PitStopServer:
 
           self._speed_data = {
             "ego": {
-              "speed": cs.vEgo if cs else None,
-              "aEgo": cs.aEgo if cs else None,
-              "standstill": cs.standstill if cs else None,
+              "speed": sds.vEgo if sds is not None else None,
+              "aEgo": sds.aEgo if sds is not None else None,
+              "standstill": sds.vEgo < 0.01 if sds is not None else None,
             },
             "cruise": {
-              "setSpeed": cs.vCruise if cs else None,
-              "clusterSpeed": cs.vCruiseCluster if cs else None,
+              "setSpeed": sds.vCruise if sds is not None else None,
+              "clusterSpeed": sds.vCruiseCluster if sds is not None else None,
             },
-            "wheels": {
-              k: getattr(cs.wheelSpeeds, k) if cs else None
-              for k in ("fl", "fr", "rl", "rr")
-            } if cs else None,
             "lead": lead,
             "plan": {
               "vTarget": lp.vTarget if lp is not None else None,
