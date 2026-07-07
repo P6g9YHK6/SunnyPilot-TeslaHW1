@@ -8,6 +8,7 @@ import time
 
 from aiohttp import web
 
+from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params, ParamKeyType, ParamKeyFlag
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.version import get_build_metadata
@@ -1347,6 +1348,481 @@ class PitStopServer:
     schema = generate_openapi_schema(host=host, port=EXTERNAL_PORT, dbc=self._can_handler.dbc)
     return web.json_response(schema)
 
+  # ---- OSM / Maps ----
+
+  def _osm_get_cache_path(self, name: str) -> str:
+    return os.path.join(PITSTOP_DATA_DIR, f"osm_{name}.json")
+
+  def _osm_load_cached(self, name: str) -> dict | None:
+    cache_path = self._osm_get_cache_path(name)
+    if os.path.isfile(cache_path):
+      try:
+        with open(cache_path) as f:
+          return json.load(f)
+      except Exception:
+        pass
+    return None
+
+  def _osm_save_cache(self, name: str, data: dict) -> None:
+    cache_path = self._osm_get_cache_path(name)
+    try:
+      with open(cache_path, "w") as f:
+        json.dump(data, f)
+    except Exception:
+      pass
+
+  def _osm_cache_expired(self, name: str, max_age_seconds: int = 86400) -> bool:
+    cache_path = self._osm_get_cache_path(name)
+    if not os.path.isfile(cache_path):
+      return True
+    try:
+      mtime = os.path.getmtime(cache_path)
+      return (time.time() - mtime) > max_age_seconds
+    except Exception:
+      return True
+
+  def _osm_fetch_remote(self, url: str) -> dict | None:
+    try:
+      import urllib.request
+      with urllib.request.urlopen(url, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+    except Exception:
+      return None
+
+  def _get_map_size(self) -> int:
+    total_size = 0
+    map_root = Paths.mapd_root()
+    offline_path = os.path.join(map_root, "offline") if map_root else None
+    if offline_path and os.path.isdir(offline_path):
+      for dirpath, _, filenames in os.walk(offline_path):
+        for f in filenames:
+          fp = os.path.join(dirpath, f)
+          try:
+            total_size += os.path.getsize(fp)
+          except Exception:
+            pass
+    return total_size
+
+  async def handle_osm_status(self, request):
+    progress = self.params.get("OSMDownloadProgress")
+    download_progress = None
+    if progress:
+      try:
+        download_progress = {
+          "total_files": progress.get("total_files", 0) if isinstance(progress, dict) else 0,
+          "downloaded_files": progress.get("downloaded_files", 0) if isinstance(progress, dict) else 0,
+        }
+      except Exception:
+        download_progress = None
+
+    downloading = bool(self.params.get("OSMDownloadLocations"))
+
+    country = self.params.get("OsmLocationName") or ""
+    state = self.params.get("OsmStateName") or ""
+    country_title = self.params.get("OsmLocationTitle") or ""
+    state_title = self.params.get("OsmStateTitle") or ""
+
+    ts = self.params.get("OsmDownloadedDate")
+    last_checked = None
+    if ts:
+      try:
+        ts_f = float(ts)
+        if ts_f > 0:
+          last_checked = ts_f
+      except Exception:
+        pass
+
+    return web.json_response({
+      "version": self.params.get("MapdVersion") or "Unknown",
+      "country": country,
+      "country_title": country_title,
+      "state": state,
+      "state_title": state_title,
+      "size_bytes": self._get_map_size(),
+      "downloading": downloading,
+      "progress": download_progress,
+      "last_checked": last_checked,
+    })
+
+  async def handle_osm_countries(self, request):
+    cache_name = "countries"
+    if self._osm_cache_expired(cache_name):
+      url = "https://raw.githubusercontent.com/pfeiferj/openpilot-mapd/main/nation_bounding_boxes.json"
+      data = self._osm_fetch_remote(url)
+      if data:
+        self._osm_save_cache(cache_name, data)
+      else:
+        cached = self._osm_load_cached(cache_name)
+        if cached:
+          return web.json_response(cached)
+        return web.json_response({"error": "Failed to fetch countries"}, status=503)
+    else:
+      data = self._osm_load_cached(cache_name)
+      if data:
+        return web.json_response(data)
+      return web.json_response({"error": "Cache missing"}, status=503)
+    return web.json_response(data)
+
+  async def handle_osm_states(self, request):
+    cache_name = "states"
+    if self._osm_cache_expired(cache_name):
+      url = "https://raw.githubusercontent.com/pfeiferj/openpilot-mapd/main/us_states_bounding_boxes.json"
+      data = self._osm_fetch_remote(url)
+      if data:
+        self._osm_save_cache(cache_name, data)
+      else:
+        cached = self._osm_load_cached(cache_name)
+        if cached:
+          return web.json_response(cached)
+        return web.json_response({"error": "Failed to fetch states"}, status=503)
+    else:
+      data = self._osm_load_cached(cache_name)
+      if data:
+        return web.json_response(data)
+      return web.json_response({"error": "Cache missing"}, status=503)
+    return web.json_response(data)
+
+  async def handle_osm_select(self, request):
+    try:
+      body = await request.json()
+    except Exception:
+      raise web.HTTPBadRequest(text="Invalid JSON")
+    country = body.get("country")
+    state = body.get("state")
+
+    if state:
+      self.params.put("OsmStateName", state)
+      self.params.remove("OsmStateTitle")
+    else:
+      self.params.remove("OsmStateName")
+      self.params.remove("OsmStateTitle")
+
+    if country:
+      self.params.put("OsmLocal", "1")
+      self.params.put("OsmLocationName", country)
+    else:
+      self.params.remove("OsmLocationName")
+      self.params.remove("OsmLocationTitle")
+      self.params.remove("OsmLocal")
+
+    logger.info(f"[OSM] selected country={country} state={state}")
+    return web.json_response({"status": "ok", "country": country, "state": state})
+
+  async def handle_osm_download(self, request):
+    self.params.put_bool("OsmDbUpdatesCheck", True)
+    logger.info("[OSM] download triggered")
+    return web.json_response({"status": "ok"})
+
+  async def handle_osm_delete(self, request):
+    import shutil
+    offline_path = os.path.join(Paths.mapd_root(), "offline") if Paths.mapd_root() else None
+    if offline_path and os.path.isdir(offline_path):
+      try:
+        shutil.rmtree(offline_path)
+      except Exception:
+        pass
+
+    for param in ("OsmDownloadedDate", "OsmLocal", "OsmLocationName", "OsmLocationTitle", "OsmStateName", "OsmStateTitle"):
+      self.params.remove(param)
+
+    logger.info("[OSM] maps deleted")
+    return web.json_response({"status": "ok"})
+
+  # ---- Vehicle Platform Selection ----
+
+  def _get_car_list(self) -> dict:
+    car_list_path = os.path.join(BASEDIR, "sunnypilot", "selfdrive", "car", "car_list.json")
+    try:
+      with open(car_list_path) as f:
+        return json.load(f)
+    except Exception:
+      return {}
+
+  async def handle_vehicle(self, request):
+    bundle = self.params.get("CarPlatformBundle")
+    platform_bundle = None
+    if bundle:
+      try:
+        platform_bundle = json.loads(bundle) if isinstance(bundle, str) else bundle
+      except Exception:
+        platform_bundle = None
+
+    fingerprint = None
+    if self._device_state is not None:
+      try:
+        cp_bytes = self.params.get("CarParamsPersistent")
+        if cp_bytes:
+          from cereal import car
+          cp = messaging.log_from_bytes(cp_bytes, car.CarParams)
+          fingerprint = str(cp.carFingerprint) if cp.carFingerprint != "MOCK" else None
+      except Exception:
+        pass
+
+    bundle_brand = platform_bundle.get("brand", "") if platform_bundle else ""
+    if not bundle_brand and fingerprint:
+      from cereal import car
+      try:
+        cp_bytes = self.params.get("CarParamsPersistent")
+        if cp_bytes:
+          cp = messaging.log_from_bytes(cp_bytes, car.CarParams)
+          bundle_brand = str(cp.brand).lower() if cp.brand else ""
+      except Exception:
+        pass
+
+    status = "unrecognized"
+    if platform_bundle:
+      status = "manual"
+    elif fingerprint:
+      status = "auto"
+
+    return web.json_response({
+      "brand": bundle_brand,
+      "fingerprint": fingerprint,
+      "platform_bundle": platform_bundle,
+      "status": status,
+      "is_offroad": self.params.get_bool("IsOffroad"),
+    })
+
+  async def handle_vehicle_platforms(self, request):
+    platforms = self._get_car_list()
+    return web.json_response(platforms)
+
+  async def handle_vehicle_select(self, request):
+    if request.method == "DELETE":
+      self.params.remove("CarPlatformBundle")
+      logger.info("[VEHICLE] platform removed")
+      return web.json_response({"status": "ok", "removed": True})
+
+    try:
+      body = await request.json()
+    except Exception:
+      raise web.HTTPBadRequest(text="Invalid JSON")
+
+    platform_name = body.get("platform")
+    if not platform_name:
+      raise web.HTTPBadRequest(text="Missing 'platform'")
+
+    platforms = self._get_car_list()
+    if platform_name not in platforms:
+      raise web.HTTPNotFound(text=f"Platform '{platform_name}' not found")
+
+    data = platforms[platform_name]
+    self.params.put("CarPlatformBundle", {**data, "name": platform_name})
+    logger.info(f"[VEHICLE] platform selected: {platform_name}")
+    return web.json_response({"status": "ok", "platform": platform_name})
+
+  # ---- Fingerprint Diagnostics ----
+
+  def _parse_fingerprint_logs(self) -> dict:
+    log_entries = self._read_swaglog(limit=100, search="fingerprinted")
+    if log_entries:
+      try:
+        last_entry = log_entries[0]
+        msg_raw = last_entry.get("msg", "{}")
+        msg = json.loads(msg_raw) if isinstance(msg_raw, str) and msg_raw.startswith("{") else {}
+        return {
+          "ecu_count": msg.get("fw_count"),
+          "vin": msg.get("vin"),
+          "vin_rx_addr": msg.get("vin_rx_addr"),
+          "vin_rx_bus": msg.get("vin_rx_bus"),
+          "cached": msg.get("cached"),
+          "fw_query_time_ms": int(msg.get("fw_query_time", 0) * 1000),
+          "timestamp": last_entry.get("ts"),
+        }
+      except Exception:
+        pass
+    return {}
+
+  async def handle_fingerprint_diagnostics(self, request):
+    platform_bundle_raw = self.params.get("CarPlatformBundle")
+    platform_bundle = None
+    if platform_bundle_raw:
+      try:
+        platform_bundle = json.loads(platform_bundle_raw) if isinstance(platform_bundle_raw, str) else platform_bundle_raw
+      except Exception:
+        platform_bundle = None
+
+    cache_raw = self.params.get("CarParamsCache")
+    has_cache = cache_raw is not None
+
+    persistent_raw = self.params.get("CarParamsPersistent")
+    firmware_query_done = self.params.get_bool("FirmwareQueryDone")
+
+    fingerprint = None
+    source = None
+    fuzzy_match = None
+    vin = None
+    brand = None
+    dashcam_only = None
+    passive = None
+    safety_model = None
+    dbc_names = None
+
+    if persistent_raw:
+      try:
+        from cereal import car
+        cp = messaging.log_from_bytes(persistent_raw, car.CarParams)
+        fingerprint = str(cp.carFingerprint) if cp.carFingerprint else None
+        source = str(cp.fingerprintSource).split(".")[-1] if cp.fingerprintSource else None
+        fuzzy_match = cp.fuzzyFingerprint
+        vin = str(cp.carVin) if cp.carVin and cp.carVin != "VIN_UNKNOWN" else None
+        brand = str(cp.brand).lower() if cp.brand else None
+        dashcam_only = cp.dashcamOnly
+        controller_available = self.params.get_bool("OpenpilotEnabledToggle") and not cp.dashcamOnly
+        passive = cp.dashcamOnly or not controller_available
+        if cp.safetyConfigs:
+          safety_model = str(cp.safetyConfigs[0].safetyModel).split(".")[-1] if hasattr(cp.safetyConfigs[0], "safetyModel") else None
+      except Exception:
+        pass
+
+    log_data = self._parse_fingerprint_logs()
+
+    is_mock = fingerprint == "MOCK" or (fingerprint is None and source is None)
+
+    step1_status = "skipped"
+    step1_reason = "CarPlatformBundle was not set by user"
+    step1_logic = "if CarPlatformBundle exists → use it, else continue to cache check"
+    step1_debug = {"CarPlatformBundle": platform_bundle.get("platform") if platform_bundle else None}
+
+    if platform_bundle:
+      step1_status = "active"
+      step1_reason = f"Manual platform selected: {platform_bundle.get('platform', 'unknown')}"
+      step1_debug = {"CarPlatformBundle": platform_bundle}
+
+    step2_status = "skipped"
+    step2_reason = "CarParamsCache was not found"
+    step2_logic = "if CarParamsCache exists AND valid → use cached fingerprint"
+    step2_debug = {"CarParamsCache": "null (not set)"}
+
+    if has_cache:
+      step2_status = "active"
+      step2_reason = "Using cached CarParams"
+      step2_logic = "if CarParamsCache exists AND valid → use cached fingerprint"
+      cache_age = None
+      if persistent_raw:
+        try:
+          cache_age = "cached"
+        except Exception:
+          pass
+      step2_debug = {
+        "CarParamsCache": "present",
+        "CachedFingerprint": fingerprint,
+        "CachedVIN": vin,
+        "CacheSource": source,
+        "CachedFuzzy": fuzzy_match,
+        "CacheStatus": cache_age,
+      }
+
+    step3_status = "skipped"
+    step3_reason = "Firmware query not executed"
+    step3_logic = "if fw_candidates == 1 AND exact_match → use FW fingerprint"
+    step3_debug = {
+      "ECUsDetected": log_data.get("ecu_count"),
+      "VIN": log_data.get("vin"),
+      "VINObtained": log_data.get("vin") is not None,
+      "FWQueryDone": firmware_query_done,
+    }
+
+    if not has_cache and firmware_query_done:
+      step3_status = "active"
+      if log_data.get("ecu_count") is not None:
+        step3_reason = f"FW query completed with {log_data['ecu_count']} ECUs detected"
+      else:
+        step3_reason = "Firmware query completed"
+      step3_debug = {
+        "ECUsDetected": log_data.get("ecu_count"),
+        "VIN": log_data.get("vin"),
+        "VINObtained": log_data.get("vin") is not None,
+        "FWQueryTime": f"{log_data.get('fw_query_time_ms', 0)}ms",
+        "CachedResult": log_data.get("cached"),
+      }
+
+    step4_status = "skipped"
+    step4_reason = "Fingerprint resolved via Firmware Query"
+    step4_logic = "if can_candidates == 1 → use CAN fingerprint, else → MOCK fallback"
+    step4_debug = {}
+
+    if not is_mock and source:
+      if source == "can":
+        step4_status = "active"
+        step4_reason = "Fingerprint resolved via CAN fingerprinting"
+      elif source == "fw":
+        step4_reason = "Fingerprint resolved via Firmware Query"
+      elif source == "fixed":
+        step4_reason = "Fingerprint resolved via manual selection"
+
+    if fingerprint == "MOCK":
+      step4_status = "failed"
+      step4_reason = "No fingerprint match found - using MOCK fallback"
+      step4_logic = "if can_candidates == 1 → use CAN fingerprint, else → MOCK fallback"
+      step4_debug = {
+        "CarFingerprint": "MOCK",
+        "Reason": "No fingerprint candidates matched",
+      }
+
+    result_status = "fingerprinted" if not is_mock else "unrecognized"
+    if platform_bundle:
+      result_status = "manual"
+    elif is_mock:
+      result_status = "mock"
+
+    try:
+      dbc_names = list(self._can_handler.dbc.keys()) if self._can_handler.dbc else None
+    except Exception:
+      pass
+
+    return web.json_response({
+      "steps": [
+        {
+          "id": 1,
+          "title": "Manual Selection",
+          "status": step1_status,
+          "reason": step1_reason,
+          "logic": step1_logic,
+          "debug": step1_debug,
+        },
+        {
+          "id": 2,
+          "title": "Cached Fingerprint",
+          "status": step2_status,
+          "reason": step2_reason,
+          "logic": step2_logic,
+          "debug": step2_debug,
+        },
+        {
+          "id": 3,
+          "title": "Firmware Query",
+          "status": step3_status,
+          "reason": step3_reason,
+          "logic": step3_logic,
+          "debug": step3_debug,
+        },
+        {
+          "id": 4,
+          "title": "CAN Fingerprint",
+          "status": step4_status,
+          "reason": step4_reason,
+          "logic": step4_logic,
+          "debug": step4_debug,
+        },
+      ],
+      "result": {
+        "status": result_status,
+        "fingerprint": fingerprint if fingerprint != "MOCK" else None,
+        "source": source,
+        "is_fuzzy_match": fuzzy_match,
+        "vin": vin,
+        "brand": brand,
+      },
+      "platform_info": {
+        "brand": brand,
+        "safety_model": safety_model,
+        "dashcam_only": dashcam_only,
+        "passive": passive,
+        "dbc_names": dbc_names,
+      },
+    })
+
   async def handle_docs(self, request):
     return web.Response(text=SWAGGER_HTML, content_type="text/html")
 
@@ -1435,6 +1911,21 @@ class PitStopServer:
     # Logs
     app.router.add_get("/api/logs/errors", self.handle_error_log)
     app.router.add_get("/api/logs", self.handle_logs)
+
+    # OSM / Maps
+    app.router.add_get("/api/osm/status", self.handle_osm_status)
+    app.router.add_get("/api/osm/countries", self.handle_osm_countries)
+    app.router.add_get("/api/osm/states", self.handle_osm_states)
+    app.router.add_post("/api/osm/select", self.handle_osm_select)
+    app.router.add_post("/api/osm/download", self.handle_osm_download)
+    app.router.add_post("/api/osm/delete", self.handle_osm_delete)
+
+    # Vehicle
+    app.router.add_get("/api/vehicle", self.handle_vehicle)
+    app.router.add_get("/api/vehicle/platforms", self.handle_vehicle_platforms)
+    app.router.add_post("/api/vehicle/select", self.handle_vehicle_select)
+    app.router.add_delete("/api/vehicle/select", self.handle_vehicle_select)
+    app.router.add_get("/api/vehicle/fingerprint_diagnostics", self.handle_fingerprint_diagnostics)
 
     # OpenAPI / Swagger
     app.router.add_get("/openapi.json", self.handle_openapi)
