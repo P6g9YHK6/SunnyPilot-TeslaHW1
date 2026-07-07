@@ -1642,16 +1642,19 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 
 .fp-pathway { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.75rem; background: var(--bg-subtle); border-radius: var(--radius); margin-bottom: 1rem; }
 .fp-path-step { font-size: 0.75rem; font-weight: 500; }
-.fp-path-step.fp-active { color: var(--blue); }
-.fp-path-step.fp-success { color: var(--green); }
+.fp-path-step.fp-winner { color: var(--green); font-weight: 600; }
+.fp-path-step.fp-overridden { color: var(--text-muted); }
+.fp-path-step.fp-completed { color: var(--blue); }
 .fp-path-step.fp-failed { color: var(--red); }
 .fp-path-step.fp-skipped { color: var(--text-muted); }
+.fp-path-step.fp-result-step { font-weight: 700; color: var(--green); }
 .fp-path-arrow { font-size: 0.7rem; color: var(--text-muted); }
 
 .fp-step { margin-bottom: 0.75rem; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); }
-.fp-step.fp-active { border-left: 3px solid var(--blue); }
-.fp-step.fp-success { border-left: 3px solid var(--green); }
-.fp-step.fp-failed { border-left: 3px solid var(--red); }
+.fp-step.fp-winner { border-left: 4px solid var(--green); background: rgba(76,175,80,.05); }
+.fp-step.fp-overridden { border-left: 4px solid var(--text-muted); opacity: 0.75; }
+.fp-step.fp-completed { border-left: 4px solid var(--blue); }
+.fp-step.fp-failed { border-left: 4px solid var(--red); }
 .fp-step.fp-skipped { border-left: 3px solid var(--border); opacity: 0.8; }
 
 .fp-step-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
@@ -1659,26 +1662,35 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 .fp-step-title { font-size: 0.85rem; font-weight: 600; flex: 1; }
 .fp-step-status { font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 4px; text-transform: uppercase; }
 .fp-skipped .fp-step-status { background: var(--bg-subtle); color: var(--text-muted); }
-.fp-active .fp-step-status { background: rgba(33,150,243,.15); color: var(--blue); }
-.fp-success .fp-step-status { background: rgba(76,175,80,.15); color: var(--green); }
+.fp-winner .fp-step-status { background: rgba(76,175,80,.2); color: var(--green); }
+.fp-overridden .fp-step-status { background: rgba(158,158,158,.2); color: var(--text-muted); }
+.fp-completed .fp-step-status { background: rgba(33,150,243,.15); color: var(--blue); }
 .fp-failed .fp-step-status { background: rgba(244,67,54,.15); color: var(--red); }
 
-.fp-step-reason { font-size: 0.85rem; color: var(--text); margin-bottom: 0.25rem; }
-.fp-step-logic { font-size: 0.75rem; color: var(--text-muted); font-family: monospace; margin-bottom: 0.5rem; }
+.fp-decision-logic { font-size: 0.75rem; color: var(--text-muted); font-family: monospace; margin-bottom: 0.35rem; }
+.fp-action { font-size: 0.8rem; color: var(--text); margin-bottom: 0.5rem; font-weight: 500; }
 
-.fp-debug { margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-subtle); border-radius: 4px; font-size: 0.75rem; }
-.fp-debug-row { display: flex; gap: 0.5rem; padding: 0.15rem 0; }
-.fp-debug-key { color: var(--text-muted); font-weight: 500; min-width: 120px; }
-.fp-debug-value { color: var(--text); font-family: monospace; word-break: break-all; }
+.fp-winner-notice { font-size: 0.75rem; color: var(--green); font-weight: 600; margin-bottom: 0.5rem; padding: 0.35rem 0.5rem; background: rgba(76,175,80,.1); border-radius: 4px; }
+.fp-override-notice { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem; padding: 0.35rem 0.5rem; background: var(--bg-subtle); border-radius: 4px; }
+
+.fp-actual-flow { margin: 0.5rem 0; padding: 0.5rem 0.75rem; background: var(--bg-subtle); border-radius: 4px; font-size: 0.75rem; }
+.fp-flow-row { display: flex; gap: 0.5rem; padding: 0.1rem 0; }
+.fp-flow-key { color: var(--text-muted); font-weight: 500; min-width: 140px; }
+.fp-flow-value { color: var(--text); font-family: monospace; word-break: break-all; }
+
+.fp-failure-reasons { margin-top: 0.5rem; padding: 0.5rem 0.75rem; background: rgba(244,67,54,.05); border: 1px solid rgba(244,67,54,.2); border-radius: 4px; font-size: 0.75rem; }
+.fp-failure-header { font-weight: 600; color: var(--red); margin-bottom: 0.25rem; }
+.fp-failure-item { color: var(--text-muted); padding: 0.1rem 0; font-family: monospace; }
 
 .fp-result { margin-top: 1rem; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); text-align: center; }
-.fp-result.fp-success { border-left: 3px solid var(--green); }
-.fp-result.fp-failed { border-left: 3px solid var(--red); }
-.fp-result-header { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.fp-result.fp-success { border-left: 4px solid var(--green); background: rgba(76,175,80,.05); }
+.fp-result.fp-failed { border-left: 4px solid var(--red); }
+.fp-result-header { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
 .fp-result-icon { font-size: 1.2rem; }
 .fp-result.fp-success .fp-result-icon { color: var(--green); }
 .fp-result.fp-failed .fp-result-icon { color: var(--red); }
 .fp-result-title { font-size: 0.9rem; font-weight: 600; }
+.fp-winner-badge { font-size: 0.65rem; padding: 0.15rem 0.4rem; background: rgba(76,175,80,.15); color: var(--green); border-radius: 4px; font-weight: 600; }
 .fp-result-summary { font-size: 0.85rem; color: var(--text); }
 .fp-result-vin { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
 .fp-result-dbc { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; font-family: monospace; }
