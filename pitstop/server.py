@@ -161,7 +161,7 @@ class PitStopServer:
     """Single background thread for service health, active alert, and process list."""
     logger.info("[LOOP] diagnostic monitor started")
     try:
-      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState', 'longitudinalPlanSP', 'liveMapDataSP', 'carStateSP', 'selfdriveStateSP'])
+      sm = messaging.SubMaster(self._WATCHED_SERVICES + ['selfdriveState', 'managerState', 'controlsState', 'longitudinalPlanSP', 'liveMapDataSP', 'carStateSP', 'selfdriveStateSP'])
       while self._running:
         sm.update(2000)
         services = []
@@ -208,7 +208,7 @@ class PitStopServer:
           }
         # speed data
         try:
-          sds = sm['selfdriveState'].deprecated if sm.seen['selfdriveState'] else None
+          sds = sm['controlsState'].deprecated if sm.seen['controlsState'] else None
           lp = sm['longitudinalPlan'] if sm.seen['longitudinalPlan'] else None
           radar = sm['radarState'] if sm.seen['radarState'] else None
           lpsp = sm['longitudinalPlanSP'] if sm.seen['longitudinalPlanSP'] else None
