@@ -161,12 +161,14 @@
           <div class="map-selectors">
             <div class="map-select-group">
               <label>Country</label>
+              <input type="text" class="map-select-search" id="map-country-search" placeholder="Search countries..." oninput="filterMapOptions('country', this.value)">
               <select id="map-country-select" onchange="onCountryChange()">
                 <option value="">Select a country</option>
               </select>
             </div>
             <div class="map-select-group" id="map-state-group" style="display:none">
               <label>State</label>
+              <input type="text" class="map-select-search" id="map-state-search" placeholder="Search states..." oninput="filterMapOptions('state', this.value)">
               <select id="map-state-select" onchange="onStateChange()">
                 <option value="">Select a state</option>
               </select>

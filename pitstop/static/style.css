@@ -1718,22 +1718,32 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 .map-select-group { flex: 1; min-width: 200px; }
 .map-select-group label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.4rem; }
 .map-select-group select {
-  width: 100%; padding: 0.6rem 0.75rem; font-size: 0.875rem;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--bg-input); color: var(--text); cursor: pointer;
+  width: 100%; padding: 0.5rem 0.75rem; font-size: 0.875rem;
+  border: 1px solid var(--border-mid); border-radius: var(--radius);
+  background: var(--surface2); color: var(--text); cursor: pointer;
+  outline: none; transition: border-color 0.15s;
 }
-.map-select-group select:focus { outline: none; border-color: var(--primary); }
+.map-select-group select:focus { border-color: var(--accent); }
+.map-select-search {
+  width: 100%; box-sizing: border-box;
+  padding: 0.4rem 0.6rem; margin-bottom: 0.35rem;
+  border: 1px solid var(--border-mid); border-radius: var(--radius);
+  background: var(--surface); color: var(--text); font-size: 0.8rem;
+  outline: none; transition: border-color 0.15s;
+}
+.map-select-search:focus { border-color: var(--accent); }
+.map-select-search::placeholder { color: var(--text-muted); }
 
 .map-download-info {
   display: flex; align-items: center; justify-content: space-between;
-  margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-muted);
+  margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-mid);
   font-size: 0.75rem; color: var(--text-muted);
 }
 
 .map-progress { margin-top: 1.5rem; }
 .map-progress h3 { margin: 0 0 0.75rem; font-size: 0.95rem; font-weight: 600; }
 .map-progress .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
-.map-progress .progress-fill { height: 100%; background: var(--primary); transition: width 0.3s; }
+.map-progress .progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
 .map-progress-text { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem; text-align: center; }
 
 .map-last-checked { font-size: 0.75rem; color: var(--text-muted); margin-top: 1rem; }
