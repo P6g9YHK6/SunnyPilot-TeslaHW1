@@ -1920,7 +1920,155 @@ async function loadVehicle() {
     document.getElementById('vehicle-name').textContent = 'Error loading vehicle';
   }
   loadFingerprintDiagnostics();
+  loadIgnitionDiagnostics();
 }
+
+async function loadIgnitionDiagnostics() {
+  try {
+    ignitionDiag = await api('/api/vehicle/ignition_diagnostics');
+    renderIgnitionDiagnostics();
+  } catch (e) {
+    console.error('Failed to load ignition diagnostics:', e);
+  }
+}
+
+function renderIgnitionDiagnostics() {
+  const container = document.getElementById('ignition-workflow');
+  if (!container || !ignitionDiag) return;
+
+  const { steps, result, panda_info, startup_conditions, history } = ignitionDiag;
+
+  let pathwayHtml = '<div class="fp-pathway">';
+  steps.forEach((step, i) => {
+    const statusIcon = step.status === 'winner' ? '●' : step.status === 'overridden' ? '◌' : step.status === 'completed' ? '●' : step.status === 'failed' ? '✗' : '○';
+    const statusClass = step.status === 'winner' ? 'fp-winner' : step.status === 'overridden' ? 'fp-overridden' : step.status === 'completed' ? 'fp-completed' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
+    pathwayHtml += `<div class="fp-path-step ${statusClass}">${statusIcon} ${step.title}</div>`;
+    if (i < steps.length - 1) {
+      pathwayHtml += '<div class="fp-path-arrow">─►</div>';
+    }
+  });
+  if (result && result.ignition_on !== undefined) {
+    pathwayHtml += '<div class="fp-path-arrow">─►</div>';
+    const resultIcon = result.device_started ? '✓' : (result.ignition_on ? '⚡' : '○');
+    const resultClass = result.device_started ? 'fp-winner' : (result.ignition_on ? 'fp-completed' : 'fp-skipped');
+    pathwayHtml += `<div class="fp-path-step ${resultClass}">${resultIcon} ${result.device_started ? 'STARTED' : (result.ignition_on ? 'IGN ON' : 'IGN OFF')}</div>`;
+  }
+  pathwayHtml += '</div>';
+  document.getElementById('ignition-pathway').innerHTML = pathwayHtml;
+
+  let stepsHtml = '';
+  steps.forEach(step => {
+    const statusIcon = step.status === 'winner' ? '●' : step.status === 'overridden' ? '◌' : step.status === 'completed' ? '●' : step.status === 'failed' ? '✗' : '○';
+    const statusClass = step.status === 'winner' ? 'fp-winner' : step.status === 'overridden' ? 'fp-overridden' : step.status === 'completed' ? 'fp-completed' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
+
+    let actualFlowHtml = '';
+    if (step.actual_flow && Object.keys(step.actual_flow).length > 0) {
+      actualFlowHtml += '<div class="fp-actual-flow">';
+      for (const [key, value] of Object.entries(step.actual_flow)) {
+        const displayValue = value === null ? 'null' : value === undefined ? 'N/A' : String(value);
+        actualFlowHtml += `<div class="fp-flow-row"><span class="fp-flow-key">${key}:</span><span class="fp-flow-value">${displayValue}</span></div>`;
+      }
+      actualFlowHtml += '</div>';
+    }
+
+    let failureReasonsHtml = '';
+    if (step.failure_reasons && step.failure_reasons.length > 0) {
+      failureReasonsHtml += '<div class="fp-failure-reasons">';
+      failureReasonsHtml += '<div class="fp-failure-header">Why it would FAIL:</div>';
+      step.failure_reasons.forEach(reason => {
+        failureReasonsHtml += `<div class="fp-failure-item">├─ ${reason}</div>`;
+      });
+      failureReasonsHtml += '</div>';
+    }
+
+    let winnerNotice = '';
+    if (step.status === 'winner') {
+      winnerNotice = `<div class="fp-winner-notice">✓ THIS STEP WON - Final state determined here</div>`;
+    }
+
+    let overrideNotice = '';
+    if (step.status === 'overridden') {
+      overrideNotice = `<div class="fp-override-notice">OVERRIDDEN (another step took precedence)</div>`;
+    }
+
+    stepsHtml += `
+      <div class="fp-step ${statusClass}">
+        <div class="fp-step-header">
+          <span class="fp-step-icon">${statusIcon}</span>
+          <span class="fp-step-title">STEP ${step.id}: ${step.title.toUpperCase()}</span>
+          <span class="fp-step-status">${step.status.toUpperCase()}</span>
+        </div>
+        <div class="fp-decision-logic">Decision: ${step.decision_logic}</div>
+        <div class="fp-action">Action: ${step.action}</div>
+        ${winnerNotice}
+        ${overrideNotice}
+        ${actualFlowHtml}
+        ${failureReasonsHtml}
+      </div>
+    `;
+  });
+
+  let pandaInfoHtml = '';
+  if (panda_info && panda_info.panda_states && panda_info.panda_states.length > 0) {
+    const ps = panda_info.panda_states[0];
+    pandaInfoHtml = `
+      <div class="ignition-panda-info">
+        <div class="panda-info-row">
+          <span class="panda-info-label">Pandas Connected:</span>
+          <span class="panda-info-value">${panda_info.count}</span>
+        </div>
+        <div class="panda-info-row">
+          <span class="panda-info-label">Voltage:</span>
+          <span class="panda-info-value">${ps.voltage ? ps.voltage.toFixed(1) + 'V' : 'N/A'}</span>
+        </div>
+        <div class="panda-info-row">
+          <span class="panda-info-label">Temperature:</span>
+          <span class="panda-info-value">${ps.temperature ? ps.temperature + '°C' : 'N/A'}</span>
+        </div>
+        <div class="panda-info-row">
+          <span class="panda-info-label">Serial:</span>
+          <span class="panda-info-value">${ps.serial || 'N/A'}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  let startupConditionsHtml = '';
+  if (startup_conditions) {
+    const conditions = [
+      { key: 'Thermal', val: startup_conditions.thermal, icon: startup_conditions.thermal.blocking ? '✗' : '✓' },
+      { key: 'Space', val: startup_conditions.space, icon: startup_conditions.space.blocking ? '✗' : '✓' },
+      { key: 'Terms', val: startup_conditions.terms, icon: startup_conditions.terms.blocking ? '✗' : '✓' },
+      { key: 'Offroad', val: startup_conditions.offroad, icon: startup_conditions.offroad.blocking ? '✗' : '✓' },
+      { key: 'Panda', val: startup_conditions.panda, icon: startup_conditions.panda.blocking ? '✗' : '✓' },
+    ];
+    startupConditionsHtml = '<div class="ignition-startup-conditions">';
+    conditions.forEach(c => {
+      const val = c.val;
+      const status = c.icon === '✓' ? 'ok' : 'blocking';
+      let extra = '';
+      if (val.status) extra = ` (${val.status})`;
+      else if (val.free_pct !== undefined && val.free_pct !== null) extra = ` (${val.free_pct}% free)`;
+      startupConditionsHtml += `<div class="startup-condition ${status}">${c.icon} ${c.key}: ${val.blocking ? 'BLOCKING' : 'OK'}${extra}</div>`;
+    });
+    startupConditionsHtml += '</div>';
+  }
+
+  let historyHtml = '';
+  if (history && history.length > 0) {
+    historyHtml = '<div class="ignition-history">';
+    history.forEach(h => {
+      const d = new Date(h.ts * 1000);
+      const timeStr = d.toLocaleTimeString();
+      historyHtml += `<div class="history-item">${h.msg.substring(0, 60)}...</div>`;
+    });
+    historyHtml += '</div>';
+  }
+
+  container.innerHTML = stepsHtml + '<div class="ignition-extras">' + pandaInfoHtml + startupConditionsHtml + historyHtml + '</div>';
+}
+
+let ignitionDiag = null;
 
 async function loadFingerprintDiagnostics() {
   try {
