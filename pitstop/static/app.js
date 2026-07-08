@@ -713,7 +713,6 @@ async function loadCockpit() {
         const pose = cockpit.livePose || {};
         const vel = pose.velocityDevice || {};
         const acc = pose.accelerationDevice || {};
-        const accCam = pose.accelerationCamera || {};
         const velMag = (vel.x != null && vel.y != null && vel.z != null)
           ? Math.sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z).toFixed(2) + ' m/s'
           : '—';
@@ -728,12 +727,6 @@ async function loadCockpit() {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
             <span>X: ${_cms2(acc.x)}</span><span style="text-align:right">Y: ${_cms2(acc.y)}</span>
             <span>Z: ${_cms2(acc.z)}</span><span></span>
-          </div>
-          <hr style="margin:4px 0;border-color:var(--border)">
-          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Camera Acceleration</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
-            <span>X: ${_cms2(accCam.x)}</span><span style="text-align:right">Y: ${_cms2(accCam.y)}</span>
-            <span>Z: ${_cms2(accCam.z)}</span><span></span>
           </div>
         `;
       }

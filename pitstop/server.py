@@ -236,11 +236,6 @@ class PitStopServer:
                 "y": pose.accelerationDevice.y if pose is not None else None,
                 "z": pose.accelerationDevice.z if pose is not None else None,
               },
-              "accelerationCamera": {
-                "x": pose.accelerationCamera.x if pose is not None else None,
-                "y": pose.accelerationCamera.y if pose is not None else None,
-                "z": pose.accelerationCamera.z if pose is not None else None,
-              },
             },
             "liveTorqueParameters": {
               "latAccelFactorFiltered": ltp.latAccelFactorFiltered if ltp is not None else None,
@@ -251,12 +246,13 @@ class PitStopServer:
               "status": str(ld.status).split('.')[-1] if ld is not None else None,
             },
             "driverMonitoringState": {
-              "awarenessPercent": dms.awarenessPercent if dms is not None else None,
-              "faceDetected": dms.faceDetected if dms is not None else None,
-              "isDistracted": dms.isDistracted if dms is not None else None,
-              "distractedTypes": [str(dt).split('.')[-1] for dt in dms.distractedTypes] if dms is not None else None,
-              "alertStatus": str(dms.alertStatus).split('.')[-1] if dms is not None else None,
-              "alertType": str(dms.alertType).split('.')[-1] if dms is not None else None,
+              "awarenessPercent": dms.visionPolicyState.awarenessPercent if dms is not None else None,
+              "faceDetected": dms.visionPolicyState.faceDetected if dms is not None else None,
+              "isDistracted": dms.visionPolicyState.isDistracted if dms is not None else None,
+              "distractedTypes": [k for k in ('pose', 'eye', 'phone')
+                                 if getattr(dms.visionPolicyState.distractedTypes, k)] if dms is not None else None,
+              "alertStatus": str(sd.alertStatus).split('.')[-1] if sd is not None else None,
+              "alertType": sd.alertType if sd is not None else None,
             },
             "selfdriveState": {
               "enabled": sd.enabled if sd is not None else None,
@@ -1362,20 +1358,28 @@ class PitStopServer:
           line = line.rstrip('\n\r')
           if not line:
             continue
-          # Parse "LEVEL:name:message" or "LEVEL:name:..."
+          # Parse optional timestamp prefix: "YYYY-MM-DD HH:MM:SS LEVEL:name:message"
+          ts = 0
+          rest = line
+          if len(line) > 19 and line[4] == '-' and line[7] == '-' and line[10] == ' ' and line[13] == ':':
+            try:
+              ts = time.mktime(time.strptime(line[:19], "%Y-%m-%d %H:%M:%S"))
+            except Exception:
+              pass
+            rest = line[20:] if len(line) > 20 else ''
           lvl = 'INFO'
           name = ''
-          msg = line
+          msg = rest
           for possible_lvl in ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'):
-            if line.startswith(possible_lvl + ':'):
+            if rest.startswith(possible_lvl + ':'):
               lvl = possible_lvl
-              rest = line[len(lvl)+1:]
-              colon = rest.find(':')
+              rest2 = rest[len(lvl)+1:]
+              colon = rest2.find(':')
               if colon > 0:
-                name = rest[:colon]
-                msg = rest[colon+1:]
+                name = rest2[:colon]
+                msg = rest2[colon+1:]
               else:
-                msg = rest
+                msg = rest2
               break
           levelnum = LVL_MAP.get(lvl, 20)
           if levelnum < min_level:
@@ -1383,6 +1387,7 @@ class PitStopServer:
           if search_lc and search_lc not in msg.lower() and search_lc not in name.lower():
             continue
           entries.append({
+            'ts':       ts,
             'level':    lvl,
             'levelnum': levelnum,
             'source':   'pitstop',
@@ -2403,7 +2408,7 @@ def _setup_port_redirect():
 def main():
   logger.setLevel(logging.INFO)
   handler = logging.FileHandler("/tmp/pitstop.log")
-  handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+  handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
   logger.addHandler(handler)
 
   _setup_port_redirect()
