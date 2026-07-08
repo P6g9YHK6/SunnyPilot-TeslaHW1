@@ -846,8 +846,6 @@ async function loadDashboard() {
     renderNetworkCard(network);
     renderSunnylinkCard(sunnylink);
     renderStorageCard(storage, telemetry);
-    renderSpeedsCard(speeds);
-    renderSpeedLimitsCard(speeds);
   } catch (e) {
     document.querySelectorAll('#card-device .card-body, #card-capabilities .card-body, #card-model .card-body')
       .forEach(el => el.textContent = 'Failed to load.');
