@@ -1078,6 +1078,33 @@ html[data-theme="hc"] .btn-download { border-width: 2px; }
 .model-badge.active-model { background: var(--green-dim); color: var(--green); border: 1px solid rgba(62,207,142,0.3); }
 .model-badge.downloading  { background: var(--orange-dim); color: var(--orange); }
 
+/* ─── Map Items ─────────────────────────────────────────────────── */
+.map-item {
+  cursor: pointer;
+}
+.map-item .model-item-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.map-item .model-item-meta {
+  margin-top: 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.map-item.selected {
+  border-color: var(--green);
+  background: rgba(62,207,142,0.05);
+}
+.map-item.selected:hover {
+  border-color: var(--green);
+  background: rgba(62,207,142,0.1);
+}
+.map-item .model-item-actions {
+  padding-top: 0;
+  border-top: none;
+}
+
 /* ─── Modal ─────────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;

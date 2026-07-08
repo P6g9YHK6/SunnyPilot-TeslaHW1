@@ -2435,8 +2435,14 @@ function renderMapsUI() {
   }
   document.getElementById('map-size').textContent = sizeText;
 
-  renderCountrySelect();
-  renderStateSelect();
+  selectedCountry = mapsData?.country || '';
+  selectedState = mapsData?.state || '';
+  renderCountryList();
+  if (selectedCountry === 'US') {
+    document.getElementById('map-state-section').style.display = '';
+    renderStateList();
+  }
+  document.getElementById('map-download-btn').disabled = !selectedCountry;
 
   if (mapsData.last_checked) {
     const dt = new Date(mapsData.last_checked * 1000);
@@ -2448,84 +2454,121 @@ function renderMapsUI() {
   updateMapProgress();
 }
 
-function renderCountrySelect() {
-  const search = document.getElementById('map-country-search');
-  if (search) search.value = '';
-  const select = document.getElementById('map-country-select');
-  select.innerHTML = '<option value="">Select a country</option>';
+let selectedCountry = '';
+let selectedState = '';
+let mapCountriesSorted = [];
+let mapStatesSorted = [];
 
-  if (!mapsCountries) return;
+function renderCountryList() {
+  const container = document.getElementById('map-country-list');
+  if (!container) return;
+  if (!mapsCountries) { container.innerHTML = '<p style="color:var(--text-dim)">No countries available.</p>'; return; }
 
-  const sorted = Object.entries(mapsCountries)
+  const query = document.getElementById('map-country-search').value.toLowerCase().trim();
+  mapCountriesSorted = Object.entries(mapsCountries)
     .map(([code, data]) => ({ code, full_name: data.full_name }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
-  sorted.forEach(({ code, full_name }) => {
-    const selected = mapsData?.country === code ? 'selected' : '';
-    select.innerHTML += `<option value="${code}" ${selected}>${full_name} (${code})</option>`;
-  });
-}
+  const filtered = !query ? mapCountriesSorted
+    : mapCountriesSorted.filter(c => c.full_name.toLowerCase().includes(query) || c.code.toLowerCase().includes(query));
 
-function renderStateSelect() {
-  const search = document.getElementById('map-state-search');
-  if (search) search.value = '';
-  const select = document.getElementById('map-state-select');
-  const group = document.getElementById('map-state-group');
-
-  if (mapsData?.country !== 'US') {
-    group.style.display = 'none';
+  if (!filtered.length) {
+    container.innerHTML = '<p style="color:var(--text-dim)">No matching countries.</p>';
     return;
   }
 
-  group.style.display = 'block';
-  select.innerHTML = '<option value="">Select a state</option>';
+  container.innerHTML = filtered.map(c => {
+    const isSelected = selectedCountry === c.code;
+    return `<div class="model-item map-item ${isSelected ? 'selected' : ''}" onclick="selectMapCountry('${c.code}')">
+      <div class="model-item-info">
+        <div class="model-item-name">${c.full_name}</div>
+        <div class="model-item-meta">${c.code}</div>
+      </div>
+      <div class="model-item-actions">
+        ${isSelected ? '<span class="model-badge active-model">Selected</span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
 
-  if (!mapsStates) return;
+function selectMapCountry(code) {
+  const country = mapCountriesSorted.find(c => c.code === code);
+  if (!country) return;
+  selectedCountry = code;
+  selectedState = '';
+  renderCountryList();
+  document.getElementById('map-download-btn').disabled = false;
 
-  const sorted = Object.entries(mapsStates)
+  if (code === 'US') {
+    document.getElementById('map-state-section').style.display = '';
+    renderStateList();
+  } else {
+    document.getElementById('map-state-section').style.display = 'none';
+  }
+}
+
+function filterMapCountries() {
+  toggleSearchClear('map-country');
+  renderCountryList();
+}
+
+function clearMapCountrySearch() {
+  document.getElementById('map-country-search').value = '';
+  document.getElementById('map-country-search-clear').classList.remove('visible');
+  renderCountryList();
+}
+
+function renderStateList() {
+  const container = document.getElementById('map-state-list');
+  if (!container) return;
+  if (!mapsStates) { container.innerHTML = '<p style="color:var(--text-dim)">No states available.</p>'; return; }
+
+  const query = document.getElementById('map-state-search').value.toLowerCase().trim();
+  mapStatesSorted = Object.entries(mapsStates)
     .map(([code, data]) => ({ code, full_name: data.full_name }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
-  sorted.forEach(({ code, full_name }) => {
-    const selected = mapsData?.state === code ? 'selected' : '';
-    select.innerHTML += `<option value="${code}" ${selected}>${full_name}</option>`;
-  });
-}
+  const filtered = !query ? mapStatesSorted
+    : mapStatesSorted.filter(s => s.full_name.toLowerCase().includes(query) || s.code.toLowerCase().includes(query));
 
-function filterMapOptions(type, query) {
-  const select = document.getElementById('map-' + type + '-select');
-  if (!select) return;
-  const q = query.toLowerCase().trim();
-  for (let i = 1; i < select.options.length; i++) {
-    const opt = select.options[i];
-    opt.style.display = (!q || opt.text.toLowerCase().includes(q)) ? '' : 'none';
-  }
-}
-
-function onCountryChange() {
-  const select = document.getElementById('map-country-select');
-  const downloadBtn = document.getElementById('map-download-btn');
-
-  if (select.value === 'US') {
-    document.getElementById('map-state-group').style.display = 'block';
-  } else {
-    document.getElementById('map-state-group').style.display = 'none';
-    document.getElementById('map-state-select').value = '';
+  if (!filtered.length) {
+    container.innerHTML = '<p style="color:var(--text-dim)">No matching states.</p>';
+    return;
   }
 
-  downloadBtn.disabled = !select.value;
+  container.innerHTML = filtered.map(s => {
+    const isSelected = selectedState === s.code;
+    return `<div class="model-item map-item ${isSelected ? 'selected' : ''}" onclick="selectMapState('${s.code}')">
+      <div class="model-item-info">
+        <div class="model-item-name">${s.full_name}</div>
+        <div class="model-item-meta">${s.code}</div>
+      </div>
+      <div class="model-item-actions">
+        ${isSelected ? '<span class="model-badge active-model">Selected</span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
-function onStateChange() {
-  // State changed, no action needed until download
+function selectMapState(code) {
+  selectedState = code;
+  renderStateList();
+}
+
+function filterMapStates() {
+  toggleSearchClear('map-state');
+  renderStateList();
+}
+
+function clearMapStateSearch() {
+  document.getElementById('map-state-search').value = '';
+  document.getElementById('map-state-search-clear').classList.remove('visible');
+  renderStateList();
 }
 
 async function startMapDownload() {
-  const countrySelect = document.getElementById('map-country-select');
-  const stateSelect = document.getElementById('map-state-select');
-
-  const country = countrySelect.value;
-  const state = stateSelect.value || null;
+  const country = selectedCountry;
+  const state = selectedState || null;
 
   if (!country) {
     toast('Please select a country', 'error');
@@ -2542,11 +2585,8 @@ async function startMapDownload() {
 }
 
 async function doStartMapDownload() {
-  const countrySelect = document.getElementById('map-country-select');
-  const stateSelect = document.getElementById('map-state-select');
-
-  const country = countrySelect.value;
-  const state = stateSelect.value || null;
+  const country = selectedCountry;
+  const state = selectedState || null;
 
   try {
     await api('/api/osm/select', { method: 'POST', body: JSON.stringify({ country, state }) });
