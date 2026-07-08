@@ -1775,10 +1775,16 @@ class PitStopServer:
       free_space_pct = ds.freeSpacePercent
       space_blocking = free_space_pct < 5 if free_space_pct else False
 
-    terms_accepted = self.params.get_bool("TermsAccepted")
+    try:
+      terms_accepted = self.params.get_bool("TermsAccepted")
+    except Exception:
+      terms_accepted = True
     terms_blocking = not terms_accepted
 
-    offroad_mode = self.params.get_bool("OffroadMode")
+    try:
+      offroad_mode = self.params.get_bool("OffroadMode")
+    except Exception:
+      offroad_mode = False
     offroad_blocking = offroad_mode
 
     panda_blocking = pandas_connected == 0
