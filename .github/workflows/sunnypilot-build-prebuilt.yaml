@@ -15,7 +15,7 @@ env:
 
 on:
   push:
-    branches: [ master, master-dev ]
+    branches: [ master, dev, master-dev ]
     tags: [ 'release/*' ]
   pull_request_target:
     types: [ labeled ]
@@ -108,7 +108,7 @@ jobs:
     concurrency:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
-    runs-on: [self-hosted, linux]
+    runs-on: ${{ github.ref_name == 'dev' && 'ubuntu-24.04' || '[self-hosted, linux]' }}
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
