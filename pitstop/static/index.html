@@ -163,21 +163,18 @@
         <div class="map-section" id="map-download-section">
           <h3>Download Map</h3>
           <p class="section-desc">Select a region to download for offline use</p>
-          <div class="map-selectors">
-            <div class="map-select-group">
-              <label>Country</label>
-              <input type="text" class="map-select-search" id="map-country-search" placeholder="Search countries..." oninput="filterMapOptions('country', this.value)">
-              <select id="map-country-select" onchange="onCountryChange()">
-                <option value="">Select a country</option>
-              </select>
+          <div class="search-wrap search-wrap--full" style="margin-bottom:0.5rem">
+            <input type="text" id="map-country-search" placeholder="Search countries…" oninput="filterMapCountries()">
+            <button class="search-clear" id="map-country-search-clear" onclick="clearMapCountrySearch()" title="Clear search">&#10005;</button>
+          </div>
+          <div id="map-country-list"></div>
+          <div id="map-state-section" style="display:none">
+            <h4 style="margin:1rem 0 0.5rem;font-size:0.85rem">State / Region</h4>
+            <div class="search-wrap search-wrap--full" style="margin-bottom:0.5rem">
+              <input type="text" id="map-state-search" placeholder="Search states…" oninput="filterMapStates()">
+              <button class="search-clear" id="map-state-search-clear" onclick="clearMapStateSearch()" title="Clear search">&#10005;</button>
             </div>
-            <div class="map-select-group" id="map-state-group" style="display:none">
-              <label>State</label>
-              <input type="text" class="map-select-search" id="map-state-search" placeholder="Search states..." oninput="filterMapOptions('state', this.value)">
-              <select id="map-state-select" onchange="onStateChange()">
-                <option value="">Select a state</option>
-              </select>
-            </div>
+            <div id="map-state-list"></div>
           </div>
           <div class="map-download-info">
             <span>Map downloads can be large (up to several GB)</span>
