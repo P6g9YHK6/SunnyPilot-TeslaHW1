@@ -2147,9 +2147,7 @@ function renderFingerprintDiagnostics() {
     ].filter(Boolean).join('\n');
   }
 
-  const expanded = saveExpandedSteps('fp');
   container.innerHTML = cachedHistoricalHtml + resultHtml;
-  restoreExpandedSteps('fp', expanded);
 }
 function toggleFingerprintStep(stepId) {
   const el = document.getElementById(`fp-step-${stepId}`);
