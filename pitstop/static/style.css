@@ -1702,6 +1702,45 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 .fp-result-vin { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
 .fp-result-dbc { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; font-family: monospace; }
 
+/* ─── Ignition Troubleshooting ───────────────────────────────── */
+.ignition-section { margin-top: 2rem; }
+.ignition-section h3 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+
+.ignition-workflow { }
+
+.ignition-extras { margin-top: 1rem; }
+
+.ignition-panda-info {
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+}
+.panda-info-row { display: flex; justify-content: space-between; padding: 0.2rem 0; font-size: 0.8rem; }
+.panda-info-label { color: var(--text-muted); }
+.panda-info-value { color: var(--text); font-weight: 500; }
+
+.ignition-startup-conditions {
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+}
+.startup-condition { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.8rem; }
+.startup-condition.ok { color: var(--green); }
+.startup-condition.blocking { color: var(--red); }
+
+.ignition-history {
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+}
+.history-item { padding: 0.2rem 0; color: var(--text-muted); font-family: monospace; }
+
 /* ─── Maps Panel ──────────────────────────────────────────────── */
 .map-version {
   display: flex; align-items: center; gap: 0.75rem;
