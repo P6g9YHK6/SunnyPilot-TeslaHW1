@@ -2018,7 +2018,7 @@ class PitStopServer:
         "status": "on" if ignition_on else ("blocked" if startup_blocking else "off"),
         "ignition_on": ignition_on,
         "device_started": is_started,
-        "started_ts": started_ts,
+        "started_ts": ds.startedMonoTime / 1e9 if ds and ds.startedMonoTime else None,
         "time_online_s": time_online,
         "winner_branch": next((b["num"] for b in branches if b["winner"]), None),
         "source": ignition_source,
