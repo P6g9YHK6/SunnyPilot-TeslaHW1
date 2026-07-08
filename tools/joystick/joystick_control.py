@@ -2,8 +2,9 @@
 import os
 import argparse
 import threading
+import time
 import numpy as np
-from inputs import UnpluggedError, get_gamepad, devices as input_devices
+from inputs import UnpluggedError, get_gamepad, devices as input_devices, DeviceManager
 
 from cereal import messaging
 from openpilot.common.params import Params
@@ -77,12 +78,22 @@ class Joystick:
     self.axes_values = {accel_axis: 0., steer_axis: 0.}
     self.axes_order = [accel_axis, steer_axis]
     self.cancel = False
+    self._last_rescan = 0.0
 
   def update(self):
     try:
       joystick_event = get_gamepad()[0]
     except (OSError, UnpluggedError):
       self.axes_values = dict.fromkeys(self.axes_values, 0.)
+      now = time.monotonic()
+      if now - self._last_rescan > 2.0:
+        try:
+          dm = DeviceManager()
+          if dm.gamepads:
+            input_devices.gamepads[:] = dm.gamepads
+        except Exception:
+          pass
+        self._last_rescan = now
       return False
 
     event = (joystick_event.code, joystick_event.state)
