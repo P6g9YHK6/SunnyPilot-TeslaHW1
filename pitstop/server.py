@@ -1782,33 +1782,6 @@ class PitStopServer:
 
     is_started = started_ts is not None and not offroad_mode and ignition_on and not startup_blocking
 
-    step1_status = "failed" if panda_timeout else "completed"
-    step1_action = "Receive pandaStates from all connected pandas" if not panda_timeout else "TIMEOUT: No pandaStates received"
-
-    step2_status = "completed"
-    if not ignition_on:
-      step2_status = "failed"
-    elif ignition_line:
-      step2_status = "winner"
-
-    step3_status = "completed"
-    if not ignition_on:
-      step3_status = "failed"
-    elif ignition_can and not ignition_line:
-      step3_status = "winner"
-    elif ignition_line:
-      step3_status = "overridden"
-    else:
-      step3_status = "skipped"
-
-    step4_status = "failed"
-    if startup_blocking:
-      step4_status = "failed"
-    elif is_started:
-      step4_status = "winner"
-    elif ignition_on:
-      step4_status = "completed"
-
     ignition_source = "hardware" if ignition_line else ("can" if ignition_can else "none")
 
     time_online = None
@@ -1818,44 +1791,204 @@ class PitStopServer:
       except Exception:
         pass
 
-    def make_step(num, title, status, decision_logic, action, actual_flow, failure_reasons):
+    def make_branch(num, condition, result, status, details=None, winner=False):
       return {
-        "id": num,
-        "title": title,
+        "num": num,
+        "condition": condition,
+        "result": result,
         "status": status,
-        "decision_logic": decision_logic,
-        "action": action,
-        "actual_flow": actual_flow,
-        "failure_reasons": failure_reasons,
+        "details": details or {},
+        "winner": winner,
       }
 
-    steps = [
-      make_step(1, "Panda Connection", step1_status,
-        "if pandaStates received within 5s → CHECK_IGNITION else DISCONNECT",
-        step1_action,
-        {"pandas_connected": pandas_connected, "panda_timeout": panda_timeout, "Result": "OK" if not panda_timeout else "TIMEOUT"},
-        ["If USB cable disconnected → pandaStates not received", "If panda not powered → no response", "If CAN bus severed → panda can't relay"]),
-      make_step(2, "Hardware Ignition (ignitionLine)", step2_status,
-        "if ignitionLine OR ignitionCan → IGNITION_ON else IGNITION_OFF",
-        "Check GPIO pin on panda harness (SBU1/SBU2 based on orientation)",
-        {"ignitionLine": ignition_line, "ignitionCan": ignition_can, "Combined": ignition_on, "Result": "IGNITION_ON" if ignition_on else "IGNITION_OFF"},
-        ["If harness not connected → ignitionLine=FALSE", "If car fully off → no voltage on ignition line", "If GPIO pin damaged → false reading"]),
-      make_step(3, "CAN-based Ignition (ignitionCan)", step3_status,
-        "if CAN message received within 2s → IGNITION_CAN else RESET",
-        "Check brand-specific CAN message for ignition state (resets after 2s of no CAN activity)",
-        {"ignitionCan": ignition_can, "Result": "IGNITION_CAN" if ignition_can else "RESET" if ignition_on else "N/A"},
-        ["If no CAN messages for >2s → ignitionCan resets to FALSE", "If CAN bus disconnected → no ignition messages", "If message format unknown → safety module can't decode", "Car brand not supported → no ignitionCan_hook"]),
-      make_step(4, "Startup Conditions", step4_status,
-        "if all startup_conditions AND ignition → START else BLOCK",
-        "Check thermal, space, terms, offroad mode, params",
-        {"ignition": ignition_on, "thermal_status": thermal_status, "thermal_blocking": thermal_blocking,
-         "free_space_pct": free_space_pct, "space_blocking": space_blocking,
-         "terms_accepted": terms_accepted, "terms_blocking": terms_blocking,
-         "offroad_mode": offroad_mode, "offroad_blocking": offroad_blocking,
-         "panda_connected": pandas_connected > 0, "panda_blocking": panda_blocking,
-         "startup_blocking": startup_blocking, "Result": "START" if is_started else "BLOCKED" if startup_blocking else "WAITING"},
-        ["If thermal_status >= danger → START_BLOCKED", "If free_space < 5% → START_BLOCKED", "If terms not accepted → START_BLOCKED", "If offroad_mode = TRUE → deviceState.started stays FALSE"]),
-    ]
+    branches = []
+
+    if panda_timeout:
+      branches.append(make_branch(
+        1, "if pandaStates received within 5s → CHECK_IGNITION else DISCONNECT",
+        "DISCONNECT: No pandaStates received (timeout)",
+        "failed",
+        {"pandas_connected": 0, "panda_timeout": True, "timeout_ms": 5000},
+        winner=False
+      ))
+      branches.append(make_branch(
+        2, "if ignitionLine OR ignitionCan → IGNITION_ON else IGNITION_OFF",
+        "NOT_EXECUTED (panda timeout)",
+        "skipped",
+        {}
+      ))
+      branches.append(make_branch(
+        3, "if CAN message received within 2s → IGNITION_CAN else RESET",
+        "NOT_EXECUTED (panda timeout)",
+        "skipped",
+        {}
+      ))
+      branches.append(make_branch(
+        4, "if all startup_conditions AND ignition → START else BLOCK",
+        "NOT_EXECUTED (panda timeout)",
+        "skipped",
+        {}
+      ))
+    else:
+      branches.append(make_branch(
+        1, "if pandaStates received within 5s → CHECK_IGNITION else DISCONNECT",
+        f"OK: {pandas_connected} panda(s) connected",
+        "completed",
+        {"pandas_connected": pandas_connected, "panda_timeout": False},
+        winner=False
+      ))
+
+      if ignition_line:
+        branches.append(make_branch(
+          2, "if ignitionLine OR ignitionCan → IGNITION_ON else IGNITION_OFF",
+          f"IGNITION_ON via hardware (ignitionLine=TRUE)",
+          "winner",
+          {"ignitionLine": True, "ignitionCan": ignition_can, "Combined": True},
+          winner=True
+        ))
+        branches.append(make_branch(
+          3, "if CAN message received within 2s → IGNITION_CAN else RESET",
+          "OVERRIDDEN (ignitionLine already true)",
+          "overridden",
+          {"ignitionCan": ignition_can}
+        ))
+      elif ignition_can:
+        branches.append(make_branch(
+          2, "if ignitionLine OR ignitionCan → IGNITION_ON else IGNITION_OFF",
+          f"IGNITION_ON via CAN (ignitionCan=TRUE)",
+          "winner",
+          {"ignitionLine": False, "ignitionCan": True, "Combined": True},
+          winner=True
+        ))
+        branches.append(make_branch(
+          3, "if CAN message received within 2s → IGNITION_CAN else RESET",
+          "USE_CAN: ignition via CAN message",
+          "completed",
+          {"ignitionCan": True, "ResetTimer": "not_expired"}
+        ))
+      else:
+        branches.append(make_branch(
+          2, "if ignitionLine OR ignitionCan → IGNITION_ON else IGNITION_OFF",
+          "IGNITION_OFF: no ignition detected",
+          "failed",
+          {"ignitionLine": False, "ignitionCan": ignition_can, "Combined": False},
+          winner=False
+        ))
+        branches.append(make_branch(
+          3, "if CAN message received within 2s → IGNITION_CAN else RESET",
+          "NOT_EXECUTED (no ignition from hardware)",
+          "skipped",
+          {"ignitionCan": ignition_can}
+        ))
+
+      if is_started:
+        branches.append(make_branch(
+          4, "if all startup_conditions AND ignition → START else BLOCK",
+          f"START: deviceState.started=TRUE (all conditions met)",
+          "winner",
+          {
+            "ignition_on": ignition_on,
+            "thermal_status": thermal_status,
+            "thermal_blocking": thermal_blocking,
+            "free_space_pct": free_space_pct,
+            "space_blocking": space_blocking,
+            "terms_accepted": terms_accepted,
+            "terms_blocking": terms_blocking,
+            "offroad_mode": offroad_mode,
+            "offroad_blocking": offroad_blocking,
+            "panda_connected": pandas_connected > 0,
+            "panda_blocking": panda_blocking,
+            "startup_blocking": startup_blocking,
+          },
+          winner=True
+        ))
+      elif startup_blocking:
+        branches.append(make_branch(
+          4, "if all startup_conditions AND ignition → START else BLOCK",
+          f"BLOCKED: startup conditions not met",
+          "failed",
+          {
+            "ignition_on": ignition_on,
+            "thermal_status": thermal_status,
+            "thermal_blocking": thermal_blocking,
+            "free_space_pct": free_space_pct,
+            "space_blocking": space_blocking,
+            "terms_accepted": terms_accepted,
+            "terms_blocking": terms_blocking,
+            "offroad_mode": offroad_mode,
+            "offroad_blocking": offroad_blocking,
+            "panda_connected": pandas_connected > 0,
+            "panda_blocking": panda_blocking,
+            "startup_blocking": startup_blocking,
+            "blocking_reasons": [r for r in [
+              "thermal" if thermal_blocking else None,
+              "space" if space_blocking else None,
+              "terms" if terms_blocking else None,
+              "offroad" if offroad_blocking else None,
+              "panda" if panda_blocking else None,
+            ] if r]
+          },
+          winner=False
+        ))
+      else:
+        branches.append(make_branch(
+          4, "if all startup_conditions AND ignition → START else BLOCK",
+          "WAITING: ignition off, waiting for car to start",
+          "skipped",
+          {"ignition_on": ignition_on, "startup_blocking": startup_blocking}
+        ))
+
+    steps = []
+    step_titles = {1: "Panda Connection", 2: "Hardware Ignition", 3: "CAN Ignition", 4: "Startup Conditions"}
+    step_logic = {
+      1: "if pandaStates received within 5s: CHECK_IGNITION else: DISCONNECT",
+      2: "if ignitionLine OR ignitionCan: IGNITION_ON else: IGNITION_OFF",
+      3: "if CAN message received within 2s: IGNITION_CAN else: RESET",
+      4: "if all startup_conditions AND ignition: START else: BLOCK",
+    }
+    step_actions = {
+      1: "Receive pandaStates from all connected pandas",
+      2: "Check GPIO pin on panda harness (SBU1/SBU2 based on orientation)",
+      3: "Check brand-specific CAN message for ignition state",
+      4: "Check thermal, space, terms, offroad mode, panda connection",
+    }
+
+    for branch in branches:
+      step_num = branch["num"]
+      status = branch["status"]
+      if status == "failed" and step_num == 1:
+        failure_reasons = [
+          "If USB cable disconnected → pandaStates not received",
+          "If panda not powered → no response",
+          "If CAN bus severed → panda can't relay"
+        ]
+      elif status == "failed" and step_num == 2:
+        failure_reasons = [
+          "If harness not connected → ignitionLine=FALSE",
+          "If car fully off → no voltage on ignition line",
+          "If GPIO pin damaged → false reading"
+        ]
+      elif status == "failed" and step_num == 4:
+        failure_reasons = [
+          "If thermal_status >= danger → START_BLOCKED",
+          "If free_space < 5% → START_BLOCKED",
+          "If terms not accepted → START_BLOCKED",
+          "If offroad_mode = TRUE → deviceState.started stays FALSE"
+        ]
+      else:
+        failure_reasons = [] if status != "failed" else ["Condition not met"]
+
+      steps.append({
+        "id": step_num,
+        "title": step_titles[step_num],
+        "status": status,
+        "winner": branch["winner"],
+        "condition": step_logic[step_num],
+        "action": step_actions[step_num],
+        "result": branch["result"],
+        "details": branch["details"],
+        "failure_reasons": failure_reasons,
+      })
 
     history = []
     log_entries = self._read_swaglog(limit=50, search="ignition")
@@ -1868,6 +2001,7 @@ class PitStopServer:
         pass
 
     return web.json_response({
+      "decision_tree": branches,
       "steps": steps,
       "result": {
         "status": "on" if ignition_on else ("blocked" if startup_blocking else "off"),
@@ -1875,7 +2009,7 @@ class PitStopServer:
         "device_started": is_started,
         "started_ts": started_ts,
         "time_online_s": time_online,
-        "winner_step": next((s["id"] for s in steps if s["status"] == "winner"), None),
+        "winner_branch": next((b["num"] for b in branches if b["winner"]), None),
         "source": ignition_source,
       },
       "panda_info": {
