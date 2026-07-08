@@ -50,26 +50,23 @@ function loadPage(name, force) {
   if (name !== 'dashboard') stopDashboardPoll();
   if (name !== 'models') stopModelsProgressPoll();
   if (name !== 'cockpit') stopCockpitPoll();
+  if (name !== 'maps') stopMapProgressPoll();
   if (name === 'dashboard') loadDashboard();
   else if (name === 'backup') {
     _pageLoaded[name] = true;
     loadBackups();
-    fetchAndCheckVersion();
   }
   else if (name === 'vehicle') {
     _pageLoaded[name] = true;
     loadVehicle();
-    fetchAndCheckVersion();
   }
   else if (name === 'maps') {
     _pageLoaded[name] = true;
     loadMaps();
-    fetchAndCheckVersion();
   }
   else if (name === 'cockpit') {
     _pageLoaded[name] = true;
     loadCockpit();
-    fetchAndCheckVersion();
   }
   else if (force || !_pageLoaded[name]) {
     _pageLoaded[name] = true;
@@ -77,7 +74,6 @@ function loadPage(name, force) {
     else if (name === 'models') loadModels();
     else if (name === 'params') loadParams();
     else if (name === 'logs') loadLogs();
-    fetchAndCheckVersion();
   }
 }
 
@@ -2408,12 +2404,12 @@ async function loadMaps() {
   try {
     const [status, countries, states] = await Promise.all([
       api('/api/osm/status'),
-      api('/api/osm/countries'),
-      api('/api/osm/states'),
+      mapsCountries ? Promise.resolve(mapsCountries) : api('/api/osm/countries'),
+      mapsStates ? Promise.resolve(mapsStates) : api('/api/osm/states'),
     ]);
     mapsData = status;
-    mapsCountries = countries;
-    mapsStates = states;
+    if (!mapsCountries) mapsCountries = countries;
+    if (!mapsStates) mapsStates = states;
     renderMapsUI();
     pollMapProgress();
   } catch (e) {
@@ -2638,18 +2634,19 @@ async function doDeleteMapCountry() {
 
 let mapProgressInterval = null;
 
+function stopMapProgressPoll() {
+  if (mapProgressInterval) { clearInterval(mapProgressInterval); mapProgressInterval = null; }
+}
+
 function pollMapProgress() {
-  if (mapProgressInterval) clearInterval(mapProgressInterval);
+  if (!mapsData?.downloading) return;
+  if (mapProgressInterval) return;
   mapProgressInterval = setInterval(async () => {
-    if (!mapsData?.downloading) {
-      clearInterval(mapProgressInterval);
-      mapProgressInterval = null;
-      return;
-    }
     try {
       const status = await api('/api/osm/status');
       mapsData = status;
       updateMapProgress();
+      if (!mapsData?.downloading) stopMapProgressPoll();
     } catch {}
   }, 2000);
 }

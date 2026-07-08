@@ -20,7 +20,7 @@ from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL
 from openpilot.selfdrive.controls.lib.can_api.handler import CanApiHandler
 from openpilot.pitstop.schema import generate_openapi_schema
 
-from cereal import messaging, custom
+from cereal import messaging, custom, log
 
 logger = logging.getLogger("pitstop")
 

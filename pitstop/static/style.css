@@ -1081,26 +1081,40 @@ html[data-theme="hc"] .btn-download { border-width: 2px; }
 .map-flag { font-size: 1.1rem; flex-shrink: 0; }
 
 /* ─── Map Items ─────────────────────────────────────────────────── */
+#map-country-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.4rem;
+}
+#map-state-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.35rem;
+}
 .map-item {
   cursor: pointer;
   flex-direction: row;
   align-items: center;
-  gap: 1rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius);
 }
 .map-item .model-item-info {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.3rem;
 }
 .map-item .model-item-name {
-  font-size: 0.81rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .map-item .model-item-meta {
   margin-top: 0;
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -1118,9 +1132,9 @@ html[data-theme="hc"] .btn-download { border-width: 2px; }
   flex-shrink: 0;
 }
 .map-item .model-item-actions .btn {
-  padding: 0.2rem 0.55rem;
-  font-size: 0.72rem;
-  min-height: 28px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.68rem;
+  min-height: 24px;
 }
 
 /* ─── Modal ─────────────────────────────────────────────────────── */
