@@ -1767,7 +1767,7 @@ class PitStopServer:
     thermal_blocking = False
     if ds:
       thermal_status = str(ds.thermalStatus).split('.')[-1].lower()
-      thermal_blocking = ds.thermalStatus in (log.DeviceState.ThermalStatus.danger, log.DeviceState.ThermalStatus.overheat)
+      thermal_blocking = ds.thermalStatus in (log.DeviceState.ThermalStatus.overheated, log.DeviceState.ThermalStatus.critical)
 
     free_space_pct = None
     space_blocking = False
