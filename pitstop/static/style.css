@@ -1078,21 +1078,31 @@ html[data-theme="hc"] .btn-download { border-width: 2px; }
 .model-badge.active-model { background: var(--green-dim); color: var(--green); border: 1px solid rgba(62,207,142,0.3); }
 .model-badge.downloading  { background: var(--orange-dim); color: var(--orange); }
 
-.map-flag { font-size: 1.2rem; margin-right: 0.4rem; vertical-align: middle; }
+.map-flag { font-size: 1.1rem; flex-shrink: 0; }
 
 /* ─── Map Items ─────────────────────────────────────────────────── */
 .map-item {
   cursor: pointer;
+  flex-direction: row;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
 }
 .map-item .model-item-info {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.5rem;
+}
+.map-item .model-item-name {
+  font-size: 0.81rem;
 }
 .map-item .model-item-meta {
   margin-top: 0;
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 .map-item.selected {
   border-color: var(--green);
@@ -1105,6 +1115,12 @@ html[data-theme="hc"] .btn-download { border-width: 2px; }
 .map-item .model-item-actions {
   padding-top: 0;
   border-top: none;
+  flex-shrink: 0;
+}
+.map-item .model-item-actions .btn {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  min-height: 28px;
 }
 
 /* ─── Modal ─────────────────────────────────────────────────────── */
