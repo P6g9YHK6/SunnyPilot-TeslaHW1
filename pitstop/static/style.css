@@ -1722,12 +1722,16 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 .fp-tree-branch.fp-overridden { border-left: 4px solid var(--text-muted); opacity: 0.7; }
 .fp-tree-branch.fp-failed { border-left: 4px solid var(--red); }
 .fp-tree-branch.fp-skipped { border-left: 3px solid var(--border); }
-.fp-tree-branch-header { display: flex; align-items: center; gap: 0.5rem; }
 .fp-tree-num { font-size: 0.65rem; font-weight: 700; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; background: var(--surface2); border-radius: 4px; }
 .fp-tree-icon { font-size: 0.8rem; }
 .fp-tree-condition { font-size: 0.75rem; font-family: monospace; flex: 1; }
 .fp-tree-result { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem; padding-left: 28px; }
 .fp-tree-arrow { font-size: 0.7rem; color: var(--text-muted); text-align: center; padding: 0.2rem 0; }
+
+.fp-tree-branch .fp-step-content { display: none; margin-top: 0.5rem; padding: 0.5rem 0 0 1.8rem; }
+.fp-tree-branch.fp-expanded .fp-step-content { display: block; }
+.fp-tree-branch-header { display: flex; align-items: center; gap: 0.5rem; }
+.fp-tree-branch .fp-step-status { margin-left: auto; font-size: 0.55rem; padding: 0.1rem 0.35rem; }
 
 .fp-step { margin-bottom: 0.5rem; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .fp-step.fp-winner { border-left: 4px solid var(--green); }
