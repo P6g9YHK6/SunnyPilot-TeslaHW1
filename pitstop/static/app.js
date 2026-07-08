@@ -1938,112 +1938,59 @@ function renderIgnitionDiagnostics() {
   const container = document.getElementById('ignition-workflow');
   if (!container || !ignitionDiag) return;
 
-  const { decision_tree, steps, result, panda_info, startup_conditions, history } = ignitionDiag;
+  const { decision_tree, result, panda_info, startup_conditions, history } = ignitionDiag;
 
-  let decisionTreeHtml = '<div class="fp-decision-tree">';
-  decisionTreeHtml += '<div class="fp-tree-title">DECISION TREE</div>';
-  decisionTreeHtml += '<div class="fp-tree-branches">';
+  let treeHtml = '<div class="fp-tree">';
+  treeHtml += '<div class="fp-tree-title">DECISION TREE</div>';
+  treeHtml += '<div class="fp-tree-branches">';
   decision_tree.forEach((branch, i) => {
-    const statusClass = branch.status === 'winner' ? 'fp-winner' : branch.status === 'overridden' ? 'fp-overridden' : branch.status === 'failed' ? 'fp-failed' : 'fp-skipped';
-    const statusIcon = branch.status === 'winner' ? '✓' : branch.status === 'overridden' ? '→' : branch.status === 'failed' ? '✗' : '○';
+    const cls = branch.status === 'winner' ? 'fp-winner' : branch.status === 'overridden' ? 'fp-overridden' : branch.status === 'failed' ? 'fp-failed' : 'fp-skipped';
+    const icon = branch.status === 'winner' ? '✓' : branch.status === 'overridden' ? '→' : branch.status === 'failed' ? '✗' : '○';
     const arrow = i < decision_tree.length - 1 ? '<div class="fp-tree-arrow">↓</div>' : '';
 
-    decisionTreeHtml += `
-      <div class="fp-tree-branch ${statusClass}" onclick="toggleIgnitionStep(${branch.num})">
-        <div class="fp-tree-branch-header">
-          <span class="fp-tree-num">${branch.num}</span>
-          <span class="fp-tree-icon">${statusIcon}</span>
-          <span class="fp-tree-condition">${branch.condition}</span>
-        </div>
-        <div class="fp-tree-result">${branch.result}</div>
-      </div>
-      ${arrow}
-    `;
-  });
-  decisionTreeHtml += '</div></div>';
-  document.getElementById('ignition-tree').innerHTML = decisionTreeHtml;
-
-  let stepsHtml = '<div class="fp-steps-container">';
-  steps.forEach(step => {
-    const statusClass = step.status === 'winner' ? 'fp-winner' : step.status === 'overridden' ? 'fp-overridden' : step.status === 'completed' ? 'fp-completed' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
-    const statusIcon = step.status === 'winner' ? '●' : step.status === 'overridden' ? '◌' : step.status === 'completed' ? '●' : step.status === 'failed' ? '✗' : '○';
-
     let detailsHtml = '';
-    if (step.details && Object.keys(step.details).length > 0) {
+    if (branch.details && Object.keys(branch.details).length > 0) {
       detailsHtml += '<div class="fp-step-details">';
-      for (const [key, value] of Object.entries(step.details)) {
-        const displayValue = value === null ? 'null' : value === undefined ? 'N/A' : String(value);
-        if (Array.isArray(value)) {
-          detailsHtml += `<div class="fp-detail-row"><span class="fp-detail-key">${key}:</span><span class="fp-detail-value">${value.join(', ')}</span></div>`;
-        } else {
-          detailsHtml += `<div class="fp-detail-row"><span class="fp-detail-key">${key}:</span><span class="fp-detail-value">${displayValue}</span></div>`;
-        }
+      for (const [key, value] of Object.entries(branch.details)) {
+        const displayValue = value === null ? 'null' : value === undefined ? 'N/A' : Array.isArray(value) ? value.join(', ') : String(value);
+        detailsHtml += `<div class="fp-detail-row"><span class="fp-detail-key">${key}:</span><span class="fp-detail-value">${displayValue}</span></div>`;
       }
       detailsHtml += '</div>';
     }
 
-    let failureReasonsHtml = '';
-    if (step.failure_reasons && step.failure_reasons.length > 0) {
-      failureReasonsHtml += '<div class="fp-failure-reasons">';
-      failureReasonsHtml += '<div class="fp-failure-header">Why it would FAIL:</div>';
-      step.failure_reasons.forEach(reason => {
-        failureReasonsHtml += `<div class="fp-failure-item">├─ ${reason}</div>`;
-      });
-      failureReasonsHtml += '</div>';
-    }
+    let winnerNotice = branch.status === 'winner' ? '<div class="fp-winner-notice">✓ THIS STEP DETERMINED THE FINAL STATE</div>' : '';
+    let overrideNotice = branch.status === 'overridden' ? '<div class="fp-override-notice">OVERRIDDEN — Condition not met, fallback to next step</div>' : '';
 
-    let winnerNotice = '';
-    if (step.status === 'winner') {
-      winnerNotice = `<div class="fp-winner-notice">✓ THIS STEP DETERMINED THE FINAL STATE</div>`;
-    }
-
-    let overrideNotice = '';
-    if (step.status === 'overridden') {
-      overrideNotice = `<div class="fp-override-notice">OVERRIDDEN - Condition not met, fallback to next step</div>`;
-    }
-
-    stepsHtml += `
-      <div class="fp-step ${statusClass}" id="ignition-step-${step.id}">
-        <div class="fp-step-header" onclick="toggleIgnitionStep(${step.id})">
-          <span class="fp-step-icon">${statusIcon}</span>
-          <span class="fp-step-title">STEP ${step.id}: ${step.title.toUpperCase()}</span>
-          <span class="fp-step-status">${step.status.toUpperCase()}</span>
+    treeHtml += `
+      <div class="fp-tree-branch ${cls}" onclick="toggleIgnitionStep(${branch.num})">
+        <div class="fp-tree-branch-header">
+          <span class="fp-tree-num">${branch.num}</span>
+          <span class="fp-tree-icon">${icon}</span>
+          <span class="fp-tree-condition">${branch.condition}</span>
+          <span class="fp-step-status">${branch.status.toUpperCase()}</span>
         </div>
-        <div class="fp-step-content">
-          <div class="fp-decision-logic">Decision: ${step.condition}</div>
-          <div class="fp-action">Action: ${step.action}</div>
+        <div class="fp-tree-result">${branch.result}</div>
+        <div class="fp-step-content" id="ignition-step-${branch.num}">
           ${winnerNotice}
           ${overrideNotice}
-          <div class="fp-result-line">Result: ${step.result}</div>
           ${detailsHtml}
-          ${failureReasonsHtml}
         </div>
       </div>
+      ${arrow}
     `;
   });
-  stepsHtml += '</div>';
+  treeHtml += '</div></div>';
+  document.getElementById('ignition-tree').innerHTML = treeHtml;
 
   let pandaInfoHtml = '';
   if (panda_info && panda_info.panda_states && panda_info.panda_states.length > 0) {
     const ps = panda_info.panda_states[0];
     pandaInfoHtml = `
       <div class="ignition-panda-info">
-        <div class="panda-info-row">
-          <span class="panda-info-label">Pandas Connected:</span>
-          <span class="panda-info-value">${panda_info.count}</span>
-        </div>
-        <div class="panda-info-row">
-          <span class="panda-info-label">Voltage:</span>
-          <span class="panda-info-value">${ps.voltage ? ps.voltage.toFixed(1) + 'V' : 'N/A'}</span>
-        </div>
-        <div class="panda-info-row">
-          <span class="panda-info-label">Temperature:</span>
-          <span class="panda-info-value">${ps.temperature ? ps.temperature + '°C' : 'N/A'}</span>
-        </div>
-        <div class="panda-info-row">
-          <span class="panda-info-label">Serial:</span>
-          <span class="panda-info-value">${ps.serial || 'N/A'}</span>
-        </div>
+        <div class="panda-info-row"><span class="panda-info-label">Pandas Connected:</span><span class="panda-info-value">${panda_info.count}</span></div>
+        <div class="panda-info-row"><span class="panda-info-label">Voltage:</span><span class="panda-info-value">${ps.voltage ? ps.voltage.toFixed(1) + 'V' : 'N/A'}</span></div>
+        <div class="panda-info-row"><span class="panda-info-label">Temperature:</span><span class="panda-info-value">${ps.temperature ? ps.temperature + '°C' : 'N/A'}</span></div>
+        <div class="panda-info-row"><span class="panda-info-label">Serial:</span><span class="panda-info-value">${ps.serial || 'N/A'}</span></div>
       </div>
     `;
   }
@@ -2060,11 +2007,11 @@ function renderIgnitionDiagnostics() {
     startupConditionsHtml = '<div class="ignition-startup-conditions">';
     conditions.forEach(c => {
       const val = c.val;
-      const status = c.icon === '✓' ? 'ok' : 'blocking';
+      const st = c.icon === '✓' ? 'ok' : 'blocking';
       let extra = '';
       if (val.status) extra = ` (${val.status})`;
       else if (val.free_pct !== undefined && val.free_pct !== null) extra = ` (${val.free_pct}% free)`;
-      startupConditionsHtml += `<div class="startup-condition ${status}">${c.icon} ${c.key}: ${val.blocking ? 'BLOCKING' : 'OK'}${extra}</div>`;
+      startupConditionsHtml += `<div class="startup-condition ${st}">${c.icon} ${c.key}: ${val.blocking ? 'BLOCKING' : 'OK'}${extra}</div>`;
     });
     startupConditionsHtml += '</div>';
   }
@@ -2078,16 +2025,12 @@ function renderIgnitionDiagnostics() {
     historyHtml += '</div>';
   }
 
-  const expanded = saveExpandedSteps('ignition');
-  container.innerHTML = '<div class="ignition-extras">' + pandaInfoHtml + startupConditionsHtml + historyHtml + '</div>' + stepsHtml;
-  restoreExpandedSteps('ignition', expanded);
+  container.innerHTML = '<div class="ignition-extras">' + pandaInfoHtml + startupConditionsHtml + historyHtml + '</div>';
 }
 
 function toggleIgnitionStep(stepId) {
-  const step = document.getElementById(`ignition-step-${stepId}`);
-  if (step) {
-    step.classList.toggle('fp-expanded');
-  }
+  const el = document.getElementById(`ignition-step-${stepId}`);
+  if (el) el.closest('.fp-tree-branch')?.classList.toggle('fp-expanded');
 }
 
 let ignitionDiag = null;
@@ -2107,133 +2050,110 @@ function renderFingerprintDiagnostics() {
 
   const { decision_tree, steps, result, cached_historical } = fingerprintDiag;
 
-  let decisionTreeHtml = '<div class="fp-decision-tree">';
-  decisionTreeHtml += '<div class="fp-tree-title">DECISION TREE</div>';
-  decisionTreeHtml += '<div class="fp-tree-branches">';
+  let treeHtml = '<div class="fp-tree">';
+  treeHtml += '<div class="fp-tree-title">DECISION TREE</div>';
+  treeHtml += '<div class="fp-tree-branches">';
   decision_tree.forEach((branch, i) => {
-    const statusClass = branch.status === 'winner' ? 'fp-winner' : branch.status === 'overridden' ? 'fp-overridden' : branch.status === 'failed' ? 'fp-failed' : 'fp-skipped';
-    const statusIcon = branch.status === 'winner' ? '✓' : branch.status === 'overridden' ? '→' : branch.status === 'failed' ? '✗' : '○';
-    const arrow = i < decision_tree.length - 1 ? '<div class="fp-tree-arrow">↓</div>' : '';
+    const cls = branch.status === 'winner' ? 'fp-winner' : branch.status === 'overridden' ? 'fp-overridden' : branch.status === 'failed' ? 'fp-failed' : 'fp-skipped';
+    const icon = branch.status === 'winner' ? '\u2713' : branch.status === 'overridden' ? '\u2192' : branch.status === 'failed' ? '\u2717' : '\u25CB';
+    const arrow = i < decision_tree.length - 1 ? '<div class="fp-tree-arrow">\u2193</div>' : '';
 
-    decisionTreeHtml += `
-      <div class="fp-tree-branch ${statusClass}" onclick="toggleFingerprintStep(${branch.num})">
-        <div class="fp-tree-branch-header">
-          <span class="fp-tree-num">${branch.num}</span>
-          <span class="fp-tree-icon">${statusIcon}</span>
-          <span class="fp-tree-condition">${branch.condition}</span>
-        </div>
-        <div class="fp-tree-result">${branch.result}</div>
-      </div>
-      ${arrow}
-    `;
-  });
-  decisionTreeHtml += '</div></div>';
-  document.getElementById('fp-tree').innerHTML = decisionTreeHtml;
-
-  let cachedHistoricalHtml = '';
-  if (cached_historical) {
-    cachedHistoricalHtml = `
-      <div class="fp-cached-historical">
-        <div class="fp-cached-header">⚠️ CACHED FINGERPRINT FROM PREVIOUS BOOT</div>
-        <div class="fp-cached-note">${cached_historical.note}</div>
-        <div class="fp-cached-details">
-          <div class="fp-cached-row"><span>Original source:</span><span>${cached_historical.source} (${cached_historical.source_step})</span></div>
-          <div class="fp-cached-row"><span>Fingerprint:</span><span>${cached_historical.fingerprint}</span></div>
-          <div class="fp-cached-row"><span>VIN:</span><span>${cached_historical.vin || 'N/A'}</span></div>
-          <div class="fp-cached-row"><span>ECUs:</span><span>${cached_historical.ecus}</span></div>
-          <div class="fp-cached-row"><span>Fuzzy match:</span><span>${cached_historical.fuzzy ? 'Yes' : 'No'}</span></div>
-        </div>
-      </div>
-    `;
-  }
-
-  let stepsHtml = '<div class="fp-steps-container">';
-  steps.forEach(step => {
-    const statusClass = step.status === 'winner' ? 'fp-winner' : step.status === 'overridden' ? 'fp-overridden' : step.status === 'completed' ? 'fp-completed' : step.status === 'failed' ? 'fp-failed' : 'fp-skipped';
-    const statusIcon = step.status === 'winner' ? '●' : step.status === 'overridden' ? '◌' : step.status === 'completed' ? '●' : step.status === 'failed' ? '✗' : '○';
+    const step = steps.find(s => s.id === branch.num);
+    const stepTitle = step ? step.title : '';
+    const stepAction = step ? step.action : '';
 
     let detailsHtml = '';
-    if (step.details && Object.keys(step.details).length > 0) {
+    if (branch.details && Object.keys(branch.details).length > 0) {
       detailsHtml += '<div class="fp-step-details">';
-      for (const [key, value] of Object.entries(step.details)) {
-        const displayValue = value === null ? 'null' : value === undefined ? 'N/A' : String(value);
-        detailsHtml += `<div class="fp-detail-row"><span class="fp-detail-key">${key}:</span><span class="fp-detail-value">${displayValue}</span></div>`;
+      for (const [key, value] of Object.entries(branch.details)) {
+        const displayValue = value === null ? 'null' : value === undefined ? 'N/A' : Array.isArray(value) ? value.join(', ') : String(value);
+        detailsHtml += '<div class="fp-detail-row"><span class="fp-detail-key">' + key + ':</span><span class="fp-detail-value">' + displayValue + '</span></div>';
       }
       detailsHtml += '</div>';
     }
 
     let failureReasonsHtml = '';
-    if (step.failure_reasons && step.failure_reasons.length > 0) {
+    if (step && step.failure_reasons && step.failure_reasons.length > 0) {
       failureReasonsHtml += '<div class="fp-failure-reasons">';
       failureReasonsHtml += '<div class="fp-failure-header">Why it would FAIL:</div>';
       step.failure_reasons.forEach(reason => {
-        failureReasonsHtml += `<div class="fp-failure-item">├─ ${reason}</div>`;
+        failureReasonsHtml += '<div class="fp-failure-item">\u2514\u2500 ' + reason + '</div>';
       });
       failureReasonsHtml += '</div>';
     }
 
-    let winnerNotice = '';
-    if (step.status === 'winner') {
-      winnerNotice = `<div class="fp-winner-notice">✓ THIS STEP DETERMINED THE FINAL FINGERPRINT</div>`;
-    }
+    let winnerNotice = branch.status === 'winner' ? '<div class="fp-winner-notice">\u2713 THIS STEP DETERMINED THE FINAL FINGERPRINT</div>' : '';
+    let overrideNotice = branch.status === 'overridden' ? '<div class="fp-override-notice">OVERRIDDEN \u2014 Condition not met, fallback to next step</div>' : '';
 
-    let overrideNotice = '';
-    if (step.status === 'overridden') {
-      overrideNotice = `<div class="fp-override-notice">OVERRIDDEN - Condition not met, fallback to next step</div>`;
-    }
-
-    stepsHtml += `
-      <div class="fp-step ${statusClass}" id="fp-step-${step.id}">
-        <div class="fp-step-header" onclick="toggleFingerprintStep(${step.id})">
-          <span class="fp-step-icon">${statusIcon}</span>
-          <span class="fp-step-title">STEP ${step.id}: ${step.title.toUpperCase()}</span>
-          <span class="fp-step-status">${step.status.toUpperCase()}</span>
-        </div>
-        <div class="fp-step-content">
-          <div class="fp-decision-logic">Decision: ${step.condition}</div>
-          <div class="fp-action">Action: ${step.action}</div>
-          ${winnerNotice}
-          ${overrideNotice}
-          <div class="fp-result-line">Result: ${step.result}</div>
-          ${detailsHtml}
-          ${failureReasonsHtml}
-        </div>
-      </div>
-    `;
+    treeHtml += [
+      '<div class="fp-tree-branch ' + cls + '" onclick="toggleFingerprintStep(' + branch.num + ')">',
+      '  <div class="fp-tree-branch-header">',
+      '    <span class="fp-tree-num">' + branch.num + '</span>',
+      '    <span class="fp-tree-icon">' + icon + '</span>',
+      '    <span class="fp-tree-condition">' + branch.condition + '</span>',
+      '    <span class="fp-step-status">' + branch.status.toUpperCase() + '</span>',
+      '  </div>',
+      '  <div class="fp-tree-result">' + branch.result + '</div>',
+      '  <div class="fp-step-content" id="fp-step-' + branch.num + '">',
+      (stepTitle ? '    <div class="fp-decision-logic">Step ' + branch.num + ': ' + stepTitle.toUpperCase() + '</div>' : ''),
+      (stepAction ? '    <div class="fp-action">Action: ' + stepAction + '</div>' : ''),
+      '    ' + winnerNotice,
+      '    ' + overrideNotice,
+      '    ' + detailsHtml,
+      '    ' + failureReasonsHtml,
+      '  </div>',
+      '</div>',
+      arrow,
+    ].filter(Boolean).join('\n');
   });
-  stepsHtml += '</div>';
+  treeHtml += '</div></div>';
+  document.getElementById('fp-tree').innerHTML = treeHtml;
+
+  let cachedHistoricalHtml = '';
+  if (cached_historical) {
+    cachedHistoricalHtml = [
+      '<div class="fp-cached-historical">',
+      '  <div class="fp-cached-header">\u26A0\uFE0F CACHED FINGERPRINT FROM PREVIOUS BOOT</div>',
+      '  <div class="fp-cached-note">' + cached_historical.note + '</div>',
+      '  <div class="fp-cached-details">',
+      '    <div class="fp-cached-row"><span>Original source:</span><span>' + cached_historical.source + ' (' + cached_historical.source_step + ')</span></div>',
+      '    <div class="fp-cached-row"><span>Fingerprint:</span><span>' + cached_historical.fingerprint + '</span></div>',
+      '    <div class="fp-cached-row"><span>VIN:</span><span>' + (cached_historical.vin || 'N/A') + '</span></div>',
+      '    <div class="fp-cached-row"><span>ECUs:</span><span>' + cached_historical.ecus + '</span></div>',
+      '    <div class="fp-cached-row"><span>Fuzzy match:</span><span>' + (cached_historical.fuzzy ? 'Yes' : 'No') + '</span></div>',
+      '  </div>',
+      '</div>'
+    ].join('\n');
+  }
 
   let resultHtml = '';
   if (result) {
     const isSuccess = result.status !== 'mock';
-    const resultIcon = isSuccess ? '✓' : '✗';
+    const resultIcon = isSuccess ? '\u2713' : '\u2717';
     const resultClass = isSuccess ? 'fp-success' : 'fp-failed';
-    resultHtml = `
-      <div class="fp-result ${resultClass}">
-        <div class="fp-result-header">
-          <span class="fp-result-icon">${resultIcon}</span>
-          <span class="fp-result-title">${result.status === 'mock' ? 'MOCK FALLBACK' : 'FINGERPRINTED'}</span>
-          ${result.winner_branch ? `<span class="fp-winner-badge">Step ${result.winner_branch} won</span>` : ''}
-        </div>
-        <div class="fp-result-summary">
-          ${result.fingerprint ? `${result.fingerprint}` : 'No fingerprint'} ${result.source ? `• Source: ${result.source}` : ''} ${result.is_fuzzy_match !== null ? `• Fuzzy: ${result.is_fuzzy_match ? 'Yes' : 'No'}` : ''}
-        </div>
-        ${result.vin ? `<div class="fp-result-vin">VIN: ${result.vin}</div>` : ''}
-        ${fingerprintDiag.platform_info?.dbc_names ? `<div class="fp-result-dbc">DBC: ${fingerprintDiag.platform_info.dbc_names.join(', ')}</div>` : ''}
-      </div>
-    `;
+    resultHtml = [
+      '<div class="fp-result ' + resultClass + '">',
+      '  <div class="fp-result-header">',
+      '    <span class="fp-result-icon">' + resultIcon + '</span>',
+      '    <span class="fp-result-title">' + (result.status === 'mock' ? 'MOCK FALLBACK' : 'FINGERPRINTED') + '</span>',
+      (result.winner_branch ? '    <span class="fp-winner-badge">Step ' + result.winner_branch + ' won</span>' : ''),
+      '  </div>',
+      '  <div class="fp-result-summary">',
+      '    ' + (result.fingerprint || 'No fingerprint') + (result.source ? ' \u2022 Source: ' + result.source : '') + (result.is_fuzzy_match !== null ? ' \u2022 Fuzzy: ' + (result.is_fuzzy_match ? 'Yes' : 'No') : ''),
+      '  </div>',
+      (result.vin ? '  <div class="fp-result-vin">VIN: ' + result.vin + '</div>' : ''),
+      (fingerprintDiag.platform_info && fingerprintDiag.platform_info.dbc_names ? '  <div class="fp-result-dbc">DBC: ' + fingerprintDiag.platform_info.dbc_names.join(', ') + '</div>' : ''),
+      '</div>'
+    ].filter(Boolean).join('\n');
   }
 
   const expanded = saveExpandedSteps('fp');
-  container.innerHTML = cachedHistoricalHtml + stepsHtml + resultHtml;
+  container.innerHTML = cachedHistoricalHtml + resultHtml;
   restoreExpandedSteps('fp', expanded);
 }
-
 function toggleFingerprintStep(stepId) {
-  const step = document.getElementById(`fp-step-${stepId}`);
-  if (step) {
-    step.classList.toggle('fp-expanded');
-  }
+  const el = document.getElementById(`fp-step-${stepId}`);
+  if (el) el.closest('.fp-tree-branch')?.classList.toggle('fp-expanded');
 }
 
 function renderVehicleUI() {
