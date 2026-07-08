@@ -1925,6 +1925,19 @@ async function loadIgnitionDiagnostics() {
   }
 }
 
+function saveExpandedSteps(prefix) {
+  return [...document.querySelectorAll(`[id^="${prefix}-step-"].fp-expanded`)].map(
+    el => el.id.replace(`${prefix}-step-`, '')
+  );
+}
+
+function restoreExpandedSteps(prefix, ids) {
+  ids.forEach(id => {
+    const el = document.getElementById(`${prefix}-step-${id}`);
+    if (el) el.classList.add('fp-expanded');
+  });
+}
+
 function renderIgnitionDiagnostics() {
   const container = document.getElementById('ignition-workflow');
   if (!container || !ignitionDiag) return;
@@ -2069,7 +2082,9 @@ function renderIgnitionDiagnostics() {
     historyHtml += '</div>';
   }
 
+  const expanded = saveExpandedSteps('ignition');
   container.innerHTML = '<div class="ignition-extras">' + pandaInfoHtml + startupConditionsHtml + historyHtml + '</div>' + stepsHtml;
+  restoreExpandedSteps('ignition', expanded);
 }
 
 function toggleIgnitionStep(stepId) {
@@ -2213,7 +2228,9 @@ function renderFingerprintDiagnostics() {
     `;
   }
 
+  const expanded = saveExpandedSteps('fp');
   container.innerHTML = cachedHistoricalHtml + stepsHtml + resultHtml;
+  restoreExpandedSteps('fp', expanded);
 }
 
 function toggleFingerprintStep(stepId) {
