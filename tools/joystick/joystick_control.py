@@ -43,42 +43,46 @@ class Keyboard:
 
 class Joystick:
   def __init__(self):
-    # This class supports a PlayStation 5 DualSense controller on the comma 3X
-    # TODO: find a way to get this from API or detect gamepad/PC, perhaps "inputs" doesn't support it
-    self.cancel_button = 'BTN_NORTH'  # BTN_NORTH=X/triangle
+    self.cancel_button = 'BTN_NORTH'
+    self._last_rescan = 0.0
+    self._detect_mapping()
+
+  def _detect_mapping(self):
+    _name = ''
+    if input_devices.gamepads:
+      try:
+        _name = input_devices.gamepads[0].name
+      except Exception:
+        pass
+
     if HARDWARE.get_device_type() == 'pc':
       accel_axis = 'ABS_Z'
       steer_axis = 'ABS_RX'
-      # TODO: once the longcontrol API is finalized, we can replace this with outputting gas/brake and steering
-      self.flip_map = {'ABS_RZ': accel_axis}
+      flip_map = {'ABS_RZ': accel_axis}
       accel_range = (0., 255.)
       steer_range = (0., 255.)
+    elif 'Xbox' in _name or 'X-Box' in _name:
+      accel_axis = 'ABS_Z'
+      steer_axis = 'ABS_RX'
+      flip_map = {'ABS_RZ': accel_axis}
+      accel_range = (-255., 255.)
+      steer_range = (-32768., 32767.)
     else:
-      try:
-        _name = input_devices.gamepads[0].name if input_devices.gamepads else ''
-      except Exception:
-        _name = ''
-      if 'Xbox' in _name or 'X-Box' in _name:
-        # Mirror PC flip convention: LT direct (brake), RT flipped negative (throttle).
-        # Pre-seed combined range [-255, 255] so neutral (0) = 0 accel at startup.
-        accel_axis = 'ABS_Z'
-        steer_axis = 'ABS_RX'
-        self.flip_map = {'ABS_RZ': accel_axis}
-        accel_range = (-255., 255.)
-        steer_range = (-32768., 32767.)
-      else:
-        accel_axis = 'ABS_RX'
-        steer_axis = 'ABS_Z'
-        self.flip_map = {'ABS_RY': accel_axis}
-        accel_range = (0., 255.)
-        steer_range = (0., 255.)
+      accel_axis = 'ABS_RX'
+      steer_axis = 'ABS_Z'
+      flip_map = {'ABS_RY': accel_axis}
+      accel_range = (0., 255.)
+      steer_range = (0., 255.)
 
+    self.flip_map = flip_map
     self.min_axis_value = {accel_axis: accel_range[0], steer_axis: steer_range[0]}
     self.max_axis_value = {accel_axis: accel_range[1], steer_axis: steer_range[1]}
-    self.axes_values = {accel_axis: 0., steer_axis: 0.}
     self.axes_order = [accel_axis, steer_axis]
-    self.cancel = False
-    self._last_rescan = 0.0
+
+    new_values = {}
+    for ax in self.axes_order:
+      new_values[ax] = getattr(self, 'axes_values', {}).get(ax, 0.)
+    self.axes_values = new_values
 
   def update(self):
     try:
@@ -91,6 +95,7 @@ class Joystick:
           dm = DeviceManager()
           if dm.gamepads:
             input_devices.gamepads[:] = dm.gamepads
+            self._detect_mapping()
         except Exception:
           pass
         self._last_rescan = now
