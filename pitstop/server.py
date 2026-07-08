@@ -104,6 +104,7 @@ class PitStopServer:
     self._gps_location = None
     self._calibration = None
     self._speed_data = {}
+    self._cockpit_data = {}
     self._is_engaged = False
     self._static_version = self._hash_static()
     # Verify pitstop data directory is accessible
@@ -206,6 +207,76 @@ class PitStopServer:
             'roll': lc.rpyCalib[1] if len(lc.rpyCalib) > 1 else None,
             'yaw': lc.rpyCalib[2] if len(lc.rpyCalib) > 2 else None,
           }
+        # cockpit data
+        try:
+          lp = sm['liveParameters'] if sm.seen['liveParameters'] else None
+          pose = sm['livePose'] if sm.seen['livePose'] else None
+          ltp = sm['liveTorqueParameters'] if sm.seen['liveTorqueParameters'] else None
+          ld = sm['liveDelay'] if sm.seen['liveDelay'] else None
+          dms = sm['driverMonitoringState'] if sm.seen['driverMonitoringState'] else None
+          sd = sm['selfdriveState'] if sm.seen['selfdriveState'] else None
+          cs = sm['controlsState'].deprecated if sm.seen['controlsState'] else None
+          self._cockpit_data = {
+            "liveParameters": {
+              "angleOffsetDeg": lp.angleOffsetDeg if lp is not None else None,
+              "stiffnessFactor": lp.stiffnessFactor if lp is not None else None,
+              "steerRatio": lp.steerRatio if lp is not None else None,
+              "roll": lp.roll if lp is not None else None,
+              "posenetSpeed": lp.posenetSpeed if lp is not None else None,
+              "sensorValid": lp.sensorValid if lp is not None else None,
+            },
+            "livePose": {
+              "velocityDevice": {
+                "x": pose.velocityDevice[0] if pose is not None and len(pose.velocityDevice) > 0 else None,
+                "y": pose.velocityDevice[1] if pose is not None and len(pose.velocityDevice) > 1 else None,
+                "z": pose.velocityDevice[2] if pose is not None and len(pose.velocityDevice) > 2 else None,
+              },
+              "accelerationDevice": {
+                "x": pose.accelerationDevice[0] if pose is not None and len(pose.accelerationDevice) > 0 else None,
+                "y": pose.accelerationDevice[1] if pose is not None and len(pose.accelerationDevice) > 1 else None,
+                "z": pose.accelerationDevice[2] if pose is not None and len(pose.accelerationDevice) > 2 else None,
+              },
+              "accelerationCamera": {
+                "x": pose.accelerationCamera[0] if pose is not None and len(pose.accelerationCamera) > 0 else None,
+                "y": pose.accelerationCamera[1] if pose is not None and len(pose.accelerationCamera) > 1 else None,
+                "z": pose.accelerationCamera[2] if pose is not None and len(pose.accelerationCamera) > 2 else None,
+              },
+            },
+            "liveTorqueParameters": {
+              "latAccelFactorFiltered": ltp.latAccelFactorFiltered if ltp is not None else None,
+              "frictionCoefficientFiltered": ltp.frictionCoefficientFiltered if ltp is not None else None,
+            },
+            "liveDelay": {
+              "lateralDelay": ld.lateralDelay if ld is not None else None,
+              "status": str(ld.status).split('.')[-1] if ld is not None else None,
+            },
+            "driverMonitoringState": {
+              "awarenessPercent": dms.awarenessPercent if dms is not None else None,
+              "faceDetected": dms.faceDetected if dms is not None else None,
+              "isDistracted": dms.isDistracted if dms is not None else None,
+              "distractedTypes": [str(dt).split('.')[-1] for dt in dms.distractedTypes] if dms is not None else None,
+              "alertStatus": str(dms.alertStatus).split('.')[-1] if dms is not None else None,
+              "alertType": str(dms.alertType).split('.')[-1] if dms is not None else None,
+            },
+            "selfdriveState": {
+              "enabled": sd.enabled if sd is not None else None,
+              "active": sd.active if sd is not None else None,
+              "state": str(sd.state).split('.')[-1] if sd is not None else None,
+              "experimentalMode": sd.experimentalMode if sd is not None else None,
+            },
+            "calibration": self._calibration,
+            "ego": {
+              "speed": cs.vEgo if cs is not None else None,
+              "aEgo": cs.aEgo if cs is not None else None,
+            },
+            "cruise": {
+              "setSpeed": cs.vCruise if cs is not None else None,
+              "clusterSpeed": cs.vCruiseCluster if cs is not None else None,
+            },
+          }
+        except Exception:
+          logger.warning("cockpit data error", exc_info=True)
+
         # speed data
         try:
           sds = sm['controlsState'].deprecated if sm.seen['controlsState'] else None
@@ -469,6 +540,11 @@ class PitStopServer:
     if self._speed_data is None:
       return web.json_response({"error": "no speed data"}, status=503)
     return web.json_response(self._speed_data)
+
+  async def handle_cockpit(self, request):
+    if self._cockpit_data is None:
+      return web.json_response({"error": "no cockpit data"}, status=503)
+    return web.json_response(self._cockpit_data)
 
   # ---- System ----
 
@@ -1637,6 +1713,186 @@ class PitStopServer:
         pass
     return {}
 
+  async def handle_ignition_diagnostics(self, request):
+    ds = self._device_state
+
+    ignition_on = False
+    ignition_line = False
+    ignition_can = False
+    pandas_connected = 0
+    panda_timeout = False
+    started_ts = None
+    started = False
+
+    if self._diag is not None:
+      for proc in self._diag.get('processes', []):
+        if 'pandad' in proc.get('name', '').lower():
+          started_ts = ds.startedTs if ds else None
+
+    panda_states = []
+    try:
+      sm = messaging.SubMaster(['pandaStates'])
+      sm.update(0)
+      if sm.seen['pandaStates']:
+        for ps in sm['pandaStates']:
+          if ps.pandaType != log.PandaState.PandaType.unknown:
+            pandas_connected += 1
+            ps_dict = {
+              'ignition_line': bool(ps.ignitionLine),
+              'ignition_can': bool(ps.ignitionCan),
+              'panda_type': str(ps.pandaType).split('.')[-1] if ps.pandaType else None,
+              'serial': str(ps.serial) if ps.serial else None,
+              'voltage': ps.voltage,
+              'temperature': ps.ambientTemp,
+              'faults': list(ps.faults) if ps.faults else [],
+            }
+            panda_states.append(ps_dict)
+            if ps.ignitionLine or ps.ignitionCan:
+              ignition_on = True
+            if ps.ignitionLine:
+              ignition_line = True
+            if ps.ignitionCan:
+              ignition_can = True
+      else:
+        panda_timeout = True
+    except Exception:
+      panda_timeout = True
+
+    thermal_status = "unknown"
+    thermal_blocking = False
+    if ds:
+      thermal_status = str(ds.thermalStatus).split('.')[-1].lower()
+      thermal_blocking = ds.thermalStatus in (log.DeviceState.ThermalStatus.danger, log.DeviceState.ThermalStatus.overheat)
+
+    free_space_pct = None
+    space_blocking = False
+    if ds:
+      free_space_pct = ds.freeSpacePercent
+      space_blocking = free_space_pct < 5 if free_space_pct else False
+
+    terms_accepted = self.params.get_bool("TermsAccepted")
+    terms_blocking = not terms_accepted
+
+    offroad_mode = self.params.get_bool("OffroadMode")
+    offroad_blocking = offroad_mode
+
+    panda_blocking = pandas_connected == 0
+
+    startup_blocking = thermal_blocking or space_blocking or terms_blocking or offroad_mode or panda_blocking
+
+    is_started = started_ts is not None and not offroad_mode and ignition_on and not startup_blocking
+
+    step1_status = "failed" if panda_timeout else "completed"
+    step1_action = "Receive pandaStates from all connected pandas" if not panda_timeout else "TIMEOUT: No pandaStates received"
+
+    step2_status = "completed"
+    if not ignition_on:
+      step2_status = "failed"
+    elif ignition_line:
+      step2_status = "winner"
+
+    step3_status = "completed"
+    if not ignition_on:
+      step3_status = "failed"
+    elif ignition_can and not ignition_line:
+      step3_status = "winner"
+    elif ignition_line:
+      step3_status = "overridden"
+    else:
+      step3_status = "skipped"
+
+    step4_status = "failed"
+    if startup_blocking:
+      step4_status = "failed"
+    elif is_started:
+      step4_status = "winner"
+    elif ignition_on:
+      step4_status = "completed"
+
+    ignition_source = "hardware" if ignition_line else ("can" if ignition_can else "none")
+
+    time_online = None
+    if started_ts:
+      try:
+        time_online = int(time.time() - started_ts)
+      except Exception:
+        pass
+
+    def make_step(num, title, status, decision_logic, action, actual_flow, failure_reasons):
+      return {
+        "id": num,
+        "title": title,
+        "status": status,
+        "decision_logic": decision_logic,
+        "action": action,
+        "actual_flow": actual_flow,
+        "failure_reasons": failure_reasons,
+      }
+
+    steps = [
+      make_step(1, "Panda Connection", step1_status,
+        "if pandaStates received within 5s → CHECK_IGNITION else DISCONNECT",
+        step1_action,
+        {"pandas_connected": pandas_connected, "panda_timeout": panda_timeout, "Result": "OK" if not panda_timeout else "TIMEOUT"},
+        ["If USB cable disconnected → pandaStates not received", "If panda not powered → no response", "If CAN bus severed → panda can't relay"]),
+      make_step(2, "Hardware Ignition (ignitionLine)", step2_status,
+        "if ignitionLine OR ignitionCan → IGNITION_ON else IGNITION_OFF",
+        "Check GPIO pin on panda harness (SBU1/SBU2 based on orientation)",
+        {"ignitionLine": ignition_line, "ignitionCan": ignition_can, "Combined": ignition_on, "Result": "IGNITION_ON" if ignition_on else "IGNITION_OFF"},
+        ["If harness not connected → ignitionLine=FALSE", "If car fully off → no voltage on ignition line", "If GPIO pin damaged → false reading"]),
+      make_step(3, "CAN-based Ignition (ignitionCan)", step3_status,
+        "if CAN message received within 2s → IGNITION_CAN else RESET",
+        "Check brand-specific CAN message for ignition state (resets after 2s of no CAN activity)",
+        {"ignitionCan": ignition_can, "Result": "IGNITION_CAN" if ignition_can else "RESET" if ignition_on else "N/A"},
+        ["If no CAN messages for >2s → ignitionCan resets to FALSE", "If CAN bus disconnected → no ignition messages", "If message format unknown → safety module can't decode", "Car brand not supported → no ignitionCan_hook"]),
+      make_step(4, "Startup Conditions", step4_status,
+        "if all startup_conditions AND ignition → START else BLOCK",
+        "Check thermal, space, terms, offroad mode, params",
+        {"ignition": ignition_on, "thermal_status": thermal_status, "thermal_blocking": thermal_blocking,
+         "free_space_pct": free_space_pct, "space_blocking": space_blocking,
+         "terms_accepted": terms_accepted, "terms_blocking": terms_blocking,
+         "offroad_mode": offroad_mode, "offroad_blocking": offroad_blocking,
+         "panda_connected": pandas_connected > 0, "panda_blocking": panda_blocking,
+         "startup_blocking": startup_blocking, "Result": "START" if is_started else "BLOCKED" if startup_blocking else "WAITING"},
+        ["If thermal_status >= danger → START_BLOCKED", "If free_space < 5% → START_BLOCKED", "If terms not accepted → START_BLOCKED", "If offroad_mode = TRUE → deviceState.started stays FALSE"]),
+    ]
+
+    history = []
+    log_entries = self._read_swaglog(limit=50, search="ignition")
+    for entry in log_entries:
+      try:
+        msg_raw = entry.get("msg", "")
+        if isinstance(msg_raw, str) and "ignition" in msg_raw.lower():
+          history.append({"ts": entry.get("ts"), "msg": msg_raw[:100]})
+      except Exception:
+        pass
+
+    return web.json_response({
+      "steps": steps,
+      "result": {
+        "status": "on" if ignition_on else ("blocked" if startup_blocking else "off"),
+        "ignition_on": ignition_on,
+        "device_started": is_started,
+        "started_ts": started_ts,
+        "time_online_s": time_online,
+        "winner_step": next((s["id"] for s in steps if s["status"] == "winner"), None),
+        "source": ignition_source,
+      },
+      "panda_info": {
+        "connected": pandas_connected > 0,
+        "count": pandas_connected,
+        "panda_states": panda_states,
+      },
+      "startup_conditions": {
+        "thermal": {"status": thermal_status, "blocking": thermal_blocking},
+        "space": {"free_pct": free_space_pct, "blocking": space_blocking},
+        "terms": {"accepted": terms_accepted, "blocking": terms_blocking},
+        "offroad": {"active": offroad_mode, "blocking": offroad_blocking},
+        "panda": {"connected": pandas_connected > 0, "blocking": panda_blocking},
+      },
+      "history": history[:10],
+    })
+
   async def handle_fingerprint_diagnostics(self, request):
     platform_bundle_raw = self.params.get("CarPlatformBundle")
     platform_bundle = None
@@ -1903,6 +2159,7 @@ class PitStopServer:
     app.router.add_get("/api/sunnylink", self.handle_sunnylink)
     app.router.add_get("/api/storage", self.handle_storage)
     app.router.add_get("/api/speeds", self.handle_speeds)
+    app.router.add_get("/api/cockpit", self.handle_cockpit)
 
     # Params
     app.router.add_get("/api/params", self.handle_params_list)
@@ -1973,6 +2230,7 @@ class PitStopServer:
     app.router.add_post("/api/vehicle/select", self.handle_vehicle_select)
     app.router.add_delete("/api/vehicle/select", self.handle_vehicle_select)
     app.router.add_get("/api/vehicle/fingerprint_diagnostics", self.handle_fingerprint_diagnostics)
+    app.router.add_get("/api/vehicle/ignition_diagnostics", self.handle_ignition_diagnostics)
 
     # OpenAPI / Swagger
     app.router.add_get("/openapi.json", self.handle_openapi)

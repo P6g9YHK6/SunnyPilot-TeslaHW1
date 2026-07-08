@@ -12,6 +12,7 @@
     <button class="nav-hamburger" id="nav-hamburger" onclick="toggleNavMenu()" aria-label="Menu">&#9776;</button>
     <div class="nav-links" id="nav-links">
       <button class="nav-btn" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="cockpit">Cockpit</button>
       <button class="nav-btn" data-page="settings">Settings</button>
       <button class="nav-btn" data-page="models">Models</button>
       <button class="nav-btn" data-page="vehicle">Vehicle</button>
@@ -84,14 +85,6 @@
         </div>
         <div class="card" id="card-sunnylink">
           <h3>Sunnylink</h3>
-          <div class="card-body">Loading...</div>
-        </div>
-        <div class="card" id="card-speeds">
-          <h3>Speeds</h3>
-          <div class="card-body">Loading...</div>
-        </div>
-        <div class="card" id="card-speed-limits">
-          <h3>Speed Limits</h3>
           <div class="card-body">Loading...</div>
         </div>
         <div class="card card-wide" id="card-diag">
@@ -191,6 +184,36 @@
         </div>
         <div class="map-last-checked">
           <span>Last checked: </span><span id="map-last-checked">Never</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-cockpit" class="page">
+      <h1>Cockpit</h1>
+      <div class="cards">
+        <div class="card" id="card-cockpit-speeds">
+          <h3>Speeds</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-speed-limits">
+          <h3>Speed Limits</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-params">
+          <h3>Live Parameters</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-pose">
+          <h3>Pose / Velocity</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-driver">
+          <h3>Driver</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-state">
+          <h3>System State</h3>
+          <div class="card-body">Loading...</div>
         </div>
       </div>
     </div>
