@@ -2459,6 +2459,12 @@ let selectedState = '';
 let mapCountriesSorted = [];
 let mapStatesSorted = [];
 
+function countryFlag(code) {
+  if (!code || code.length !== 2) return '';
+  const OFFSET = 0x1F1E6 - 65;
+  return String.fromCodePoint(code.charCodeAt(0) + OFFSET, code.charCodeAt(1) + OFFSET);
+}
+
 function renderCountryList() {
   const container = document.getElementById('map-country-list');
   if (!container) return;
@@ -2479,9 +2485,10 @@ function renderCountryList() {
 
   container.innerHTML = filtered.map(c => {
     const isSelected = selectedCountry === c.code;
+    const flag = countryFlag(c.code);
     return `<div class="model-item map-item ${isSelected ? 'selected' : ''}" onclick="selectMapCountry('${c.code}')">
       <div class="model-item-info">
-        <div class="model-item-name">${c.full_name}</div>
+        <div class="model-item-name"><span class="map-flag">${flag}</span> ${c.full_name}</div>
         <div class="model-item-meta">${c.code}</div>
       </div>
       <div class="model-item-actions">
