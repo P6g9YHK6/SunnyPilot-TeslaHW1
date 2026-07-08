@@ -1727,13 +1727,12 @@ class PitStopServer:
     ignition_can = False
     pandas_connected = 0
     panda_timeout = False
-    started_ts = None
     started = False
 
     if self._diag is not None:
       for proc in self._diag.get('processes', []):
         if 'pandad' in proc.get('name', '').lower():
-          started_ts = ds.startedTs if ds else None
+          started = ds.started if ds else False
 
     panda_states = []
     try:
@@ -1786,14 +1785,14 @@ class PitStopServer:
 
     startup_blocking = thermal_blocking or space_blocking or terms_blocking or offroad_mode or panda_blocking
 
-    is_started = started_ts is not None and not offroad_mode and ignition_on and not startup_blocking
+    is_started = started and not offroad_mode and ignition_on and not startup_blocking
 
     ignition_source = "hardware" if ignition_line else ("can" if ignition_can else "none")
 
     time_online = None
-    if started_ts:
+    if started and ds and ds.startedMonoTime:
       try:
-        time_online = int(time.time() - started_ts)
+        time_online = int(time.monotonic() - (ds.startedMonoTime / 1e9))
       except Exception:
         pass
 
