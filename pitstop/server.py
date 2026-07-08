@@ -1584,7 +1584,7 @@ class PitStopServer:
       self.params.remove("OsmStateTitle")
 
     if country:
-      self.params.put("OsmLocal", "1")
+      self.params.put_bool("OsmLocal", True)
       self.params.put("OsmLocationName", country)
     else:
       self.params.remove("OsmLocationName")
