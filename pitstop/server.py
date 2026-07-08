@@ -227,19 +227,19 @@ class PitStopServer:
             },
             "livePose": {
               "velocityDevice": {
-                "x": pose.velocityDevice[0] if pose is not None and len(pose.velocityDevice) > 0 else None,
-                "y": pose.velocityDevice[1] if pose is not None and len(pose.velocityDevice) > 1 else None,
-                "z": pose.velocityDevice[2] if pose is not None and len(pose.velocityDevice) > 2 else None,
+                "x": pose.velocityDevice.x if pose is not None else None,
+                "y": pose.velocityDevice.y if pose is not None else None,
+                "z": pose.velocityDevice.z if pose is not None else None,
               },
               "accelerationDevice": {
-                "x": pose.accelerationDevice[0] if pose is not None and len(pose.accelerationDevice) > 0 else None,
-                "y": pose.accelerationDevice[1] if pose is not None and len(pose.accelerationDevice) > 1 else None,
-                "z": pose.accelerationDevice[2] if pose is not None and len(pose.accelerationDevice) > 2 else None,
+                "x": pose.accelerationDevice.x if pose is not None else None,
+                "y": pose.accelerationDevice.y if pose is not None else None,
+                "z": pose.accelerationDevice.z if pose is not None else None,
               },
               "accelerationCamera": {
-                "x": pose.accelerationCamera[0] if pose is not None and len(pose.accelerationCamera) > 0 else None,
-                "y": pose.accelerationCamera[1] if pose is not None and len(pose.accelerationCamera) > 1 else None,
-                "z": pose.accelerationCamera[2] if pose is not None and len(pose.accelerationCamera) > 2 else None,
+                "x": pose.accelerationCamera.x if pose is not None else None,
+                "y": pose.accelerationCamera.y if pose is not None else None,
+                "z": pose.accelerationCamera.z if pose is not None else None,
               },
             },
             "liveTorqueParameters": {
@@ -281,6 +281,7 @@ class PitStopServer:
         try:
           sds = sm['controlsState'].deprecated if sm.seen['controlsState'] else None
           lp = sm['longitudinalPlan'] if sm.seen['longitudinalPlan'] else None
+          lp_depr = lp.deprecated if lp is not None else None
           radar = sm['radarState'] if sm.seen['radarState'] else None
           lpsp = sm['longitudinalPlanSP'] if sm.seen['longitudinalPlanSP'] else None
           mapsp = sm['liveMapDataSP'] if sm.seen['liveMapDataSP'] else None
@@ -320,10 +321,10 @@ class PitStopServer:
             },
             "lead": lead,
             "plan": {
-              "vTarget": lp.vTarget if lp is not None else None,
-              "vCruise": lp.vCruise if lp is not None else None,
-              "vMax": lp.vMax if lp is not None else None,
-              "vCurvature": lp.vCurvature if lp is not None else None,
+              "vTarget": lp_depr.vTarget if lp_depr is not None else None,
+              "vCruise": lp_depr.vCruise if lp_depr is not None else None,
+              "vMax": lp_depr.vMax if lp_depr is not None else None,
+              "vCurvature": lp_depr.vCurvature if lp_depr is not None else None,
               "aTarget": lp.aTarget if lp is not None else None,
             },
             "planSP": plan_sp,
