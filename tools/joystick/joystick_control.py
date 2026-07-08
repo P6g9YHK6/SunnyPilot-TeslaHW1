@@ -13,6 +13,7 @@ from openpilot.system.hardware import HARDWARE
 from openpilot.tools.lib.kbhit import KBHit
 
 EXPO = 0.7
+STEER_DEADZONE = 0.05  # 5% dead zone for steering (finer control near center)
 
 
 class Keyboard:
@@ -117,7 +118,8 @@ class Joystick:
       self.min_axis_value[event[0]] = min(event[1], self.min_axis_value[event[0]])
 
       norm = -float(np.interp(event[1], [self.min_axis_value[event[0]], self.max_axis_value[event[0]]], [-1., 1.]))
-      norm = norm if abs(norm) > 0.10 else 0.  # center can be noisy, deadzone of 10%
+      deadzone = STEER_DEADZONE if event[0] == self.axes_order[1] else 0.10
+      norm = norm if abs(norm) > deadzone else 0.
       self.axes_values[event[0]] = EXPO * norm ** 3 + (1 - EXPO) * norm  # less action near center for fine control
     else:
       return False
