@@ -1942,163 +1942,174 @@ class PitStopServer:
     is_mock = fingerprint == "MOCK" or (fingerprint is None and source is None)
     skip_fw_query = os.environ.get("SKIP_FW_QUERY", False)
 
-    step1_used = platform_bundle is not None
-    step1_winner = source == "fixed"
+    is_cached = has_cache and firmware_query_done
+    is_fixed = platform_bundle is not None
 
-    step2_used = has_cache
-    step2_winner = False
-
-    step3_used = not step1_used and (log_data.get("cached") == True or (not has_cache and firmware_query_done))
-    step3_candidates = None
-    step3_exact = True
-    try:
-      if log_data.get("ecu_count") is not None:
-        step3_used = True
-    except Exception:
-      pass
-    step3_winner = source == "fw"
-
-    step4_used = not step1_used and not step3_winner
-    step4_winner = source == "can"
-    step4_overridden = step3_winner or step1_winner
-
-    is_mock_fallback = fingerprint == "MOCK" or (fingerprint is None and source is None)
-
-    def make_step(num, title, used, winner, overridden_by, status_override=None,
-                  decision_logic="", action="", actual_flow=None, failure_reasons=None,
-                  debug=None):
-      if status_override:
-        status = status_override
-      elif is_mock_fallback:
-        status = "failed" if used else "skipped"
-      elif used and winner:
-        status = "winner"
-      elif used and overridden_by:
-        status = "overridden"
-      elif used:
-        status = "completed"
-      else:
-        status = "skipped"
-
+    def make_branch(num, condition, result, status, details=None, winner=False):
       return {
-        "id": num,
-        "title": title,
+        "num": num,
+        "condition": condition,
+        "result": result,
         "status": status,
+        "details": details or {},
         "winner": winner,
-        "overridden_by": overridden_by,
-        "decision_logic": decision_logic,
-        "action": action,
-        "actual_flow": actual_flow or {},
-        "failure_reasons": failure_reasons or [],
-        "debug": debug or {},
       }
 
-    steps = [
-      make_step(
-        1, "Manual Selection",
-        used=step1_used,
-        winner=step1_winner,
-        overridden_by=None,
-        decision_logic="if fixed_fingerprint: USE_FIXED else continue",
-        action="Check if user selected a platform manually" if step1_used else "No manual selection",
-        actual_flow={
-          "CarPlatformBundle": platform_bundle.get("platform") if platform_bundle else None,
-          "Result": "USE_FIXED" if step1_used else "SKIP (no manual selection)",
-        },
-        failure_reasons=[
-          "If CarPlatformBundle is empty/null → would continue to Step 2",
-          "If platform invalid → would fail to load car interface",
-        ],
-        debug={"CarPlatformBundle": platform_bundle},
-      ),
-      make_step(
-        2, "Cached CarParams",
-        used=step2_used,
-        winner=step2_winner,
-        overridden_by=None,
-        decision_logic="if cached_params valid: USE_CACHED else RUN_FRESH_QUERY",
-        action="Check if we have valid cached fingerprint from previous boot" if step2_used else "No valid cache",
-        actual_flow={
-          "CacheStatus": "PRESENT" if has_cache else "NULL",
-          "CachedFingerprint": fingerprint,
-          "CachedSource": source,
-          "CachedVIN": vin,
-          "CachedECUs": car_fw_count,
-          "Result": "USE_CACHED" if has_cache else "SKIP (no cache)",
-        },
-        failure_reasons=[
-          "If CarParamsCache cleared → would run fresh query",
-          "If brand='mock' or carFw=0 or carVin=unknown → cache invalid, would run fresh",
-          "If DISABLE_FW_CACHE=true → would ignore cache, run fresh query",
-        ],
-        debug={
-          "has_cache": has_cache,
-          "firmware_query_done": firmware_query_done,
-          "cached_fingerprint": fingerprint,
-        },
-      ),
-      make_step(
-        3, "Firmware Query",
-        used=step3_used,
-        winner=step3_winner,
-        overridden_by=1 if step1_winner else None,
-        decision_logic="if fw_candidates == 1: OVERRIDE_CAN else KEEP_CAN",
-        action="Query ECUs for firmware versions and match to known cars" if step3_used else "FW query not executed",
-        actual_flow={
-          "VIN": log_data.get("vin") or vin or "N/A",
-          "VIN_Valid": (log_data.get("vin") is not None or vin is not None),
-          "ECUs_Detected": log_data.get("ecu_count") or car_fw_count or 0,
-          "ECU_RX_Addrs": "available" if (log_data.get("ecu_count") or car_fw_count) else 0,
-          "FW_Candidates": log_data.get("ecu_count"),
-          "Exact_FW_Match": True,
-          "fw_query_time_ms": log_data.get("fw_query_time_ms", 0),
-          "Result": "USE_FW" if step3_winner else ("SKIP - candidates != 1" if step3_used else "NOT_EXECUTED"),
-        },
-        failure_reasons=[
-          "If fw_candidates == 0 → 'No firmware matches found'",
-          "If fw_candidates > 1 → 'Ambiguous (N candidates), need exactly 1'",
-          "If no ECUs responded (ecu_rx_addrs=0) → 'FW query failed'",
-          "If VIN malformed → is_valid_vin() returns False, VIN set to UNKNOWN",
-          "If SKIP_FW_QUERY=true → query skipped entirely",
-        ],
-        debug={
-          "ecu_count": log_data.get("ecu_count"),
-          "vin": log_data.get("vin") or vin,
-          "vin_obtained": log_data.get("vin") is not None or vin is not None,
-          "fw_query_done": firmware_query_done,
-          "fw_query_time_ms": log_data.get("fw_query_time_ms", 0),
-          "cached_result": log_data.get("cached"),
-          "env_skip_fw_query": skip_fw_query,
-        },
-      ),
-      make_step(
-        4, "CAN Fingerprint",
-        used=step4_used,
-        winner=step4_winner,
-        overridden_by=3 if step3_winner else (1 if step1_winner else None),
-        decision_logic="if CAN_candidates == 1: SUCCESS else FAIL_TIMEOUT_OR_AMBIGUOUS",
-        action="Collect CAN messages and eliminate incompatible vehicles" if step4_used else "Not executed",
-        actual_flow={
-          "Messages_Collected": 200,
-          "CAN_Candidates_Before": "~500 (all legacy fingerprints)",
-          "CAN_Candidates_After": "N (eliminated by CAN messages)",
-          "Result": "USE_CAN" if step4_winner else ("OVERRIDDEN by Step 3" if step3_winner else ("OVERRIDDEN by Step 1" if step1_winner else "N/A")),
-        },
-        failure_reasons=[
-          "If all candidates eliminated → 'No vehicle matches'",
-          "If timeout (frame > 200) → 'CAN fingerprint timeout (>2s)'",
-          "If frame > 100 but candidates > 1 → 'Ambiguous, need exactly 1'",
-          "If no CAN messages received → 'Insufficient data'",
-        ],
-        debug={
-          "source": source,
-          "step3_winner": step3_winner,
-          "step1_winner": step1_winner,
-        },
-      ),
-    ]
+    branches = []
 
-    result_status = "mock" if is_mock_fallback else ("manual" if step1_winner else ("fingerprinted" if fingerprint else "unknown"))
+    if is_fixed:
+      branches.append(make_branch(
+        1, "if fixed_fingerprint → USE_FIXED",
+        f"USE_FIXED: {platform_bundle.get('platform') if platform_bundle else 'unknown'}",
+        "winner",
+        {"CarPlatformBundle": platform_bundle.get("platform"), "FINGERPRINT_ENV": os.environ.get("FINGERPRINT", "")},
+        winner=True
+      ))
+    else:
+      branches.append(make_branch(
+        1, "if fixed_fingerprint → USE_FIXED else continue",
+        "SKIP (no fixed_fingerprint set)",
+        "skipped",
+        {"CarPlatformBundle": platform_bundle, "FINGERPRINT_ENV": os.environ.get("FINGERPRINT", "")}
+      ))
+
+      if is_cached:
+        cached_source = source or "unknown"
+        branches.append(make_branch(
+          2, "if cached_params valid → USE_CACHED else RUN_FRESH_QUERY",
+          f"USE_CACHED: fingerprint obtained from previous boot via {cached_source}",
+          "winner" if not is_fixed else "overridden",
+          {
+            "cached_fingerprint": fingerprint,
+            "cached_source": cached_source,
+            "cached_vin": vin,
+            "cached_ecus": car_fw_count,
+          },
+          winner=True
+        ))
+        branches.append(make_branch(
+          3, "if fw_candidates == 1 → USE_FW else continue",
+          f"NOT_EXECUTED (using cached from Step 2)",
+          "skipped",
+          {}
+        ))
+        branches.append(make_branch(
+          4, "if CAN_candidates == 1 → USE_CAN else MOCK",
+          f"NOT_EXECUTED (using cached from Step 2)",
+          "skipped",
+          {}
+        ))
+      else:
+        branches.append(make_branch(
+          2, "if cached_params valid → USE_CACHED else RUN_FRESH_QUERY",
+          "RUN_FRESH_QUERY (no valid cache)",
+          "skipped",
+          {"has_cache": has_cache, "firmware_query_done": firmware_query_done}
+        ))
+
+        fw_candidates = log_data.get("ecu_count")
+        fw_result = "fw_candidates=" + str(fw_candidates) if fw_candidates is not None else "N/A"
+        if source == "fw":
+          branches.append(make_branch(
+            3, "if fw_candidates == 1 → USE_FW else continue",
+            f"USE_FW: {fingerprint}",
+            "winner",
+            {
+              "ecu_count": log_data.get("ecu_count"),
+              "vin": log_data.get("vin") or vin,
+              "vin_obtained": log_data.get("vin") is not None,
+              "exact_fw_match": True,
+              "fw_query_time_ms": log_data.get("fw_query_time_ms", 0),
+            },
+            winner=True
+          ))
+          branches.append(make_branch(
+            4, "if CAN_candidates == 1 → USE_CAN else MOCK",
+            "OVERRIDDEN by Step 3 (FW had exactly 1 candidate)",
+            "overridden",
+            {}
+          ))
+        else:
+          branches.append(make_branch(
+            3, "if fw_candidates == 1 → USE_FW else continue",
+            f"SKIP (fw_candidates={fw_candidates or 'N/A'}, not exactly 1)",
+            "overridden",
+            {
+              "ecu_count": log_data.get("ecu_count"),
+              "vin": log_data.get("vin") or vin,
+              "vin_obtained": log_data.get("vin") is not None,
+              "fw_query_time_ms": log_data.get("fw_query_time_ms", 0),
+            }
+          ))
+
+          if source == "can":
+            branches.append(make_branch(
+              4, "if CAN_candidates == 1 → USE_CAN else MOCK",
+              f"USE_CAN: {fingerprint}",
+              "winner",
+              {
+                "can_candidates_before": "~500 (all legacy fingerprints)",
+                "can_candidates_after": "1",
+                "fuzzy_match": fuzzy_match,
+              },
+              winner=True
+            ))
+          else:
+            branches.append(make_branch(
+              4, "if CAN_candidates == 1 → USE_CAN else MOCK",
+              "MOCK_FALLBACK: No candidates matched",
+              "failed",
+              {"can_candidates_after": "0", "reason": "No fingerprint match found"}
+            ))
+
+    steps = []
+    step_titles = {1: "Manual Selection", 2: "Cached CarParams", 3: "Firmware Query", 4: "CAN Fingerprint"}
+    step_logic = {
+      1: "if fixed_fingerprint: USE_FIXED else continue",
+      2: "if cached_params valid: USE_CACHED else RUN_FRESH_QUERY",
+      3: "if fw_candidates == 1: USE_FW else continue",
+      4: "if CAN_candidates == 1: USE_CAN else MOCK",
+    }
+    step_actions = {
+      1: "Check if CarPlatformBundle or FINGERPRINT env is set",
+      2: "Check CarParamsCache exists and is valid for this car",
+      3: "Query ECUs for firmware versions and match to known cars",
+      4: "Collect CAN messages and eliminate incompatible vehicles",
+    }
+
+    for branch in branches:
+      step_num = branch["num"]
+      steps.append({
+        "id": step_num,
+        "title": step_titles[step_num],
+        "status": branch["status"],
+        "winner": branch["winner"],
+        "condition": step_logic[step_num],
+        "action": step_actions[step_num],
+        "result": branch["result"],
+        "details": branch["details"],
+        "failure_reasons": [
+          f"Step {step_num} would fail if: {failure}"
+          for failure in [
+            "condition not met" if not branch["winner"] else "N/A",
+            "would cause fallback to next step" if not branch["winner"] else "N/A"
+          ]
+        ] if not branch["winner"] else [],
+      })
+
+    cached_historical = None
+    if has_cache and source:
+      cached_historical = {
+        "note": "This fingerprint was obtained from a PREVIOUS boot's full fingerprinting flow",
+        "source_step": f"Step {source == 'fw' and 3 or source == 'can' and 4 or source == 'fixed' and 1}",
+        "source": source,
+        "fingerprint": fingerprint,
+        "vin": vin,
+        "ecus": car_fw_count,
+        "fuzzy": fuzzy_match,
+      }
+
+    result_status = "mock" if is_mock else ("manual" if is_fixed else ("cached" if is_cached else "fingerprinted"))
 
     try:
       dbc_names = list(self._can_handler.dbc.keys()) if self._can_handler.dbc else None
@@ -2106,12 +2117,14 @@ class PitStopServer:
       pass
 
     return web.json_response({
+      "decision_tree": branches,
       "steps": steps,
+      "cached_historical": cached_historical,
       "result": {
         "status": result_status,
         "fingerprint": fingerprint if fingerprint and fingerprint != "MOCK" else None,
         "source": source,
-        "winner_step": next((s["id"] for s in steps if s["winner"]), None),
+        "winner_branch": next((b["num"] for b in branches if b["winner"]), None),
         "is_fuzzy_match": fuzzy_match,
         "vin": vin,
         "brand": brand,
