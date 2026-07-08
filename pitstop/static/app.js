@@ -2241,6 +2241,8 @@ function renderMapsUI() {
 }
 
 function renderCountrySelect() {
+  const search = document.getElementById('map-country-search');
+  if (search) search.value = '';
   const select = document.getElementById('map-country-select');
   select.innerHTML = '<option value="">Select a country</option>';
 
@@ -2257,6 +2259,8 @@ function renderCountrySelect() {
 }
 
 function renderStateSelect() {
+  const search = document.getElementById('map-state-search');
+  if (search) search.value = '';
   const select = document.getElementById('map-state-select');
   const group = document.getElementById('map-state-group');
 
@@ -2278,6 +2282,16 @@ function renderStateSelect() {
     const selected = mapsData?.state === code ? 'selected' : '';
     select.innerHTML += `<option value="${code}" ${selected}>${full_name}</option>`;
   });
+}
+
+function filterMapOptions(type, query) {
+  const select = document.getElementById('map-' + type + '-select');
+  if (!select) return;
+  const q = query.toLowerCase().trim();
+  for (let i = 1; i < select.options.length; i++) {
+    const opt = select.options[i];
+    opt.style.display = (!q || opt.text.toLowerCase().includes(q)) ? '' : 'none';
+  }
 }
 
 function onCountryChange() {
