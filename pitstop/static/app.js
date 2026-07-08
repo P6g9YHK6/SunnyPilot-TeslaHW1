@@ -49,6 +49,7 @@ function loadPage(name, force) {
   if (name !== 'settings') { stopSettingsStatusPoll(); discardPendingChanges(); }
   if (name !== 'dashboard') stopDashboardPoll();
   if (name !== 'models') stopModelsProgressPoll();
+  if (name !== 'cockpit') stopCockpitPoll();
   if (name === 'dashboard') loadDashboard();
   else if (name === 'backup') {
     _pageLoaded[name] = true;
@@ -63,6 +64,11 @@ function loadPage(name, force) {
   else if (name === 'maps') {
     _pageLoaded[name] = true;
     loadMaps();
+    fetchAndCheckVersion();
+  }
+  else if (name === 'cockpit') {
+    _pageLoaded[name] = true;
+    loadCockpit();
     fetchAndCheckVersion();
   }
   else if (force || !_pageLoaded[name]) {
@@ -561,10 +567,229 @@ function restartPitstop() {
 }
 
 function stopDashboardPoll() {}   // kept for loadPage() call-site compatibility
+function stopCockpitPoll() {}     // kept for loadPage() call-site compatibility
+
+/* ============ COCKPIT ============ */
+function _ckmph(v) {
+  if (v === null || v === undefined) return '—';
+  return (v * 3.6).toFixed(1) + ' km/h';
+}
+function _cms2(v) {
+  if (v === null || v === undefined) return '—';
+  return v.toFixed(2) + ' m/s²';
+}
+function _crad(v) {
+  if (v === null || v === undefined) return '—';
+  return v.toFixed(3) + ' rad';
+}
+function _cpct(v) {
+  if (v === null || v === undefined) return '—';
+  return (v * 100).toFixed(0) + '%';
+}
+function _cyesno(v) {
+  return v === true ? 'Yes' : v === false ? 'No' : '—';
+}
+function _cval(v) {
+  if (v === null || v === undefined) return '—';
+  return String(v);
+}
+function _cgrid(rows) {
+  return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">' + rows.join('') + '</div>';
+}
+
+async function loadCockpit() {
+  try {
+    const [speeds, cockpit] = await Promise.all([
+      api('/api/speeds', { silent: true }).catch(() => null),
+      api('/api/cockpit', { silent: true }).catch(() => null),
+    ]);
+
+    // Speeds card (reuses existing renderers from dashboard, but targets cockpit IDs)
+    const sEl = document.getElementById('card-cockpit-speeds');
+    if (sEl) {
+      if (!speeds) {
+        sEl.querySelector('.card-body').textContent = 'No data';
+      } else {
+        const kmh = v => v != null ? (v * 3.6).toFixed(2) : '—';
+        const ms2 = v => v != null ? v.toFixed(2) : '—';
+        const m = v => v != null ? v.toFixed(1) : '—';
+        const grid = (fl, fr, rl, rr) => `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>FL: ${kmh(fl)}</span><span style="text-align:right">FR: ${kmh(fr)}</span>
+            <span>RL: ${kmh(rl)}</span><span style="text-align:right">RR: ${kmh(rr)}</span>
+          </div>`;
+        sEl.querySelector('.card-body').innerHTML = `
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Wheel Speeds</div>
+          ${speeds.wheels ? grid(speeds.wheels.fl, speeds.wheels.fr, speeds.wheels.rl, speeds.wheels.rr) : '<span style="font-size:0.7rem;color:var(--text-dim)">No data</span>'}
+          <hr style="margin:4px 0;border-color:var(--border)">
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Ego / Cruise</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>Ego: ${kmh(speeds.ego?.speed)}</span><span style="text-align:right">Accel: ${ms2(speeds.ego?.aEgo)} m/s²</span>
+            <span>Set: ${kmh(speeds.cruise?.setSpeed)}</span><span style="text-align:right">Cluster: ${kmh(speeds.cruise?.clusterSpeed)}</span>
+          </div>
+          <hr style="margin:4px 0;border-color:var(--border)">
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Plan</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>vTarget: ${kmh(speeds.plan?.vTarget)}</span><span style="text-align:right">vCruise: ${kmh(speeds.plan?.vCruise)}</span>
+            <span>vMax: ${kmh(speeds.plan?.vMax)}</span><span style="text-align:right">vCurvature: ${kmh(speeds.plan?.vCurvature)}</span>
+            <span>aTarget: ${ms2(speeds.plan?.aTarget)}</span><span></span>
+          </div>
+          <hr style="margin:4px 0;border-color:var(--border)">
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Lead</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>vLead: ${kmh(speeds.lead?.vLead)}</span><span style="text-align:right">vLeadK: ${kmh(speeds.lead?.vLeadK)}</span>
+            <span>vRel: ${kmh(speeds.lead?.vRel)}</span><span style="text-align:right">dRel: ${m(speeds.lead?.dRel)} m</span>
+          </div>
+        `;
+      }
+    }
+
+    // Speed Limits card
+    const slEl = document.getElementById('card-cockpit-speed-limits');
+    if (slEl) {
+      if (!speeds) {
+        slEl.querySelector('.card-body').textContent = 'No data';
+      } else {
+        const kmh = v => v != null ? (v * 3.6).toFixed(1) + ' km/h' : '—';
+        const m = v => v != null ? v.toFixed(0) + ' m' : '—';
+        const yesno = v => v != null ? (v ? 'Yes' : 'No') : '—';
+        slEl.querySelector('.card-body').innerHTML = `
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Car / Map</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>Car: ${kmh(speeds.carSpeedLimit)}</span><span></span>
+            <span>Map: ${kmh(speeds.map?.speedLimit)}</span><span style="text-align:right">Map Valid: ${yesno(speeds.map?.valid)}</span>
+            <span>Ahead: ${kmh(speeds.map?.speedLimitAhead)}</span><span style="text-align:right">Dist: ${m(speeds.map?.aheadDist)}</span>
+            <span>Ahead Valid: ${yesno(speeds.map?.aheadValid)}</span><span></span>
+          </div>
+          <hr style="margin:4px 0;border-color:var(--border)">
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Resolver</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>Limit: ${kmh(speeds.limit?.speedLimit)}</span><span style="text-align:right">Final: ${kmh(speeds.limit?.speedLimitFinal)}</span>
+            <span>Offset: ${kmh(speeds.limit?.speedLimitOffset)}</span><span style="text-align:right">Dist: ${m(speeds.limit?.distToSpeedLimit)}</span>
+            <span>Valid: ${yesno(speeds.limit?.valid)}</span><span></span>
+          </div>
+          <hr style="margin:4px 0;border-color:var(--border)">
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">SP Targets</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>vTarget: ${kmh(speeds.planSP?.vTarget)}</span><span style="text-align:right">ICBM: ${kmh(speeds.icbmVtarget)}</span>
+            <span>SCC Vision: ${kmh(speeds.planSP?.sccVisionVTarget)}</span><span style="text-align:right">SCC Map: ${kmh(speeds.planSP?.sccMapVTarget)}</span>
+            <span>SLA: ${kmh(speeds.planSP?.speedLimitAssistVTarget)}</span><span></span>
+          </div>
+        `;
+      }
+    }
+
+    // Live Parameters card
+    const pEl = document.getElementById('card-cockpit-params');
+    if (pEl) {
+      if (!cockpit) {
+        pEl.querySelector('.card-body').textContent = 'No data';
+      } else {
+        const lp = cockpit.liveParameters || {};
+        const ltp = cockpit.liveTorqueParameters || {};
+        const ld = cockpit.liveDelay || {};
+        pEl.querySelector('.card-body').innerHTML = _cgrid([
+          '<span>Angle Offset</span><span style="text-align:right">' + _crad(lp.angleOffsetDeg) + '</span>',
+          '<span>Stiffness</span><span style="text-align:right">' + _cval(lp.stiffnessFactor) + '</span>',
+          '<span>Steer Ratio</span><span style="text-align:right">' + _cval(lp.steerRatio) + '</span>',
+          '<span>Sensors Valid</span><span style="text-align:right">' + _cyesno(lp.sensorValid) + '</span>',
+          '<span>Posenet Speed</span><span style="text-align:right">' + _ckmph(lp.posenetSpeed) + '</span>',
+          '<hr style="margin:4px 0;border-color:var(--border);grid-column:1/-1">',
+          '<span>Lat Accel Factor</span><span style="text-align:right">' + _cval(ltp.latAccelFactorFiltered) + '</span>',
+          '<span>Friction Coeff</span><span style="text-align:right">' + _cval(ltp.frictionCoefficientFiltered) + '</span>',
+          '<hr style="margin:4px 0;border-color:var(--border);grid-column:1/-1">',
+          '<span>Lateral Delay</span><span style="text-align:right">' + (ld.lateralDelay != null ? ld.lateralDelay.toFixed(2) + ' s' : '—') + '</span>',
+          '<span>Delay Status</span><span style="text-align:right">' + _cval(ld.status) + '</span>',
+        ]);
+      }
+    }
+
+    // Pose / Velocity card
+    const poseEl = document.getElementById('card-cockpit-pose');
+    if (poseEl) {
+      if (!cockpit) {
+        poseEl.querySelector('.card-body').textContent = 'No data';
+      } else {
+        const pose = cockpit.livePose || {};
+        const vel = pose.velocityDevice || {};
+        const acc = pose.accelerationDevice || {};
+        const accCam = pose.accelerationCamera || {};
+        const velMag = (vel.x != null && vel.y != null && vel.z != null)
+          ? Math.sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z).toFixed(2) + ' m/s'
+          : '—';
+        poseEl.querySelector('.card-body').innerHTML = `
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Device Velocity</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>X: ${_cval(vel.x)}</span><span style="text-align:right">Y: ${_cval(vel.y)}</span>
+            <span>Z: ${_cval(vel.z)}</span><span style="text-align:right">Mag: ${velMag}</span>
+          </div>
+          <hr style="margin:4px 0;border-color:var(--border)">
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Device Acceleration</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>X: ${_cms2(acc.x)}</span><span style="text-align:right">Y: ${_cms2(acc.y)}</span>
+            <span>Z: ${_cms2(acc.z)}</span><span></span>
+          </div>
+          <hr style="margin:4px 0;border-color:var(--border)">
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:3px">Camera Acceleration</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:0.75rem">
+            <span>X: ${_cms2(accCam.x)}</span><span style="text-align:right">Y: ${_cms2(accCam.y)}</span>
+            <span>Z: ${_cms2(accCam.z)}</span><span></span>
+          </div>
+        `;
+      }
+    }
+
+    // Driver card
+    const dEl = document.getElementById('card-cockpit-driver');
+    if (dEl) {
+      if (!cockpit) {
+        dEl.querySelector('.card-body').textContent = 'No data';
+      } else {
+        const dms = cockpit.driverMonitoringState || {};
+        dEl.querySelector('.card-body').innerHTML = _cgrid([
+          '<span>Awareness</span><span style="text-align:right">' + _cpct(dms.awarenessPercent) + '</span>',
+          '<span>Face Detected</span><span style="text-align:right">' + _cyesno(dms.faceDetected) + '</span>',
+          '<span>Distracted</span><span style="text-align:right">' + _cyesno(dms.isDistracted) + '</span>',
+          '<span>Alert</span><span style="text-align:right">' + _cval(dms.alertStatus) + '</span>',
+          '<span>Alert Type</span><span style="text-align:right">' + _cval(dms.alertType) + '</span>',
+        ]);
+      }
+    }
+
+    // System State card
+    const stEl = document.getElementById('card-cockpit-state');
+    if (stEl) {
+      if (!cockpit) {
+        stEl.querySelector('.card-body').textContent = 'No data';
+      } else {
+        const sds = cockpit.selfdriveState || {};
+        const cal = cockpit.calibration || {};
+        const calBadge = cal.status === 'calibrated'
+          ? '<span class="diag-dot dot-ok">Calibrated</span>'
+          : '<span style="color:var(--warn)">' + _cval(cal.status) + '</span>';
+        const enBadge = sds.enabled
+          ? '<span class="diag-dot dot-ok">ON</span>'
+          : '<span class="diag-dot dot-fail">OFF</span>';
+        stEl.querySelector('.card-body').innerHTML = _cgrid([
+          '<span>Enabled</span><span style="text-align:right">' + enBadge + '</span>',
+          '<span>Active</span><span style="text-align:right">' + _cyesno(sds.active) + '</span>',
+          '<span>State</span><span style="text-align:right">' + _cval(sds.state) + '</span>',
+          '<span>Experimental</span><span style="text-align:right">' + _cyesno(sds.experimentalMode) + '</span>',
+          '<hr style="margin:4px 0;border-color:var(--border);grid-column:1/-1">',
+          '<span>Calibration</span><span style="text-align:right">' + calBadge + '</span>',
+          '<span>Cal %</span><span style="text-align:right">' + (cal.percent != null ? cal.percent.toFixed(0) + '%' : '—') + '</span>',
+        ]);
+      }
+    }
+  } catch (e) {
+    document.querySelectorAll('#card-cockpit-speeds .card-body, #card-cockpit-speed-limits .card-body, #card-cockpit-params .card-body, #card-cockpit-pose .card-body, #card-cockpit-driver .card-body, #card-cockpit-state .card-body')
+      .forEach(el => el.textContent = 'Failed to load.');
+  }
+}
 
 async function loadDashboard() {
   try {
-    const [device, caps, status, activeModel, telemetry, diag, updateStatus, gps, calibration, network, sunnylink, storage, speeds] = await Promise.all([
+    const [device, caps, status, activeModel, telemetry, diag, updateStatus, gps, calibration, network, sunnylink, storage] = await Promise.all([
       api('/api/device'),
       api('/api/capabilities'),
       api('/api/status'),
@@ -577,7 +802,6 @@ async function loadDashboard() {
       api('/api/network', { silent: true }).catch(() => null),
       api('/api/sunnylink', { silent: true }).catch(() => null),
       api('/api/storage', { silent: true }).catch(() => null),
-      api('/api/speeds', { silent: true }).catch(() => null),
     ]);
 
     _checkWebVersion(status?.webVersion);
