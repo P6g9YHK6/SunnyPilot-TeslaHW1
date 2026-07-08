@@ -1078,6 +1078,8 @@ html[data-theme="hc"] .btn-download { border-width: 2px; }
 .model-badge.active-model { background: var(--green-dim); color: var(--green); border: 1px solid rgba(62,207,142,0.3); }
 .model-badge.downloading  { background: var(--orange-dim); color: var(--orange); }
 
+.map-flag { font-size: 1.2rem; margin-right: 0.4rem; vertical-align: middle; }
+
 /* ─── Map Items ─────────────────────────────────────────────────── */
 .map-item {
   cursor: pointer;
