@@ -153,16 +153,11 @@
           <span class="label">Mapd Version</span>
           <span class="value" id="map-version">Loading...</span>
         </div>
-        <div class="map-section">
-          <h3>Downloaded Maps</h3>
-          <div class="map-size-row">
-            <span id="map-size">Calculating...</span>
-            <button class="btn btn-sm btn-danger" id="map-delete-btn" onclick="deleteMaps()">DELETE</button>
-          </div>
-        </div>
         <div class="map-section" id="map-download-section">
-          <h3>Download Map</h3>
-          <p class="section-desc">Select a region to download for offline use</p>
+          <h3>Offline Maps</h3>
+          <div class="map-size-row" style="margin-bottom:0.75rem">
+            <span id="map-size">Calculating...</span>
+          </div>
           <div class="search-wrap search-wrap--full" style="margin-bottom:0.5rem">
             <input type="text" id="map-country-search" placeholder="Search countries…" oninput="filterMapCountries()">
             <button class="search-clear" id="map-country-search-clear" onclick="clearMapCountrySearch()" title="Clear search">&#10005;</button>
@@ -175,10 +170,6 @@
               <button class="search-clear" id="map-state-search-clear" onclick="clearMapStateSearch()" title="Clear search">&#10005;</button>
             </div>
             <div id="map-state-list"></div>
-          </div>
-          <div class="map-download-info">
-            <span>Map downloads can be large (up to several GB)</span>
-            <button class="btn btn-sm btn-primary" id="map-download-btn" onclick="startMapDownload()" disabled>Download</button>
           </div>
         </div>
         <div class="map-progress" id="map-progress" style="display:none">

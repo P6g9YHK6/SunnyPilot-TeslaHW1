@@ -2435,14 +2435,14 @@ function renderMapsUI() {
   }
   document.getElementById('map-size').textContent = sizeText;
 
-  selectedCountry = mapsData?.country || '';
-  selectedState = mapsData?.state || '';
   renderCountryList();
-  if (selectedCountry === 'US') {
+
+  if (mapsData?.country === 'US') {
     document.getElementById('map-state-section').style.display = '';
     renderStateList();
+  } else {
+    document.getElementById('map-state-section').style.display = 'none';
   }
-  document.getElementById('map-download-btn').disabled = !selectedCountry;
 
   if (mapsData.last_checked) {
     const dt = new Date(mapsData.last_checked * 1000);
@@ -2453,11 +2453,6 @@ function renderMapsUI() {
 
   updateMapProgress();
 }
-
-let selectedCountry = '';
-let selectedState = '';
-let mapCountriesSorted = [];
-let mapStatesSorted = [];
 
 function countryFlag(code) {
   if (!code || code.length !== 2) return '';
@@ -2471,12 +2466,19 @@ function renderCountryList() {
   if (!mapsCountries) { container.innerHTML = '<p style="color:var(--text-dim)">No countries available.</p>'; return; }
 
   const query = document.getElementById('map-country-search').value.toLowerCase().trim();
-  mapCountriesSorted = Object.entries(mapsCountries)
-    .map(([code, data]) => ({ code, full_name: data.full_name }))
-    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const active = mapsData?.country || '';
+  const hasMaps = mapsData?.size_bytes > 0;
 
-  const filtered = !query ? mapCountriesSorted
-    : mapCountriesSorted.filter(c => c.full_name.toLowerCase().includes(query) || c.code.toLowerCase().includes(query));
+  const sorted = Object.entries(mapsCountries)
+    .map(([code, data]) => ({ code, full_name: data.full_name }))
+    .sort((a, b) => {
+      if (a.code === active && hasMaps) return -1;
+      if (b.code === active && hasMaps) return 1;
+      return a.full_name.localeCompare(b.full_name);
+    });
+
+  const filtered = !query ? sorted
+    : sorted.filter(c => c.full_name.toLowerCase().includes(query) || c.code.toLowerCase().includes(query));
 
   if (!filtered.length) {
     container.innerHTML = '<p style="color:var(--text-dim)">No matching countries.</p>';
@@ -2484,33 +2486,48 @@ function renderCountryList() {
   }
 
   container.innerHTML = filtered.map(c => {
-    const isSelected = selectedCountry === c.code;
+    const isActive = c.code === active && hasMaps;
     const flag = countryFlag(c.code);
-    return `<div class="model-item map-item ${isSelected ? 'selected' : ''}" onclick="selectMapCountry('${c.code}')">
+    return `<div class="model-item map-item ${isActive ? 'selected' : ''}">
       <div class="model-item-info">
         <div class="model-item-name"><span class="map-flag">${flag}</span> ${c.full_name}</div>
         <div class="model-item-meta">${c.code}</div>
       </div>
       <div class="model-item-actions">
-        ${isSelected ? '<span class="model-badge active-model">Selected</span>' : ''}
+        ${isActive
+          ? `<button class="btn btn-sm btn-danger" onclick="deleteMapCountry()">Delete</button>`
+          : `<button class="btn btn-sm btn-primary" onclick="downloadCountry('${c.code}')">Download</button>`
+        }
       </div>
     </div>`;
   }).join('');
 }
 
-function selectMapCountry(code) {
-  const country = mapCountriesSorted.find(c => c.code === code);
-  if (!country) return;
-  selectedCountry = code;
-  selectedState = '';
-  renderCountryList();
-  document.getElementById('map-download-btn').disabled = false;
-
+function downloadCountry(code) {
   if (code === 'US') {
     document.getElementById('map-state-section').style.display = '';
     renderStateList();
-  } else {
-    document.getElementById('map-state-section').style.display = 'none';
+    document.getElementById('map-state-search').focus();
+    toast('Select a state below to download', 'info');
+    return;
+  }
+  showModal('Download Map',
+    '<p>Download offline map data for this region? This might take a while.</p>',
+    [
+      { label: 'Cancel', cls: '' },
+      { label: 'Start', action: `doDownloadCountry('${code}')`, cls: 'btn-primary' },
+    ]
+  );
+}
+
+async function doDownloadCountry(code) {
+  try {
+    await api('/api/osm/select', { method: 'POST', body: JSON.stringify({ country: code, state: null }) });
+    await api('/api/osm/download', { method: 'POST' });
+    toast('Map download started', 'success');
+    loadMaps();
+  } catch (e) {
+    toast(`Failed: ${e.message}`, 'error');
   }
 }
 
@@ -2531,12 +2548,19 @@ function renderStateList() {
   if (!mapsStates) { container.innerHTML = '<p style="color:var(--text-dim)">No states available.</p>'; return; }
 
   const query = document.getElementById('map-state-search').value.toLowerCase().trim();
-  mapStatesSorted = Object.entries(mapsStates)
-    .map(([code, data]) => ({ code, full_name: data.full_name }))
-    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const activeState = mapsData?.state || '';
+  const hasMaps = mapsData?.size_bytes > 0;
 
-  const filtered = !query ? mapStatesSorted
-    : mapStatesSorted.filter(s => s.full_name.toLowerCase().includes(query) || s.code.toLowerCase().includes(query));
+  const sorted = Object.entries(mapsStates)
+    .map(([code, data]) => ({ code, full_name: data.full_name }))
+    .sort((a, b) => {
+      if (a.code === activeState && hasMaps) return -1;
+      if (b.code === activeState && hasMaps) return 1;
+      return a.full_name.localeCompare(b.full_name);
+    });
+
+  const filtered = !query ? sorted
+    : sorted.filter(s => s.full_name.toLowerCase().includes(query) || s.code.toLowerCase().includes(query));
 
   if (!filtered.length) {
     container.innerHTML = '<p style="color:var(--text-dim)">No matching states.</p>';
@@ -2544,22 +2568,41 @@ function renderStateList() {
   }
 
   container.innerHTML = filtered.map(s => {
-    const isSelected = selectedState === s.code;
-    return `<div class="model-item map-item ${isSelected ? 'selected' : ''}" onclick="selectMapState('${s.code}')">
+    const isActive = s.code === activeState && hasMaps;
+    return `<div class="model-item map-item ${isActive ? 'selected' : ''}">
       <div class="model-item-info">
         <div class="model-item-name">${s.full_name}</div>
         <div class="model-item-meta">${s.code}</div>
       </div>
       <div class="model-item-actions">
-        ${isSelected ? '<span class="model-badge active-model">Selected</span>' : ''}
+        ${isActive
+          ? `<button class="btn btn-sm btn-danger" onclick="deleteMapCountry()">Delete</button>`
+          : `<button class="btn btn-sm btn-primary" onclick="downloadState('${s.code}')">Download</button>`
+        }
       </div>
     </div>`;
   }).join('');
 }
 
-function selectMapState(code) {
-  selectedState = code;
-  renderStateList();
+function downloadState(code) {
+  showModal('Download Map',
+    '<p>Download offline map data for this state? This might take a while.</p>',
+    [
+      { label: 'Cancel', cls: '' },
+      { label: 'Start', action: `doDownloadState('${code}')`, cls: 'btn-primary' },
+    ]
+  );
+}
+
+async function doDownloadState(code) {
+  try {
+    await api('/api/osm/select', { method: 'POST', body: JSON.stringify({ country: 'US', state: code }) });
+    await api('/api/osm/download', { method: 'POST' });
+    toast('Map download started', 'success');
+    loadMaps();
+  } catch (e) {
+    toast(`Failed: ${e.message}`, 'error');
+  }
 }
 
 function filterMapStates() {
@@ -2573,55 +2616,23 @@ function clearMapStateSearch() {
   renderStateList();
 }
 
-async function startMapDownload() {
-  const country = selectedCountry;
-  const state = selectedState || null;
-
-  if (!country) {
-    toast('Please select a country', 'error');
-    return;
-  }
-
-  showModal('Start Map Download',
-    '<p>This will start the download process and it might take a while to complete.</p>',
+function deleteMapCountry() {
+  showModal('Delete Maps',
+    '<p>Delete all downloaded offline map data?</p>',
     [
       { label: 'Cancel', cls: '' },
-      { label: 'Start Download', action: 'doStartMapDownload()', cls: 'btn-primary' },
+      { label: 'Delete', action: 'doDeleteMapCountry()', cls: 'btn-danger' },
     ]
   );
 }
 
-async function doStartMapDownload() {
-  const country = selectedCountry;
-  const state = selectedState || null;
-
-  try {
-    await api('/api/osm/select', { method: 'POST', body: JSON.stringify({ country, state }) });
-    await api('/api/osm/download', { method: 'POST' });
-    toast('Map download started', 'success');
-    loadMaps();
-  } catch (e) {
-    toast(`Failed to start download: ${e.message}`, 'error');
-  }
-}
-
-async function deleteMaps() {
-  showModal('Delete All Maps',
-    '<p>This will delete ALL downloaded maps. Are you sure?</p>',
-    [
-      { label: 'Cancel', cls: '' },
-      { label: 'Yes, Delete', action: 'doDeleteMaps()', cls: 'btn-danger' },
-    ]
-  );
-}
-
-async function doDeleteMaps() {
+async function doDeleteMapCountry() {
   try {
     await api('/api/osm/delete', { method: 'POST' });
     toast('Maps deleted', 'success');
     loadMaps();
   } catch (e) {
-    toast(`Failed to delete maps: ${e.message}`, 'error');
+    toast(`Failed to delete: ${e.message}`, 'error');
   }
 }
 
