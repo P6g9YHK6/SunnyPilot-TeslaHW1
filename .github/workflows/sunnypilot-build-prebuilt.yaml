@@ -1,11 +1,11 @@
 name: sunnypilot prebuilt action
 
 env:
-  BUILD_DIR: ${{ github.ref_name == 'dev' && format('{0}/build', github.workspace) || '/data/openpilot' }}
+  BUILD_DIR: ${{ (github.ref_name == 'dev' || github.ref_name == 'master') && format('{0}/build', github.workspace) || '/data/openpilot' }}
   OUTPUT_DIR: ${{ github.workspace }}/output
   CI_DIR: ${{ github.workspace }}/release/ci
   SCONS_CACHE_DIR: ${{ github.workspace }}/release/ci/scons_cache
-  PUBLIC_REPO_URL: "https://github.com/sunnypilot/sunnypilot"
+  PUBLIC_REPO_URL: "${{ github.server_url }}/${{ github.repository }}"
 
   # Branch configurations
   STAGING_SOURCE_BRANCH: 'master'
@@ -108,7 +108,7 @@ jobs:
     concurrency:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
-    runs-on: ${{ github.ref_name == 'dev' && 'ubuntu-24.04' || '[self-hosted, linux]' }}
+    runs-on: ${{ (github.ref_name == 'dev' || github.ref_name == 'master') && 'ubuntu-24.04' || '[self-hosted, linux]' }}
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
@@ -130,7 +130,7 @@ jobs:
       - run: git lfs pull
 
       - name: Install dependencies (cloud runner)
-        if: ${{ github.ref_name == 'dev' }}
+        if: ${{ github.ref_name == 'dev' || github.ref_name == 'master' }}
         run: ./tools/op.sh setup
 
       - name: Cache SCons
@@ -176,7 +176,7 @@ jobs:
           if [[ "${{ runner.debug }}" == "1" ]]; then
             printenv
           fi
-          if [[ "${{ github.ref_name }}" != "dev" ]]; then
+          if [[ "${{ github.ref_name }}" != "dev" && "${{ github.ref_name }}" != "master" ]]; then
             PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
           fi
 
@@ -226,7 +226,7 @@ jobs:
             --exclude='third_party/*x86*' \
             --exclude='third_party/*Darwin*' \
             --delete-excluded \
-            ${{ github.ref_name == 'dev' && '' || '--chown=comma:comma' }} \
+            ${{ (github.ref_name == 'dev' || github.ref_name == 'master') && '' || '--chown=comma:comma' }} \
             ${BUILD_DIR}/ ${OUTPUT_DIR}/
 
       - name: 'Tar.gz files'
@@ -241,7 +241,7 @@ jobs:
           path: prebuilt.tar.gz
 
       - name: Re-enable powersave
-        if: ${{ always() && github.ref_name != 'dev' }}
+        if: ${{ always() && github.ref_name != 'dev' && github.ref_name != 'master' }}
         run: |
           PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
 
@@ -257,6 +257,8 @@ jobs:
     needs: [ build, prepare_strategy ]
     runs-on: ubuntu-24.04
     environment: ${{ needs.prepare_strategy.outputs.environment }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -287,7 +289,7 @@ jobs:
             "${{ env.OUTPUT_DIR }}" \
             "${{ needs.build.outputs.new_branch }}" \
             "${{ needs.build.outputs.version }}" \
-            "https://x-access-token:${{github.token}}@github.com/sunnypilot/sunnypilot.git" \
+            "https://x-access-token:${{github.token}}@github.com/${{ github.repository }}.git" \
             "${{ needs.build.outputs.extra_version_identifier }}"
 
           echo ""
@@ -313,6 +315,7 @@ jobs:
     if: ${{ (always() && !cancelled() && !failure())
       && needs.publish.result == 'success'
       && (!contains(github.event_name, 'pull_request') || (github.event.action == 'labeled' && github.event.label.name == 'prebuilt'))
+      && vars.DEV_FEEDBACK_NOTIFICATION_BRANCHES_V2 != ''
       && (fromJSON(vars.DEV_FEEDBACK_NOTIFICATION_BRANCHES_V2)[github.head_ref || github.ref_name] != null) }}
     steps:
       - uses: actions/checkout@v4
