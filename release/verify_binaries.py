@@ -5,11 +5,33 @@ missing from the build output. Run after `scons` and before packaging/publishing
 a release, so a build that silently drops a required binary (wrong SConscript
 gating, missed arch, etc.) never reaches a device.
 """
+import builtins
+import io
 import os
 import sys
 
-from openpilot.system.manager.process_config import managed_processes
-from openpilot.system.manager.process import NativeProcess
+# process_config.py transitively imports calibrationd.py, which reads this
+# devicetree path at MODULE level (not inside a function) to detect the
+# device type. It only ever exists on real hardware; this CI runner has no
+# devicetree at all. Neutralize just this one path rather than importing
+# a fake filesystem or touching the source - manager.py itself never hits
+# this on a real device, so the check is meaningless here anyway.
+_DEVICETREE_MODEL_PATH = "/sys/firmware/devicetree/base/model"
+_real_open = builtins.open
+
+
+def _open_with_devicetree_stub(path, *args, **kwargs):
+  if str(path) == _DEVICETREE_MODEL_PATH:
+    return io.StringIO("comma mici\x00")
+  return _real_open(path, *args, **kwargs)
+
+
+builtins.open = _open_with_devicetree_stub
+try:
+  from openpilot.system.manager.process_config import managed_processes
+  from openpilot.system.manager.process import NativeProcess
+finally:
+  builtins.open = _real_open
 
 # these run a script/interpreter rather than a compiled binary as cmdline[0]
 SCRIPT_INTERPRETERS = {"bash", "sh"}
