@@ -180,13 +180,31 @@ jobs:
             PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
           fi
 
-      - name: Build Main Project
+      - name: Provision camerad build headers (CI-only)
         run: |
           # This job cross-builds the official mici/Tesla-HW1 device release.
           # /TICI only exists on real AGNOS hardware, never on this runner, so
           # SConstruct's larch64 detection (which gates camerad's build) needs
           # this nudge or it silently skips building it entirely.
           sudo touch /TICI
+
+          # camerad's #include "media/*.h" quoted includes fall back to the
+          # system include path (/usr/include) - present on real AGNOS
+          # hardware, not on this runner. These are just Qualcomm UAPI struct/
+          # ioctl definitions (no vendor .so is linked), so it's safe to drop
+          # in the last version of them this repo's history ever had, from
+          # right before upstream removed the in-tree copies in favor of
+          # relying on /usr (commaai/openpilot@d7c562e13, "use linux headers
+          # from /usr"). Fetched at build time, not committed to the repo.
+          HEADER_SHA=f87bc52405e35a0b467d9cc460915fde63d6ba08
+          sudo mkdir -p /usr/include/media
+          git fetch --depth 1 origin "$HEADER_SHA"
+          for f in cam_defs.h cam_icp.h cam_isp.h cam_isp_ife.h cam_req_mgr.h cam_sensor.h cam_sync.h; do
+            git show "$HEADER_SHA:third_party/linux/include/media/$f" | sudo tee "/usr/include/media/$f" > /dev/null
+          done
+
+      - name: Build Main Project
+        run: |
           export PYTHONPATH="$BUILD_DIR"
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
