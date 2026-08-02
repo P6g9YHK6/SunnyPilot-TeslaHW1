@@ -196,10 +196,13 @@ jobs:
           # right before upstream removed the in-tree copies in favor of
           # relying on /usr (commaai/openpilot@d7c562e13, "use linux headers
           # from /usr"). Fetched at build time, not committed to the repo.
-          # Restoring the complete set d7c562e13 removed in one go (not just
-          # the files camerad's own .cc/.h directly #include) since they
-          # cross-include each other (e.g. cam_isp.h -> cam_isp_vfe.h) and
-          # were only ever a coherent, mutually-consistent group together.
+          # Restore every header that's reachable from system/camerad's own
+          # #include directives (checked via `grep -rhoE '#include [<"](media/...' system/camerad/`),
+          # plus the ones they cross-include internally (e.g. cam_isp.h ->
+          # cam_isp_vfe.h, msm_cam_sensor.h -> msm_camsensor_sdk.h). Note the
+          # old vendored tree kept msm_*.h flat under include/, but current
+          # source does `#include <media/msm_camsensor_sdk.h>` - it must go
+          # under media/ now to match, regardless of where it lived before.
           HEADER_SHA=f87bc52405e35a0b467d9cc460915fde63d6ba08
           sudo mkdir -p /usr/include/media
           git fetch --depth 1 origin "$HEADER_SHA"
@@ -207,11 +210,7 @@ jobs:
                    cam_jpeg.h cam_lrme.h cam_req_mgr.h cam_sensor.h cam_sensor_cmn_header.h cam_sync.h; do
             git show "$HEADER_SHA:third_party/linux/include/media/$f" | sudo tee "/usr/include/media/$f" > /dev/null
           done
-          for f in msm_cam_sensor.h msm_camsensor_sdk.h; do
-            git show "$HEADER_SHA:third_party/linux/include/$f" | sudo tee "/usr/include/$f" > /dev/null
-          done
-          sudo mkdir -p /usr/include/linux
-          git show "$HEADER_SHA:third_party/linux/include/linux/ion.h" | sudo tee /usr/include/linux/ion.h > /dev/null
+          git show "$HEADER_SHA:third_party/linux/include/msm_camsensor_sdk.h" | sudo tee /usr/include/media/msm_camsensor_sdk.h > /dev/null
 
       - name: Build Main Project
         run: |
