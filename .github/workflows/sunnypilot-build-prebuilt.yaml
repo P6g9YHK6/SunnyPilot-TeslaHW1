@@ -211,6 +211,11 @@ jobs:
             git show "$HEADER_SHA:third_party/linux/include/media/$f" | sudo tee "/usr/include/media/$f" > /dev/null
           done
           git show "$HEADER_SHA:third_party/linux/include/msm_camsensor_sdk.h" | sudo tee /usr/include/media/msm_camsensor_sdk.h > /dev/null
+          # loggerd's v4l_encoder.cc also needs this one (`#include <media/msm_media_info.h>`).
+          # linux/ion.h was in the same deleted set but is NOT needed here: msgq_repo/SConscript
+          # only compiles visionbuf_ion.cc `if File('/dev/ion').exists()`, which is false on this
+          # runner (that's an AGNOS-only device node) - it correctly falls back to visionbuf.cc.
+          git show "$HEADER_SHA:third_party/linux/include/msm_media_info.h" | sudo tee /usr/include/media/msm_media_info.h > /dev/null
 
       - name: Build Main Project
         run: |
