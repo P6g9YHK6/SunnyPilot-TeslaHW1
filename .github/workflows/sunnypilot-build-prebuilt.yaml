@@ -289,6 +289,22 @@ jobs:
             git show "$CACHE_SHA:$f" > "${MODELS_DIR}/$f"
           done
 
+      - name: Fix locationd RUNPATH (CI-only)
+        run: |
+          # sunnypilot/selfdrive/locationd/SConscript bakes Dir(...).abspath as the
+          # RUNPATH, so a CI-built (prebuilt) locationd ends up with a runner-workspace
+          # path that doesn't exist on the device (liblive.so => not found; locationd_llk
+          # exits 127 and the manager reports it "not running"). Rewrite the RUNPATH to be
+          # $ORIGIN-relative so it resolves from any install location (e.g. /data/openpilot).
+          BIN="${BUILD_DIR}/sunnypilot/selfdrive/locationd/locationd"
+          if [ -f "$BIN" ]; then
+            sudo apt-get install -y patchelf >/dev/null 2>&1
+            patchelf --set-rpath '$ORIGIN/models/generated' "$BIN"
+            readelf -d "$BIN" | grep -i 'runpath' || (echo "[locationd rpath] missing RUNPATH" && exit 1)
+          else
+            echo "[locationd rpath] ${BIN} not found, skipping" >&2
+          fi
+
       - name: Verify build output
         run: |
           # Fails the build if any NativeProcess binary declared in process_config.py
