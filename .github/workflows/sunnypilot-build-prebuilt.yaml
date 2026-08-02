@@ -212,10 +212,21 @@ jobs:
           done
           git show "$HEADER_SHA:third_party/linux/include/msm_camsensor_sdk.h" | sudo tee /usr/include/media/msm_camsensor_sdk.h > /dev/null
           # loggerd's v4l_encoder.cc also needs this one (`#include <media/msm_media_info.h>`).
-          # linux/ion.h was in the same deleted set but is NOT needed here: msgq_repo/SConscript
-          # only compiles visionbuf_ion.cc `if File('/dev/ion').exists()`, which is false on this
-          # runner (that's an AGNOS-only device node) - it correctly falls back to visionbuf.cc.
           git show "$HEADER_SHA:third_party/linux/include/msm_media_info.h" | sudo tee /usr/include/media/msm_media_info.h > /dev/null
+
+          # msgq_repo/SConscript picks visionbuf_ion.cc vs visionbuf.cc based on
+          # `File('/dev/ion').exists()` - a BUILD-machine check, even though the
+          # answer only matters for the TARGET device (which always has /dev/ion;
+          # confirmed present on the real hardware). Without this, the build
+          # silently links the non-ion fallback into camerad, which then fails
+          # at runtime with `CAM_REQ_MGR_MAP_BUF ... errno 22 (EINVAL)` trying
+          # to map its buffers into the ISP - a real device only surfaces this
+          # once camerad can actually start, which it couldn't until now.
+          # A plain empty file satisfies the existence check; nothing opens or
+          # reads /dev/ion at build time, only at runtime on the real device.
+          sudo touch /dev/ion
+          git show "$HEADER_SHA:third_party/linux/include/linux/ion.h" | sudo tee /usr/include/linux/ion.h > /dev/null
+          git show "$HEADER_SHA:third_party/linux/include/msm_ion.h" | sudo tee /usr/include/linux/msm_ion.h > /dev/null
 
           # loggerd's v4l_encoder.cc also needs Qualcomm's V4L2_CID_MPEG_VIDC_*
           # vendor control-ID extensions, which live in a patched linux/v4l2-controls.h.
