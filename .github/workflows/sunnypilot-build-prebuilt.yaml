@@ -257,6 +257,38 @@ jobs:
             ls -la ${BUILD_DIR}
           fi
 
+      - name: Replace CPU-compiled tinygrad models with real QCOM-compiled ones
+        run: |
+          # tinygrad model compilation (selfdrive/modeld/SConscript) picks its
+          # backend via `Device.get_available_devices()` on the machine doing
+          # the BUILD. This runner has no Qualcomm Adreno GPU, so it silently
+          # falls back to DEV=CPU:LLVM, which compiles the model with whatever
+          # ARM64 instructions this runner's CPU has - a real device's older
+          # Kryo 385 cores can't execute all of them (SIGILL at runtime, no
+          # stacktrace, since it's raw JIT-compiled code being executed).
+          #
+          # Same class of problem as the camera headers, different shape: this
+          # one can't be fixed by providing a missing file, since it requires
+          # actually talking to a real Adreno GPU (/dev/kgsl-3d0) to compile
+          # against. Neither this pipeline nor any of this fork's other CI has
+          # that. Upstream sunnypilot solves it with a self-hosted runner on
+          # real tici hardware; StarPilot (another fork) explicitly skips
+          # recompiling this one artifact in CI and sources it from a real
+          # device instead (their SP_SKIP_DM_TINYGRAD_PKL) - same approach here.
+          #
+          # These were compiled directly on real mici hardware (confirmed
+          # `Device.get_available_devices()` includes QCOM there) using the
+          # exact flags/commands selfdrive/modeld/SConscript specifies, for
+          # both driving and dmonitoring models plus both dm_warp resolutions.
+          CACHE_SHA=b7f883939580cc8e026e14437c55ddb5bc4eb468
+          git fetch --depth 1 origin "$CACHE_SHA"
+          MODELS_DIR="${BUILD_DIR}/selfdrive/modeld/models"
+          for f in driving_tinygrad.pkl.chunkmanifest driving_tinygrad.pkl.chunk01of02 driving_tinygrad.pkl.chunk02of02 \
+                   dmonitoring_model_tinygrad.pkl.chunkmanifest dmonitoring_model_tinygrad.pkl.chunk01of01 \
+                   dm_warp_1344x760_tinygrad.pkl dm_warp_1928x1208_tinygrad.pkl tg_input_devices.json; do
+            git show "$CACHE_SHA:$f" > "${MODELS_DIR}/$f"
+          done
+
       - name: Verify build output
         run: |
           # Fails the build if any NativeProcess binary declared in process_config.py
