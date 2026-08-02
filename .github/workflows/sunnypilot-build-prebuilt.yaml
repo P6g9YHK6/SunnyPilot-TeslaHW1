@@ -217,6 +217,16 @@ jobs:
           # runner (that's an AGNOS-only device node) - it correctly falls back to visionbuf.cc.
           git show "$HEADER_SHA:third_party/linux/include/msm_media_info.h" | sudo tee /usr/include/media/msm_media_info.h > /dev/null
 
+          # loggerd's v4l_encoder.cc also needs Qualcomm's V4L2_CID_MPEG_VIDC_*
+          # vendor control-ID extensions, which live in a patched linux/v4l2-controls.h.
+          # This one was NEVER vendored in this repo's own git history (only ever
+          # provided by AGNOS's OS image) - pull the identical file (verified same
+          # size/content as the real device) from comma's own public kernel source
+          # for this SoC instead, pinned to a fixed commit for reproducibility.
+          KERNEL_SHA=967fbc05094a22ee431735c69f33f8b4ecbe51c9
+          curl -sfL "https://raw.githubusercontent.com/commaai/agnos-kernel-sdm845/$KERNEL_SHA/include/uapi/linux/v4l2-controls.h" \
+            | sudo tee /usr/include/linux/v4l2-controls.h > /dev/null
+
       - name: Build Main Project
         run: |
           export PYTHONPATH="$BUILD_DIR"
