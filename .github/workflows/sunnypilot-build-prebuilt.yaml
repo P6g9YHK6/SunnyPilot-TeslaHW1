@@ -182,6 +182,11 @@ jobs:
 
       - name: Build Main Project
         run: |
+          # This job cross-builds the official mici/Tesla-HW1 device release.
+          # /TICI only exists on real AGNOS hardware, never on this runner, so
+          # SConstruct's larch64 detection (which gates camerad's build) needs
+          # this nudge or it silently skips building it entirely.
+          sudo touch /TICI
           export PYTHONPATH="$BUILD_DIR"
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
@@ -198,6 +203,11 @@ jobs:
           if [[ "${{ runner.debug }}" == "1" ]]; then
             ls -la ${BUILD_DIR}
           fi
+
+      - name: Verify build output
+        run: |
+          export PYTHONPATH="$BUILD_DIR"
+          python3 release/verify_binaries.py "$BUILD_DIR"
 
       - name: Prepare Output
         run: |
