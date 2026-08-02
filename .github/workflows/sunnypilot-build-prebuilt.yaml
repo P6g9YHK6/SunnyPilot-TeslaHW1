@@ -248,8 +248,71 @@ jobs:
 
       - name: Verify build output
         run: |
-          export PYTHONPATH="$BUILD_DIR"
-          python3 release/verify_binaries.py "$BUILD_DIR"
+          # Fails the build if any NativeProcess binary declared in process_config.py
+          # is missing from the build output - so a build that silently drops a
+          # required binary (wrong SConscript gating, missed arch, etc.) never
+          # reaches a device. CI-only, not committed to the source tree.
+          #
+          # Statically parses process_config.py via `ast` instead of importing it:
+          # importing it transitively runs module-level hardware/Params() side
+          # effects (calibrationd.py's devicetree read, mapd_manager.py's Params())
+          # that assume a real device and fail outright on this runner.
+          sed 's/^          //' <<'PYEOF' | python3 - "$BUILD_DIR"
+          import ast
+          import os
+          import sys
+
+          build_dir = sys.argv[1]
+          src_path = os.path.join(build_dir, "system", "manager", "process_config.py")
+          tree = ast.parse(open(src_path).read(), filename=src_path)
+
+          SCRIPT_INTERPRETERS = {"bash", "sh"}
+
+          def native_process_calls(tree):
+            for node in ast.walk(tree):
+              if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "NativeProcess":
+                yield node
+
+          def str_const(node):
+            return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+          missing = []
+          checked = []
+          for call in native_process_calls(tree):
+            name = str_const(call.args[0])
+            cwd = str_const(call.args[1])
+            cmdline = call.args[2]
+            if name is None or cwd is None or not isinstance(cmdline, ast.List) or not cmdline.elts:
+              continue
+
+            enabled_kw = next((kw.value for kw in call.keywords if kw.arg == "enabled"), None)
+            if isinstance(enabled_kw, ast.Constant) and enabled_kw.value is False:
+              continue  # only skip explicit `enabled=False`; anything else (incl. dynamic exprs) still gets checked
+
+            exe = str_const(cmdline.elts[0])
+            if exe is None or exe in SCRIPT_INTERPRETERS or exe.endswith((".py", ".sh")):
+              continue
+
+            path = os.path.normpath(os.path.join(build_dir, cwd, exe))
+            checked.append(path)
+            if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+              missing.append((name, path))
+
+          print(f"[verify_binaries] checked {len(checked)} expected native binaries under {build_dir}")
+
+          if missing:
+            print("\n[verify_binaries] BUILD IS MISSING REQUIRED BINARIES:", file=sys.stderr)
+            for name, path in missing:
+              print(f"  - {name}: expected at {path}", file=sys.stderr)
+            print(
+              "\nThis release would silently ship without these processes. "
+              "Check the SConstruct/SConscript gating for the platform this was built for.",
+              file=sys.stderr,
+            )
+            sys.exit(1)
+
+          print("[verify_binaries] all expected native binaries present.")
+          PYEOF
 
       - name: Prepare Output
         run: |
