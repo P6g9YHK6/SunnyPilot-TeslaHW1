@@ -117,6 +117,7 @@ class SubscriberMixin:
               "awarenessPercent": dms.visionPolicyState.awarenessPercent if dms is not None else None,
               "faceDetected": dms.visionPolicyState.faceDetected if dms is not None else None,
               "isDistracted": dms.visionPolicyState.isDistracted if dms is not None else None,
+              "wheelSide": ("right" if dms.isRHD else "left") if dms is not None else None,
               "distractedTypes": [k for k in ('pose', 'eye', 'phone')
                                  if getattr(dms.visionPolicyState.distractedTypes, k)] if dms is not None else None,
               "alertStatus": str(sd2.alertStatus).split('.')[-1] if sd2 is not None else None,

@@ -739,6 +739,7 @@ async function loadCockpit() {
           '<span>Awareness</span><span style="text-align:right">' + _cpct(dms.awarenessPercent) + '</span>',
           '<span>Face Detected</span><span style="text-align:right">' + _cyesno(dms.faceDetected) + '</span>',
           '<span>Distracted</span><span style="text-align:right">' + _cyesno(dms.isDistracted) + '</span>',
+          '<span>Wheel Side</span><span style="text-align:right">' + _cval(dms.wheelSide) + '</span>',
           '<span>Alert</span><span style="text-align:right">' + _cval(dms.alertStatus) + '</span>',
           '<span>Alert Type</span><span style="text-align:right">' + _cval(dms.alertType) + '</span>',
         ]);
