@@ -1854,3 +1854,24 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 .map-progress-text { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem; text-align: center; }
 
 .map-last-checked { font-size: 0.75rem; color: var(--text-muted); margin-top: 1rem; }
+
+.construction-banner {
+  margin: 0.75rem 0 1.25rem;
+  padding: 0.55rem;
+  border-radius: var(--radius);
+  border: 2px solid #1a1a1a;
+  background: repeating-linear-gradient(45deg, #1a1a1a, #1a1a1a 18px, #ffcc00 18px, #ffcc00 36px);
+  text-align: center;
+}
+.construction-banner span {
+  display: inline-block;
+  background: #ffcc00;
+  color: #1a1a1a;
+  border: 2px solid #1a1a1a;
+  border-radius: 4px;
+  padding: 0.3rem 0.9rem;
+  font-weight: 800;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
