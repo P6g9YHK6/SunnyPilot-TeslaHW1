@@ -238,6 +238,16 @@ jobs:
           curl -sfL "https://raw.githubusercontent.com/commaai/agnos-kernel-sdm845/$KERNEL_SHA/include/uapi/linux/v4l2-controls.h" \
             | sudo tee /usr/include/linux/v4l2-controls.h > /dev/null
 
+      - name: Provision font-rendering libs (CI-only)
+        run: |
+          # selfdrive/assets/fonts/process.py imports pyray to rasterize the
+          # .fnt assets during the scons build. pyray's raylib backend dlopens
+          # libGLESv2 at import time (even though nothing actually renders to
+          # a screen here) - present on the desktop-flavored ubuntu-24.04
+          # hosted runners, but not on this bare ubuntu-24.04-arm one, so the
+          # import fails and takes the whole build down with it.
+          sudo apt-get install -y --no-install-recommends libgles2 libegl1 >/dev/null 2>&1
+
       - name: Build Main Project
         run: |
           export PYTHONPATH="$BUILD_DIR"
