@@ -1370,6 +1370,58 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 }
 .num-edit-btn:disabled { opacity: 0.3; cursor: default; }
 
+/* ─── Calibrate button (mirrors .num-edit-btn) ──────────────────── */
+.calibrate-btn {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid rgba(91,157,248,0.25);
+  border-radius: var(--radius);
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  min-width: 48px;
+  text-align: center;
+}
+.calibrate-btn:hover {
+  border-color: var(--accent);
+  background: rgba(91,157,248,0.2);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+.calibrate-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* ─── Calibrate: Left/Right side chooser (step 1) ───────────────── */
+.calib-side-choice {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  margin-bottom: 0.25rem;
+}
+.calib-side-btn {
+  flex: 1;
+  min-height: 64px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--surface2);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.calib-side-btn:hover { border-color: var(--accent); background: rgba(91,157,248,0.1); }
+.calib-side-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.calib-back-btn { align-self: flex-start; margin-bottom: 0.5rem; }
+
 /* ─── Number modal ──────────────────────────────────────────────── */
 .num-modal {
   display: flex;
