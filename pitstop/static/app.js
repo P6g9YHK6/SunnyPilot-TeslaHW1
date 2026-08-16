@@ -237,6 +237,24 @@ function fmtDownloadStatus(s) {
   const m = {0: 'Not Downloading', 1: 'Downloading', 2: 'Downloaded', 3: 'Cached', 4: 'Failed'};
   return m[s] || s;
 }
+function fmtUpdateStatus(u) {
+  const map = {
+    checking:        { cls: 'badge-update-progress', label: 'CHECKING' },
+    downloading:     { cls: 'badge-update-progress', label: 'DOWNLOADING' },
+    finalizing:      { cls: 'badge-update-progress', label: 'FINALIZING' },
+    ready:           { cls: 'badge-update-ready',    label: 'READY TO INSTALL' },
+    failed:          { cls: 'badge-update-failed',   label: 'FAILED' },
+    fetch_available: { cls: 'badge-update-progress', label: 'FETCHING' },
+    up_to_date:      { cls: 'badge-update-current',  label: 'UP TO DATE' },
+  };
+  const s = map[u?.state] || map.up_to_date;
+  let detail = '';
+  if (u?.state === 'ready' || u?.state === 'fetch_available') detail = u.description;
+  else if (u?.state === 'failed') detail = u.last_exception || `${u.failed_count} failed attempt(s)`;
+  else if (u?.state === 'up_to_date' && u?.last_update_time) detail = `checked ${new Date(u.last_update_time).toLocaleString()}`;
+  return `<span class="badge-ign ${s.cls}">${s.label}</span>` +
+    (detail ? ` <span style="font-size:0.7rem;color:var(--text-dim)">${escHtml(detail)}</span>` : '');
+}
 
 /* ============ DASHBOARD ============ */
 function fmtMps(v) {
@@ -805,9 +823,7 @@ async function loadDashboard() {
       <div class="row"><span class="label">Commit</span><span class="value">${device.git_commit ? device.git_commit.slice(0, 8) : '—'}</span></div>
       <div class="row"><span class="label">Date</span><span class="value" style="font-size:0.72rem">${device.git_commit_date ? device.git_commit_date.split(' ').slice(0, 2).join(' ') : '—'}</span></div>
       <div class="row"><span class="label">Dirty</span><span class="value">${fmtBool(device.is_dirty)}</span></div>
-      <div class="row"><span class="label">Update</span><span class="value">${updateStatus?.available
-        ? `<span class="badge-restart" style="background:var(--green,#4caf50);color:#fff">AVAILABLE</span> <span style="font-size:0.7rem;color:var(--text-dim)">${escHtml(updateStatus.description)}</span>`
-        : `<span style="color:var(--text-dim)">No update available</span>`}</span></div>
+      <div class="row"><span class="label">Update</span><span class="value">${fmtUpdateStatus(updateStatus)}</span></div>
     `;
 
     document.getElementById('card-capabilities').querySelector('.card-body').innerHTML = `

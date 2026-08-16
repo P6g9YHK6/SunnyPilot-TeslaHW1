@@ -648,6 +648,12 @@ h1 {
 .badge-ign-off     { background: var(--surface3);   color: var(--text-muted); border: 1px solid var(--border-mid); }
 .badge-ign-unknown { background: var(--surface3);   color: var(--text-muted); border: 1px solid var(--border-mid); }
 
+/* ─── Update status badge ───────────────────────────────────────── */
+.badge-update-ready    { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(62,207,142,0.3); }
+.badge-update-progress { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(91,157,248,0.3); }
+.badge-update-failed   { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(248,113,113,0.3); }
+.badge-update-current  { background: var(--surface3);   color: var(--text-muted); border: 1px solid var(--border-mid); }
+
 /* ─── Item control ──────────────────────────────────────────────── */
 .item-control {
   flex-shrink: 0;
