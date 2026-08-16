@@ -1107,6 +1107,83 @@ function nmConfirm() {
   }
 }
 
+/* ---- Calibrate (camera offset) modal ---- */
+let _calibKey = null, _calibSide = 'left', _calibCm = 0;
+let _calibMin = -Infinity, _calibMax = Infinity, _calibStep = 0.01;
+let _calibLabel = '', _calibNeedsCycle = false;
+
+function openCalibrateModal(key, val, min, max, step, label, needsCycle) {
+  _calibKey = key;
+  _calibMin = min !== '' && min !== undefined ? parseFloat(min) : -Infinity;
+  _calibMax = max !== '' && max !== undefined ? parseFloat(max) : Infinity;
+  _calibStep = parseFloat(step) || 0.01;
+  _calibLabel = label;
+  _calibNeedsCycle = !!needsCycle;
+
+  const v = parseFloat(val) || 0;
+  _calibSide = v < 0 ? 'right' : 'left';
+  _calibCm = Math.round(Math.abs(v) * 100);
+
+  _calibRenderStep1();
+}
+
+function _calibRenderStep1() {
+  const body = `
+    <p>Is the device mounted to the left or right of center on the windshield?</p>
+    <div class="calib-side-choice">
+      <button class="calib-side-btn ${_calibSide === 'left' ? 'active' : ''}" onclick="_calibPickSide('left')">&#8592; Left</button>
+      <button class="calib-side-btn ${_calibSide === 'right' ? 'active' : ''}" onclick="_calibPickSide('right')">Right &#8594;</button>
+    </div>`;
+  showModal(_calibLabel, body, [
+    { label: 'Cancel', action: '', cls: '' },
+  ]);
+}
+
+function _calibPickSide(side) {
+  _calibSide = side;
+  _calibRenderStep2();
+}
+
+function _calibRenderStep2() {
+  const maxCm = Math.round(Math.max(Math.abs(_calibMin), Math.abs(_calibMax)) * 100);
+  const body = `
+    <button class="btn btn-sm calib-back-btn" type="button" onclick="_calibRenderStep1()">&#8592; Back</button>
+    <p>How far off center is it, in centimeters?</p>
+    <div class="num-modal">
+      <input type="number" id="calib-input" class="num-input" value="${_calibCm}" step="1" min="0" max="${maxCm}" oninput="_calibInputChange(this.value)">
+      <div class="num-btns">
+        <button class="btn btn-sm" onclick="_calibNudge(-10)">&#8722;10</button>
+        <button class="btn btn-sm" onclick="_calibNudge(-1)">&#8722;1</button>
+        <button class="btn btn-sm" onclick="_calibNudge(1)">+1</button>
+        <button class="btn btn-sm" onclick="_calibNudge(10)">+10</button>
+      </div>
+    </div>`;
+  showModal(_calibLabel, body, [
+    { label: 'Cancel', action: '', cls: '' },
+    { label: 'Confirm', action: '_calibConfirm()', cls: 'btn-primary' },
+  ]);
+  setTimeout(() => document.getElementById('calib-input')?.select(), 50);
+}
+
+function _calibInputChange(v) {
+  _calibCm = Math.max(0, Math.round(parseFloat(v) || 0));
+}
+
+function _calibNudge(n) {
+  _calibCm = Math.max(0, _calibCm + n);
+  const inp = document.getElementById('calib-input');
+  if (inp) inp.value = _calibCm;
+}
+
+function _calibConfirm() {
+  if (!_calibKey) return;
+  let meters = (_calibSide === 'left' ? 1 : -1) * (_calibCm / 100);
+  meters = Math.min(_calibMax, Math.max(_calibMin, meters));
+  meters = Math.round(meters / _calibStep) * _calibStep;
+  meters = parseFloat(meters.toFixed(2));
+  queueChange(_calibKey, String(meters), _calibLabel, _calibNeedsCycle);
+}
+
 /* ---- Generic number selector modal (with callback) ---- */
 let _nmCallback = null;
 let _nmCbVal = 0, _nmCbMin = -Infinity, _nmCbMax = Infinity, _nmCbStep = 1;
@@ -1180,13 +1257,24 @@ function buildUnit(item, isMetric) {
   return ' ' + (isMetric ? item.unit.metric : item.unit.imperial);
 }
 
+/* Client-side widget overrides — force specific keys to use a friendlier
+   custom editor without modifying the shared settings schema. */
+const WIDGET_OVERRIDES = {
+  CameraOffset: {
+    widget: 'calibrate',
+    title: 'Calibrate Camera Position',
+    description: "Tell the device which side of center it's mounted on and how far off, so it can correct what it thinks is straight ahead.",
+  },
+};
+
 /* ---- Render a single setting item ---- */
 let _descId = 0;
 function renderSettingItem(item, caps, paramCache, status, depth, forceDisabled = false) {
   const key = item.key || '';
-  const title = buildTitle(item, paramCache);
-  const desc = item.description || '';
-  const widget = item.widget || 'toggle';
+  const override = WIDGET_OVERRIDES[key];
+  const title = override?.title || buildTitle(item, paramCache);
+  const desc = override?.description || item.description || '';
+  const widget = override?.widget || item.widget || 'toggle';
   const needsCycle   = item.needs_onroad_cycle ? '<span class="badge-restart">Restart</span>' : '';
   const offroadOnly  = hasOffroadOnly(item.enablement) ? '<span class="badge-offroad">Offroad</span>' : '';
   const isBlocked    = !!item.blocked;
@@ -1233,6 +1321,15 @@ function renderSettingItem(item, caps, paramCache, status, depth, forceDisabled 
       const unit = buildUnit(item, status.is_metric);
       controlHtml = `<span class="item-value-mono">${fmtVal(paramCache[key])}${unit}</span>`;
     }
+
+  } else if (widget === 'calibrate') {
+    const v = parseFloat(paramCache[key]) || 0;
+    const cm = Math.round(Math.abs(v) * 100);
+    const sideLabel = cm === 0 ? 'Centered' : (v > 0 ? `${cm}cm left` : `${cm}cm right`);
+    controlHtml = `<button class="calibrate-btn" data-param="${key}"
+      data-min="${item.min ?? ''}" data-max="${item.max ?? ''}" data-step="${item.step ?? 1}"
+      data-label="${title.replace(/'/g, "\\'")}" data-needs-cycle="${item.needs_onroad_cycle ? '1' : ''}"
+      ${!enabled ? 'disabled' : ''}>${sideLabel}</button>`;
 
   } else if (widget === 'info') {
     controlHtml = `<span class="info-display">${fmtVal(paramCache[key])}</span>`;
@@ -1569,6 +1666,22 @@ function renderSettingsUI() {
     btn.addEventListener('click', (e) => {
       const key = e.target.dataset.param;
       openNumModal(
+        key,
+        settingsParamCache[key],
+        e.target.dataset.min,
+        e.target.dataset.max,
+        e.target.dataset.step,
+        e.target.dataset.label,
+        e.target.dataset.needsCycle === '1',
+      );
+    });
+  });
+
+  /* Wire up calibrate buttons */
+  container.querySelectorAll('button.calibrate-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const key = e.target.dataset.param;
+      openCalibrateModal(
         key,
         settingsParamCache[key],
         e.target.dataset.min,
