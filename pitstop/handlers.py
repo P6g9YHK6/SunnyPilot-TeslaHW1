@@ -539,14 +539,42 @@ class HandlerMixin:
       except Exception:
         return ""
       return v.decode("utf-8", errors="replace").strip() if isinstance(v, bytes) else (v or "")
+
+    updater_state = _getstr("UpdaterState") or "idle"
     update_available = self.params.get_bool("UpdateAvailable")
+    fetch_available = self.params.get_bool("UpdaterFetchAvailable")
+    failed_count = self.params.get("UpdateFailedCount", return_default=True) or 0
     current_desc = _getstr("UpdaterCurrentDescription")
     new_desc = _getstr("UpdaterNewDescription")
     fork_url = _getstr("UpdaterForkUrl")
-    available = update_available and new_desc != current_desc
+    last_exception = _getstr("LastUpdateException")
+    try:
+      last_update_dt = self.params.get("LastUpdateTime")
+      last_update_time = last_update_dt.isoformat() if last_update_dt else ""
+    except Exception:
+      last_update_time = ""
+
+    progress_states = {"checking...": "checking", "downloading...": "downloading", "finalizing update...": "finalizing"}
+    if updater_state in progress_states:
+      state = progress_states[updater_state]
+    elif update_available:
+      state = "ready"
+    elif failed_count > 0:
+      state = "failed"
+    elif fetch_available:
+      state = "fetch_available"
+    else:
+      state = "up_to_date"
+
     return web.json_response({
-      "available": available, "current_description": current_desc,
-      "description": new_desc, "fork_url": fork_url,
+      "state": state,
+      "available": update_available and new_desc != current_desc,  # kept for compat
+      "current_description": current_desc,
+      "description": new_desc,
+      "fork_url": fork_url,
+      "failed_count": failed_count,
+      "last_update_time": last_update_time,
+      "last_exception": last_exception if state == "failed" else "",
     })
 
   async def handle_system_reboot(self, request):
