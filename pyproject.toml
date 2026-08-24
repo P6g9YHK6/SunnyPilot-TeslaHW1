@@ -42,6 +42,9 @@ dependencies = [
   # joystickd
   "inputs",
 
+  # pitstop
+  "aiohttp",
+
   # these should be removed
   "pyzmq",
   "sentry-sdk",
