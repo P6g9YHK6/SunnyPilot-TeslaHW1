@@ -345,12 +345,24 @@ jobs:
           #
           # tg_input_devices.json is NOT in this list: unlike the .pkl files,
           # it's just the `tg_devices` dict from that SConscript dumped to
-          # JSON - deterministic from source, no GPU needed - so the earlier
-          # full build already wrote a correct, current copy of it. Pulling it
-          # from this old cached commit would clobber that with stale
-          # pre-restructure keys (missing the "openpilot." prefix), which is
-          # exactly what broke dmonitoringmodeld/modeld with a KeyError after
-          # the nested-openpilot/-directory restructure.
+          # JSON, keyed by process name - deterministic from source, no GPU
+          # needed, so pulling a copy from this old cached commit would risk
+          # clobbering it with stale pre-restructure keys (missing the
+          # "openpilot." prefix), which is exactly what broke
+          # dmonitoringmodeld/modeld with a KeyError after the
+          # nested-openpilot/-directory restructure.
+          #
+          # It's still wrong on its own, though: its values (`tg_backend`,
+          # SConscript's DEV=QCOM-if-comma_arm64-else-CPU) are baked from
+          # *this runner's* arch during the pass-1 (no /AGNOS) build above -
+          # always CPU here, since pass 1 deliberately avoids comma_arm64 to
+          # keep dmonitoring/dm_warp compiling against the safe CPU:LLVM
+          # fallback (see "Build Main Project" above). The .pkl swap-in right
+          # above this comment fixes the compiled model; this file has to be
+          # patched to match, or dmonitoringmodeld's image_warp JIT call
+          # rejects the real QCOM-tensor input at runtime with
+          # `tinygrad.engine.jit.JitError: args mismatch in JIT` (captured
+          # device QCOM != runtime-requested CPU) - confirmed on-device.
           CACHE_SHA=d7f1025998183039ffb78f8dab774448ebea4389
           git fetch --depth 1 origin "$CACHE_SHA"
           MODELS_DIR="${BUILD_DIR}/openpilot/selfdrive/modeld/models"
@@ -359,6 +371,22 @@ jobs:
                    dm_warp_1344x760_tinygrad.pkl dm_warp_1928x1208_tinygrad.pkl; do
             git show "$CACHE_SHA:$f" > "${MODELS_DIR}/$f"
           done
+
+          TG_DEVICES_JSON="${MODELS_DIR}/tg_input_devices.json"
+          python3 -c "
+import json
+path = '${TG_DEVICES_JSON}'
+with open(path) as f:
+    devices = json.load(f)
+for proc in devices.values():
+    for cfg in proc.values():
+        for key, val in cfg.items():
+            if val == 'CPU':
+                cfg[key] = 'QCOM'
+with open(path, 'w') as f:
+    json.dump(devices, f)
+print('[tg_input_devices] patched CPU -> QCOM:', json.dumps(devices))
+"
 
       - name: Fix locationd RUNPATH (CI-only)
         run: |
