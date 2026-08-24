@@ -383,19 +383,27 @@ jobs:
           # cannot open shared object file". Copy the actual .so files into
           # the shipped tree and rewrite RUNPATH to be $ORIGIN-relative,
           # same approach as the locationd fix above.
-          FFMPEG_LIB_DIR=$("${VIRTUAL_ENV}/bin/python3" -c "import ffmpeg; print(ffmpeg.LIB_DIR)" 2>/dev/null || true)
+          #
+          # No need to re-derive ffmpeg.LIB_DIR ourselves (e.g. by guessing
+          # which venv/python3 to invoke) - scons already baked it into
+          # encoderd's RPATH as part of the build above. Read it straight
+          # back out of the binary before overwriting it. Any failure here
+          # exits non-zero: a silent skip would ship a build that looks fine
+          # (binaries present, "Verify build output" only checks existence)
+          # but can't actually start on a device.
           LOGGERD_DIR="${BUILD_DIR}/openpilot/system/loggerd"
-          if [ -n "$FFMPEG_LIB_DIR" ] && [ -d "$FFMPEG_LIB_DIR" ] && [ -f "${LOGGERD_DIR}/encoderd" ]; then
-            sudo apt-get install -y patchelf >/dev/null 2>&1
-            mkdir -p "${LOGGERD_DIR}/lib"
-            cp -aL "$FFMPEG_LIB_DIR"/lib*.so* "${LOGGERD_DIR}/lib/"
-            for BIN in loggerd encoderd; do
-              patchelf --set-rpath '$ORIGIN/lib' "${LOGGERD_DIR}/${BIN}"
-              readelf -d "${LOGGERD_DIR}/${BIN}" | grep -i 'runpath' || (echo "[ffmpeg rpath] ${BIN} missing RUNPATH" && exit 1)
-            done
-          else
-            echo "[ffmpeg rpath] ffmpeg lib dir or encoderd not found, skipping" >&2
+          sudo apt-get install -y patchelf >/dev/null 2>&1
+          FFMPEG_LIB_DIR=$(patchelf --print-rpath "${LOGGERD_DIR}/encoderd")
+          if [ -z "$FFMPEG_LIB_DIR" ] || [ ! -d "$FFMPEG_LIB_DIR" ]; then
+            echo "[ffmpeg rpath] couldn't resolve ffmpeg lib dir from encoderd's existing RPATH: '$FFMPEG_LIB_DIR'" >&2
+            exit 1
           fi
+          mkdir -p "${LOGGERD_DIR}/lib"
+          cp -aL "$FFMPEG_LIB_DIR"/lib*.so* "${LOGGERD_DIR}/lib/"
+          for BIN in loggerd encoderd; do
+            patchelf --set-rpath '$ORIGIN/lib' "${LOGGERD_DIR}/${BIN}"
+            readelf -d "${LOGGERD_DIR}/${BIN}" | grep -i 'runpath' || (echo "[ffmpeg rpath] ${BIN} missing RUNPATH" && exit 1)
+          done
 
       - name: Verify build output
         run: |
