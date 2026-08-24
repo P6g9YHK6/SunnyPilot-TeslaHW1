@@ -372,21 +372,23 @@ jobs:
             git show "$CACHE_SHA:$f" > "${MODELS_DIR}/$f"
           done
 
-          TG_DEVICES_JSON="${MODELS_DIR}/tg_input_devices.json"
-          python3 -c "
-import json
-path = '${TG_DEVICES_JSON}'
-with open(path) as f:
-    devices = json.load(f)
-for proc in devices.values():
-    for cfg in proc.values():
-        for key, val in cfg.items():
-            if val == 'CPU':
-                cfg[key] = 'QCOM'
-with open(path, 'w') as f:
-    json.dump(devices, f)
-print('[tg_input_devices] patched CPU -> QCOM:', json.dumps(devices))
-"
+          export TG_DEVICES_JSON="${MODELS_DIR}/tg_input_devices.json"
+          sed 's/^          //' <<'PYEOF' | python3 -
+          import json
+          import os
+
+          path = os.environ["TG_DEVICES_JSON"]
+          with open(path) as f:
+            devices = json.load(f)
+          for proc in devices.values():
+            for cfg in proc.values():
+              for key, val in cfg.items():
+                if val == 'CPU':
+                  cfg[key] = 'QCOM'
+          with open(path, 'w') as f:
+            json.dump(devices, f)
+          print('[tg_input_devices] patched CPU -> QCOM:', json.dumps(devices))
+          PYEOF
 
       - name: Fix locationd RUNPATH (CI-only)
         run: |
