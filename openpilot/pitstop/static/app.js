@@ -248,12 +248,23 @@ function fmtUpdateStatus(u) {
     up_to_date:      { cls: 'badge-update-current',  label: 'UP TO DATE' },
   };
   const s = map[u?.state] || map.up_to_date;
+  const busy = ['checking', 'downloading', 'finalizing'].includes(u?.state);
   let detail = '';
   if (u?.state === 'ready' || u?.state === 'fetch_available') detail = u.description;
   else if (u?.state === 'failed') detail = u.last_exception || `${u.failed_count} failed attempt(s)`;
   else if (u?.state === 'up_to_date' && u?.last_update_time) detail = `checked ${new Date(u.last_update_time).toLocaleString()}`;
+  const checkBtn = `<button class="btn btn-sm" style="margin-left:0.4rem" onclick="checkForUpdate(this)" ${busy ? 'disabled' : ''}>Check</button>`;
   return `<span class="badge-ign ${s.cls}">${s.label}</span>` +
-    (detail ? ` <span style="font-size:0.7rem;color:var(--text-dim)">${escHtml(detail)}</span>` : '');
+    (detail ? ` <span style="font-size:0.7rem;color:var(--text-dim)">${escHtml(detail)}</span>` : '') +
+    checkBtn;
+}
+
+function checkForUpdate(btn) {
+  if (btn) btn.disabled = true;
+  api('/api/update/check', { method: 'POST' })
+    .then(() => toast('Checking for updates…', 'info'))
+    .catch(() => { toast('Check failed, updated may not be running', 'error'); if (btn) btn.disabled = false; })
+    .finally(() => setTimeout(loadDashboard, 3000));
 }
 
 /* ============ DASHBOARD ============ */
