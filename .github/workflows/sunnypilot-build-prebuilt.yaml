@@ -329,12 +329,21 @@ jobs:
           # `Device.get_available_devices()` includes QCOM there) using the
           # exact flags/commands selfdrive/modeld/SConscript specifies, for
           # both driving and dmonitoring models plus both dm_warp resolutions.
+          #
+          # tg_input_devices.json is NOT in this list: unlike the .pkl files,
+          # it's just the `tg_devices` dict from that SConscript dumped to
+          # JSON - deterministic from source, no GPU needed - so the earlier
+          # full build already wrote a correct, current copy of it. Pulling it
+          # from this old cached commit would clobber that with stale
+          # pre-restructure keys (missing the "openpilot." prefix), which is
+          # exactly what broke dmonitoringmodeld/modeld with a KeyError after
+          # the nested-openpilot/-directory restructure.
           CACHE_SHA=b7f883939580cc8e026e14437c55ddb5bc4eb468
           git fetch --depth 1 origin "$CACHE_SHA"
           MODELS_DIR="${BUILD_DIR}/openpilot/selfdrive/modeld/models"
           for f in driving_tinygrad.pkl.chunkmanifest driving_tinygrad.pkl.chunk01of02 driving_tinygrad.pkl.chunk02of02 \
                    dmonitoring_model_tinygrad.pkl.chunkmanifest dmonitoring_model_tinygrad.pkl.chunk01of01 \
-                   dm_warp_1344x760_tinygrad.pkl dm_warp_1928x1208_tinygrad.pkl tg_input_devices.json; do
+                   dm_warp_1344x760_tinygrad.pkl dm_warp_1928x1208_tinygrad.pkl; do
             git show "$CACHE_SHA:$f" > "${MODELS_DIR}/$f"
           done
 
