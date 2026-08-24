@@ -577,6 +577,14 @@ class HandlerMixin:
       "last_exception": last_exception if state == "failed" else "",
     })
 
+  async def handle_update_check(self, request):
+    result = subprocess.run(["pkill", "-SIGUSR1", "-f", "system.updated.updated"], check=False)
+    found = result.returncode == 0
+    logger.info(f"[UPDATE] check requested via PitStop (updated running: {found})")
+    if not found:
+      raise web.HTTPServiceUnavailable(text="updated is not running")
+    return web.json_response({"status": "checking"})
+
   async def handle_system_reboot(self, request):
     Params().put_bool("DoReboot", True)
     logger.info("[SYSTEM] clean reboot requested via PitStop")

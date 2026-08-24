@@ -142,6 +142,7 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
 
     # System actions
     app.router.add_get("/api/update", self.handle_update_status)
+    app.router.add_post("/api/update/check", self.handle_update_check)
     app.router.add_post("/api/system/reboot", self.handle_system_reboot)
     app.router.add_post("/api/system/restart", self.handle_system_restart)
     app.router.add_post("/api/system/restart-pitstop", self.handle_pitstop_restart)
