@@ -187,10 +187,10 @@ jobs:
       - name: Provision camerad build headers (CI-only)
         run: |
           # This job cross-builds the official mici/Tesla-HW1 device release.
-          # /TICI only exists on real AGNOS hardware, never on this runner, so
-          # SConstruct's larch64 detection (which gates camerad's build) needs
-          # this nudge or it silently skips building it entirely.
-          sudo touch /TICI
+          # /AGNOS only exists on real AGNOS hardware, never on this runner, so
+          # SConstruct's COMMA_HARDWARE detection (which gates camerad's build)
+          # needs this nudge or it silently skips building it entirely.
+          sudo touch /AGNOS
 
           # camerad's #include "media/*.h" quoted includes fall back to the
           # system include path (/usr/include) - present on real AGNOS
