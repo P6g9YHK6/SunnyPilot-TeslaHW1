@@ -269,6 +269,21 @@ jobs:
           export PYTHONPATH="$BUILD_DIR"
           ./tools/release/release_files.py | xargs -0 cp -pR --parents -t "$BUILD_DIR" --
           cd $BUILD_DIR
+
+          # /AGNOS must NOT be present for this part of the build: SConstruct's
+          # COMMA_HARDWARE flag (gated on /AGNOS) also drives
+          # openpilot/selfdrive/modeld/SConscript's tinygrad backend selection
+          # (tg_backend = 'QCOM' if arch == 'comma_arm64' else 'CPU'), not just
+          # camerad's build gating. With /AGNOS present here, dmonitoring/
+          # dm_warp model compilation tries to actually talk to a real Adreno
+          # GPU (open()/ioctl() on /dev/kgsl-3d0) and hard-crashes scons before
+          # the "Replace CPU-compiled tinygrad models..." step ever runs. Keep
+          # it absent so these compile against the safe CPU:LLVM fallback
+          # instead - their output gets overwritten with real QCOM-compiled
+          # ones by that step regardless, so the CPU-compiled result here is
+          # only ever a placeholder.
+          sudo rm -f /AGNOS
+
           echo "Building sunnypilot's modeld_v2..."
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal openpilot/sunnypilot/modeld_v2
           echo "Building sunnypilot's locationd..."
@@ -277,6 +292,15 @@ jobs:
           scons -j1 cache_dir=${{env.SCONS_CACHE_DIR}} --minimal openpilot/selfdrive/locationd
           echo "Building rest of sunnypilot"
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
+
+          # camerad specifically needs COMMA_HARDWARE=True to even be included
+          # in the build graph (see "Provision camerad build headers" above),
+          # so it's built as its own pass, now that the tinygrad-affecting
+          # targets above are already done.
+          sudo touch /AGNOS
+          echo "Building camerad..."
+          scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal openpilot/system/camerad
+
           touch ${BUILD_DIR}/prebuilt
           if [[ "${{ runner.debug }}" == "1" ]]; then
             ls -la ${BUILD_DIR}
