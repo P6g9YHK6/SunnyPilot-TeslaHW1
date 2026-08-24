@@ -296,10 +296,18 @@ jobs:
           # camerad specifically needs COMMA_HARDWARE=True to even be included
           # in the build graph (see "Provision camerad build headers" above),
           # so it's built as its own pass, now that the tinygrad-affecting
-          # targets above are already done.
+          # targets above are already done. loggerd/encoderd are rebuilt here
+          # too: openpilot/system/loggerd/SConscript picks its encoder source
+          # by the same arch flag (v4l_encoder.cc, the real V4L2 hardware
+          # encoder, only when arch == comma_arm64 - otherwise it falls back
+          # to ffmpeg_encoder.cc, software encoding never meant to run on
+          # device hardware). Building them in the earlier pass above would
+          # silently ship the wrong encoder implementation.
           sudo touch /AGNOS
           echo "Building camerad..."
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal openpilot/system/camerad
+          echo "Building loggerd/encoderd..."
+          scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal openpilot/system/loggerd
 
           touch ${BUILD_DIR}/prebuilt
           if [[ "${{ runner.debug }}" == "1" ]]; then
@@ -361,6 +369,32 @@ jobs:
             readelf -d "$BIN" | grep -i 'runpath' || (echo "[locationd rpath] missing RUNPATH" && exit 1)
           else
             echo "[locationd rpath] ${BIN} not found, skipping" >&2
+          fi
+
+      - name: Bundle ffmpeg libs for loggerd/encoderd (CI-only)
+        run: |
+          # SConstruct bakes RPATH=[ffmpeg.LIB_DIR] (an absolute path into
+          # *this runner's* venv) into loggerd/encoderd whenever they're
+          # linked against shared ffmpeg (openpilot/system/loggerd/SConscript
+          # always links ffmpeg_libs, regardless of arch - only the encoder
+          # source file used is arch-conditional). That path doesn't exist on
+          # a device, so the dynamic linker refuses to start either binary at
+          # all: "error while loading shared libraries: libavcodec.so.61:
+          # cannot open shared object file". Copy the actual .so files into
+          # the shipped tree and rewrite RUNPATH to be $ORIGIN-relative,
+          # same approach as the locationd fix above.
+          FFMPEG_LIB_DIR=$("${VIRTUAL_ENV}/bin/python3" -c "import ffmpeg; print(ffmpeg.LIB_DIR)" 2>/dev/null || true)
+          LOGGERD_DIR="${BUILD_DIR}/openpilot/system/loggerd"
+          if [ -n "$FFMPEG_LIB_DIR" ] && [ -d "$FFMPEG_LIB_DIR" ] && [ -f "${LOGGERD_DIR}/encoderd" ]; then
+            sudo apt-get install -y patchelf >/dev/null 2>&1
+            mkdir -p "${LOGGERD_DIR}/lib"
+            cp -aL "$FFMPEG_LIB_DIR"/lib*.so* "${LOGGERD_DIR}/lib/"
+            for BIN in loggerd encoderd; do
+              patchelf --set-rpath '$ORIGIN/lib' "${LOGGERD_DIR}/${BIN}"
+              readelf -d "${LOGGERD_DIR}/${BIN}" | grep -i 'runpath' || (echo "[ffmpeg rpath] ${BIN} missing RUNPATH" && exit 1)
+            done
+          else
+            echo "[ffmpeg rpath] ffmpeg lib dir or encoderd not found, skipping" >&2
           fi
 
       - name: Verify build output
