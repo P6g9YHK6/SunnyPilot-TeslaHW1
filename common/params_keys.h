@@ -16,6 +16,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"AthenadUploadQueue", {PERSISTENT, JSON}},
     {"AthenadRecentlyViewedRoutes", {PERSISTENT, STRING}},
     {"BootCount", {PERSISTENT, INT}},
+    {"BridgeEnabled", {PERSISTENT | BACKUP, BOOL}},
     {"CalibrationParams", {PERSISTENT, BYTES}},
     {"CameraDebugExpGain", {CLEAR_ON_MANAGER_START, STRING}},
     {"CameraDebugExpTime", {CLEAR_ON_MANAGER_START, STRING}},
@@ -80,6 +81,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LiveDelay", {PERSISTENT | BACKUP, BYTES}},
     {"LiveParameters", {PERSISTENT, JSON}},
     {"LiveParametersV2", {PERSISTENT, BYTES}},
+    {"LivestreamEncoderBitrate", {CLEAR_ON_MANAGER_START | DONT_LOG, INT}},
     {"LiveTorqueParameters", {PERSISTENT | DONT_LOG, BYTES}},
     {"LocationFilterInitialState", {PERSISTENT, BYTES}},
     {"LateralManeuverMode", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
@@ -103,8 +105,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"OnroadCycleRequested", {CLEAR_ON_MANAGER_START, BOOL}},
     {"OpenpilotEnabledToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"PandaHeartbeatLost", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
-    {"PandaSomResetTriggered", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
-    {"PandaSignatures", {CLEAR_ON_MANAGER_START, BYTES}},
     {"PrimeType", {PERSISTENT, INT}},
     {"RecordAudio", {PERSISTENT | BACKUP, BOOL}},
     {"RecordAudioFeedback", {PERSISTENT | BACKUP, BOOL, "0"}},
@@ -132,6 +132,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"UpdaterLastFetchTime", {PERSISTENT, TIME}},
     {"UptimeOffroad", {PERSISTENT, FLOAT, "0.0"}},
     {"UptimeOnroad", {PERSISTENT, FLOAT, "0.0"}},
+    {"UsbGpuPresent", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
+    {"UsbGpuCompiled", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
     {"Version", {PERSISTENT, STRING}},
 
     // --- sunnypilot params --- //
@@ -226,6 +228,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
+
+    // pitstop params
+    {"PitStopEnabled", {PERSISTENT | BACKUP, BOOL}},
 
     // sunnypilot model params
     {"CameraOffset", {PERSISTENT | BACKUP, FLOAT, "0.0"}},

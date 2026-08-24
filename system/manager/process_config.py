@@ -34,7 +34,7 @@ def ublox_available() -> bool:
 def ublox(started: bool, params: Params, CP: car.CarParams) -> bool:
   use_ublox = ublox_available()
   if use_ublox != params.get_bool("UbloxAvailable"):
-    params.put_bool("UbloxAvailable", use_ublox)
+    params.put_bool("UbloxAvailable", use_ublox, block=True)
   return started and use_ublox
 
 def joystick(started: bool, params: Params, CP: car.CarParams) -> bool:
@@ -70,6 +70,12 @@ def use_github_runner(started, params, CP: car.CarParams) -> bool:
 
 def use_copyparty(started, params, CP: car.CarParams) -> bool:
   return bool(params.get_bool("EnableCopyparty"))
+
+def use_bridge(started, params, CP: car.CarParams) -> bool:
+  return bool(params.get_bool("BridgeEnabled"))
+
+def use_pitstop(started, params, CP: car.CarParams) -> bool:
+  return bool(params.get_bool("PitStopEnabled"))
 
 def sunnylink_ready_shim(started, params, CP: car.CarParams) -> bool:
   """Shim for sunnylink_ready to match the process manager signature."""
@@ -148,6 +154,7 @@ procs = [
   PythonProcess("lateral_maneuversd", "tools.lateral_maneuvers.lateral_maneuversd", lat_maneuver),
   PythonProcess("radard", "selfdrive.controls.radard", only_onroad),
   PythonProcess("hardwared", "system.hardware.hardwared", always_run),
+  PythonProcess("modem", "system.hardware.tici.modem", always_run, enabled=TICI),
   PythonProcess("tombstoned", "system.tombstoned", always_run, enabled=not PC),
   PythonProcess("updated", "system.updated.updated", only_offroad, enabled=not PC),
   PythonProcess("uploader", "system.loggerd.uploader", uploader_ready),
@@ -155,7 +162,7 @@ procs = [
   PythonProcess("feedbackd", "selfdrive.ui.feedback.feedbackd", only_onroad),
 
   # debug procs
-  NativeProcess("bridge", "cereal/messaging", ["./bridge"], notcar),
+  NativeProcess("bridge", "cereal/messaging", ["./bridge"], use_bridge),
   PythonProcess("webrtcd", "system.webrtc.webrtcd", notcar),
   PythonProcess("webjoystick", "tools.bodyteleop.web", notcar),
   PythonProcess("joystick", "tools.joystick.joystick_control", and_(joystick, iscar)),
@@ -164,6 +171,9 @@ procs = [
   DaemonProcess("manage_sunnylinkd", "sunnypilot.sunnylink.athena.manage_sunnylinkd", "SunnylinkdPid"),
   PythonProcess("sunnylink_registration_manager", "sunnypilot.sunnylink.registration_manager", sunnylink_need_register_shim),
   PythonProcess("statsd_sp", "sunnypilot.sunnylink.statsd", and_(always_run, sunnylink_ready_shim)),
+
+  # pitstop
+  PythonProcess("pitstop", "pitstop.server", use_pitstop, enabled=True, restart_if_crash=True),
 ]
 
 # sunnypilot

@@ -1,11 +1,11 @@
 name: sunnypilot prebuilt action
 
 env:
-  BUILD_DIR: "/data/openpilot"
+  BUILD_DIR: ${{ (github.ref_name == 'dev' || github.ref_name == 'master') && format('{0}/build', github.workspace) || '/data/openpilot' }}
   OUTPUT_DIR: ${{ github.workspace }}/output
   CI_DIR: ${{ github.workspace }}/release/ci
   SCONS_CACHE_DIR: ${{ github.workspace }}/release/ci/scons_cache
-  PUBLIC_REPO_URL: "https://github.com/sunnypilot/sunnypilot"
+  PUBLIC_REPO_URL: "${{ github.server_url }}/${{ github.repository }}"
 
   # Branch configurations
   STAGING_SOURCE_BRANCH: 'master'
@@ -15,7 +15,7 @@ env:
 
 on:
   push:
-    branches: [ master, master-dev ]
+    branches: [ master, dev, master-dev ]
     tags: [ 'release/*' ]
   pull_request_target:
     types: [ labeled ]
@@ -108,7 +108,7 @@ jobs:
     concurrency:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
-    runs-on: [self-hosted, tici]
+    runs-on: ${{ (github.ref_name == 'dev' || github.ref_name == 'master') && 'ubuntu-24.04-arm' || '[self-hosted, linux]' }}
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
@@ -128,6 +128,10 @@ jobs:
           ref: ${{ env.SOURCE_BRANCH }}
           repository: ${{ github.event.pull_request.head.repo.fork && github.event.pull_request.head.repo.full_name || github.repository }}
       - run: git lfs pull
+
+      - name: Install dependencies (cloud runner)
+        if: ${{ github.ref_name == 'dev' || github.ref_name == 'master' }}
+        run: ./tools/op.sh setup
 
       - name: Cache SCons
         uses: actions/cache@v4
@@ -172,7 +176,77 @@ jobs:
           if [[ "${{ runner.debug }}" == "1" ]]; then
             printenv
           fi
-          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
+          if [[ "${{ github.ref_name }}" != "dev" && "${{ github.ref_name }}" != "master" ]]; then
+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
+          fi
+
+      - name: Provision camerad build headers (CI-only)
+        run: |
+          # This job cross-builds the official mici/Tesla-HW1 device release.
+          # /TICI only exists on real AGNOS hardware, never on this runner, so
+          # SConstruct's larch64 detection (which gates camerad's build) needs
+          # this nudge or it silently skips building it entirely.
+          sudo touch /TICI
+
+          # camerad's #include "media/*.h" quoted includes fall back to the
+          # system include path (/usr/include) - present on real AGNOS
+          # hardware, not on this runner. These are just Qualcomm UAPI struct/
+          # ioctl definitions (no vendor .so is linked), so it's safe to drop
+          # in the last version of them this repo's history ever had, from
+          # right before upstream removed the in-tree copies in favor of
+          # relying on /usr (commaai/openpilot@d7c562e13, "use linux headers
+          # from /usr"). Fetched at build time, not committed to the repo.
+          # Restore every header that's reachable from system/camerad's own
+          # #include directives (checked via `grep -rhoE '#include [<"](media/...' system/camerad/`),
+          # plus the ones they cross-include internally (e.g. cam_isp.h ->
+          # cam_isp_vfe.h, msm_cam_sensor.h -> msm_camsensor_sdk.h). Note the
+          # old vendored tree kept msm_*.h flat under include/, but current
+          # source does `#include <media/msm_camsensor_sdk.h>` - it must go
+          # under media/ now to match, regardless of where it lived before.
+          HEADER_SHA=f87bc52405e35a0b467d9cc460915fde63d6ba08
+          sudo mkdir -p /usr/include/media
+          git fetch --depth 1 origin "$HEADER_SHA"
+          for f in cam_cpas.h cam_defs.h cam_fd.h cam_icp.h cam_isp.h cam_isp_ife.h cam_isp_vfe.h \
+                   cam_jpeg.h cam_lrme.h cam_req_mgr.h cam_sensor.h cam_sensor_cmn_header.h cam_sync.h; do
+            git show "$HEADER_SHA:third_party/linux/include/media/$f" | sudo tee "/usr/include/media/$f" > /dev/null
+          done
+          git show "$HEADER_SHA:third_party/linux/include/msm_camsensor_sdk.h" | sudo tee /usr/include/media/msm_camsensor_sdk.h > /dev/null
+          # loggerd's v4l_encoder.cc also needs this one (`#include <media/msm_media_info.h>`).
+          git show "$HEADER_SHA:third_party/linux/include/msm_media_info.h" | sudo tee /usr/include/media/msm_media_info.h > /dev/null
+
+          # msgq_repo/SConscript picks visionbuf_ion.cc vs visionbuf.cc based on
+          # `File('/dev/ion').exists()` - a BUILD-machine check, even though the
+          # answer only matters for the TARGET device (which always has /dev/ion;
+          # confirmed present on the real hardware). Without this, the build
+          # silently links the non-ion fallback into camerad, which then fails
+          # at runtime with `CAM_REQ_MGR_MAP_BUF ... errno 22 (EINVAL)` trying
+          # to map its buffers into the ISP - a real device only surfaces this
+          # once camerad can actually start, which it couldn't until now.
+          # A plain empty file satisfies the existence check; nothing opens or
+          # reads /dev/ion at build time, only at runtime on the real device.
+          sudo touch /dev/ion
+          git show "$HEADER_SHA:third_party/linux/include/linux/ion.h" | sudo tee /usr/include/linux/ion.h > /dev/null
+          git show "$HEADER_SHA:third_party/linux/include/msm_ion.h" | sudo tee /usr/include/linux/msm_ion.h > /dev/null
+
+          # loggerd's v4l_encoder.cc also needs Qualcomm's V4L2_CID_MPEG_VIDC_*
+          # vendor control-ID extensions, which live in a patched linux/v4l2-controls.h.
+          # This one was NEVER vendored in this repo's own git history (only ever
+          # provided by AGNOS's OS image) - pull the identical file (verified same
+          # size/content as the real device) from comma's own public kernel source
+          # for this SoC instead, pinned to a fixed commit for reproducibility.
+          KERNEL_SHA=967fbc05094a22ee431735c69f33f8b4ecbe51c9
+          curl -sfL "https://raw.githubusercontent.com/commaai/agnos-kernel-sdm845/$KERNEL_SHA/include/uapi/linux/v4l2-controls.h" \
+            | sudo tee /usr/include/linux/v4l2-controls.h > /dev/null
+
+      - name: Provision font-rendering libs (CI-only)
+        run: |
+          # selfdrive/assets/fonts/process.py imports pyray to rasterize the
+          # .fnt assets during the scons build. pyray's raylib backend dlopens
+          # libGLESv2 at import time (even though nothing actually renders to
+          # a screen here) - present on the desktop-flavored ubuntu-24.04
+          # hosted runners, but not on this bare ubuntu-24.04-arm one, so the
+          # import fails and takes the whole build down with it.
+          sudo apt-get install -y --no-install-recommends libgles2 libegl1 >/dev/null 2>&1
 
       - name: Build Main Project
         run: |
@@ -192,6 +266,122 @@ jobs:
           if [[ "${{ runner.debug }}" == "1" ]]; then
             ls -la ${BUILD_DIR}
           fi
+
+      - name: Replace CPU-compiled tinygrad models with real QCOM-compiled ones
+        run: |
+          # tinygrad model compilation (selfdrive/modeld/SConscript) picks its
+          # backend via `Device.get_available_devices()` on the machine doing
+          # the BUILD. This runner has no Qualcomm Adreno GPU, so it silently
+          # falls back to DEV=CPU:LLVM, which compiles the model with whatever
+          # ARM64 instructions this runner's CPU has - a real device's older
+          # Kryo 385 cores can't execute all of them (SIGILL at runtime, no
+          # stacktrace, since it's raw JIT-compiled code being executed).
+          #
+          # Same class of problem as the camera headers, different shape: this
+          # one can't be fixed by providing a missing file, since it requires
+          # actually talking to a real Adreno GPU (/dev/kgsl-3d0) to compile
+          # against. Neither this pipeline nor any of this fork's other CI has
+          # that. Upstream sunnypilot solves it with a self-hosted runner on
+          # real tici hardware; StarPilot (another fork) explicitly skips
+          # recompiling this one artifact in CI and sources it from a real
+          # device instead (their SP_SKIP_DM_TINYGRAD_PKL) - same approach here.
+          #
+          # These were compiled directly on real mici hardware (confirmed
+          # `Device.get_available_devices()` includes QCOM there) using the
+          # exact flags/commands selfdrive/modeld/SConscript specifies, for
+          # both driving and dmonitoring models plus both dm_warp resolutions.
+          CACHE_SHA=b7f883939580cc8e026e14437c55ddb5bc4eb468
+          git fetch --depth 1 origin "$CACHE_SHA"
+          MODELS_DIR="${BUILD_DIR}/selfdrive/modeld/models"
+          for f in driving_tinygrad.pkl.chunkmanifest driving_tinygrad.pkl.chunk01of02 driving_tinygrad.pkl.chunk02of02 \
+                   dmonitoring_model_tinygrad.pkl.chunkmanifest dmonitoring_model_tinygrad.pkl.chunk01of01 \
+                   dm_warp_1344x760_tinygrad.pkl dm_warp_1928x1208_tinygrad.pkl tg_input_devices.json; do
+            git show "$CACHE_SHA:$f" > "${MODELS_DIR}/$f"
+          done
+
+      - name: Fix locationd RUNPATH (CI-only)
+        run: |
+          # sunnypilot/selfdrive/locationd/SConscript bakes Dir(...).abspath as the
+          # RUNPATH, so a CI-built (prebuilt) locationd ends up with a runner-workspace
+          # path that doesn't exist on the device (liblive.so => not found; locationd_llk
+          # exits 127 and the manager reports it "not running"). Rewrite the RUNPATH to be
+          # $ORIGIN-relative so it resolves from any install location (e.g. /data/openpilot).
+          BIN="${BUILD_DIR}/sunnypilot/selfdrive/locationd/locationd"
+          if [ -f "$BIN" ]; then
+            sudo apt-get install -y patchelf >/dev/null 2>&1
+            patchelf --set-rpath '$ORIGIN/models/generated' "$BIN"
+            readelf -d "$BIN" | grep -i 'runpath' || (echo "[locationd rpath] missing RUNPATH" && exit 1)
+          else
+            echo "[locationd rpath] ${BIN} not found, skipping" >&2
+          fi
+
+      - name: Verify build output
+        run: |
+          # Fails the build if any NativeProcess binary declared in process_config.py
+          # is missing from the build output - so a build that silently drops a
+          # required binary (wrong SConscript gating, missed arch, etc.) never
+          # reaches a device. CI-only, not committed to the source tree.
+          #
+          # Statically parses process_config.py via `ast` instead of importing it:
+          # importing it transitively runs module-level hardware/Params() side
+          # effects (calibrationd.py's devicetree read, mapd_manager.py's Params())
+          # that assume a real device and fail outright on this runner.
+          sed 's/^          //' <<'PYEOF' | python3 - "$BUILD_DIR"
+          import ast
+          import os
+          import sys
+
+          build_dir = sys.argv[1]
+          src_path = os.path.join(build_dir, "system", "manager", "process_config.py")
+          tree = ast.parse(open(src_path).read(), filename=src_path)
+
+          SCRIPT_INTERPRETERS = {"bash", "sh"}
+
+          def native_process_calls(tree):
+            for node in ast.walk(tree):
+              if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "NativeProcess":
+                yield node
+
+          def str_const(node):
+            return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+          missing = []
+          checked = []
+          for call in native_process_calls(tree):
+            name = str_const(call.args[0])
+            cwd = str_const(call.args[1])
+            cmdline = call.args[2]
+            if name is None or cwd is None or not isinstance(cmdline, ast.List) or not cmdline.elts:
+              continue
+
+            enabled_kw = next((kw.value for kw in call.keywords if kw.arg == "enabled"), None)
+            if isinstance(enabled_kw, ast.Constant) and enabled_kw.value is False:
+              continue  # only skip explicit `enabled=False`; anything else (incl. dynamic exprs) still gets checked
+
+            exe = str_const(cmdline.elts[0])
+            if exe is None or exe in SCRIPT_INTERPRETERS or exe.endswith((".py", ".sh")):
+              continue
+
+            path = os.path.normpath(os.path.join(build_dir, cwd, exe))
+            checked.append(path)
+            if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+              missing.append((name, path))
+
+          print(f"[verify_binaries] checked {len(checked)} expected native binaries under {build_dir}")
+
+          if missing:
+            print("\n[verify_binaries] BUILD IS MISSING REQUIRED BINARIES:", file=sys.stderr)
+            for name, path in missing:
+              print(f"  - {name}: expected at {path}", file=sys.stderr)
+            print(
+              "\nThis release would silently ship without these processes. "
+              "Check the SConstruct/SConscript gating for the platform this was built for.",
+              file=sys.stderr,
+            )
+            sys.exit(1)
+
+          print("[verify_binaries] all expected native binaries present.")
+          PYEOF
 
       - name: Prepare Output
         run: |
@@ -215,12 +405,12 @@ jobs:
             --exclude='**/SConstruct' \
             --exclude='**/SConscript' \
             --exclude='**/.venv/' \
-            --exclude='selfdrive/modeld/models/driving_vision.onnx' \
-            --exclude='selfdrive/modeld/models/driving_policy.onnx' \
+            --exclude='selfdrive/modeld/models/*.onnx*' \
+            --exclude='sunnypilot/modeld*/models/*.onnx*' \
             --exclude='third_party/*x86*' \
             --exclude='third_party/*Darwin*' \
             --delete-excluded \
-            --chown=comma:comma \
+            ${{ (github.ref_name == 'dev' || github.ref_name == 'master') && '' || '--chown=comma:comma' }} \
             ${BUILD_DIR}/ ${OUTPUT_DIR}/
 
       - name: 'Tar.gz files'
@@ -235,7 +425,7 @@ jobs:
           path: prebuilt.tar.gz
 
       - name: Re-enable powersave
-        if: always()
+        if: ${{ always() && github.ref_name != 'dev' && github.ref_name != 'master' }}
         run: |
           PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
 
@@ -251,6 +441,8 @@ jobs:
     needs: [ build, prepare_strategy ]
     runs-on: ubuntu-24.04
     environment: ${{ needs.prepare_strategy.outputs.environment }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -281,7 +473,7 @@ jobs:
             "${{ env.OUTPUT_DIR }}" \
             "${{ needs.build.outputs.new_branch }}" \
             "${{ needs.build.outputs.version }}" \
-            "https://x-access-token:${{github.token}}@github.com/sunnypilot/sunnypilot.git" \
+            "https://x-access-token:${{github.token}}@github.com/${{ github.repository }}.git" \
             "${{ needs.build.outputs.extra_version_identifier }}"
 
           echo ""
@@ -307,6 +499,7 @@ jobs:
     if: ${{ (always() && !cancelled() && !failure())
       && needs.publish.result == 'success'
       && (!contains(github.event_name, 'pull_request') || (github.event.action == 'labeled' && github.event.label.name == 'prebuilt'))
+      && vars.DEV_FEEDBACK_NOTIFICATION_BRANCHES_V2 != ''
       && (fromJSON(vars.DEV_FEEDBACK_NOTIFICATION_BRANCHES_V2)[github.head_ref || github.ref_name] != null) }}
     steps:
       - uses: actions/checkout@v4

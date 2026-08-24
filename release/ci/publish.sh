@@ -61,7 +61,7 @@ SP_VERSION=$(awk -F\" '{print $2}' $SOURCE_DIR/sunnypilot/common/version.h)
 git commit -a -m "sunnypilot v$VERSION
 version: sunnypilot v$SP_VERSION (${EXTRA_VERSION_IDENTIFIER})
 date: $DATETIME
-master commit: $GIT_HASH
+source commit: $GIT_HASH
 "
 git branch --set-upstream-to=origin/$DEV_BRANCH
 git branch -m $DEV_BRANCH

@@ -2,8 +2,9 @@
 import os
 import argparse
 import threading
+import time
 import numpy as np
-from inputs import UnpluggedError, get_gamepad
+from inputs import UnpluggedError, get_gamepad, devices as input_devices, DeviceManager
 
 from cereal import messaging
 from openpilot.common.params import Params
@@ -11,7 +12,8 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.system.hardware import HARDWARE
 from openpilot.tools.lib.kbhit import KBHit
 
-EXPO = 0.4
+EXPO = 0.7
+STEER_DEADZONE = 0.02
 
 
 class Keyboard:
@@ -42,30 +44,62 @@ class Keyboard:
 
 class Joystick:
   def __init__(self):
-    # This class supports a PlayStation 5 DualSense controller on the comma 3X
-    # TODO: find a way to get this from API or detect gamepad/PC, perhaps "inputs" doesn't support it
-    self.cancel_button = 'BTN_NORTH'  # BTN_NORTH=X/triangle
+    self.cancel_button = 'BTN_NORTH'
+    self._last_rescan = 0.0
+    self._detect_mapping()
+
+  def _detect_mapping(self):
+    _name = ''
+    if input_devices.gamepads:
+      try:
+        _name = input_devices.gamepads[0].name
+      except Exception:
+        pass
+
     if HARDWARE.get_device_type() == 'pc':
       accel_axis = 'ABS_Z'
       steer_axis = 'ABS_RX'
-      # TODO: once the longcontrol API is finalized, we can replace this with outputting gas/brake and steering
-      self.flip_map = {'ABS_RZ': accel_axis}
+      flip_map = {'ABS_RZ': accel_axis}
+      accel_range = (0., 255.)
+      steer_range = (0., 255.)
+    elif 'Xbox' in _name or 'X-Box' in _name:
+      accel_axis = 'ABS_Z'
+      steer_axis = 'ABS_RX'
+      flip_map = {'ABS_RZ': accel_axis}
+      accel_range = (-255., 255.)
+      steer_range = (-32768., 32767.)
     else:
       accel_axis = 'ABS_RX'
       steer_axis = 'ABS_Z'
-      self.flip_map = {'ABS_RY': accel_axis}
+      flip_map = {'ABS_RY': accel_axis}
+      accel_range = (0., 255.)
+      steer_range = (0., 255.)
 
-    self.min_axis_value = {accel_axis: 0., steer_axis: 0.}
-    self.max_axis_value = {accel_axis: 255., steer_axis: 255.}
-    self.axes_values = {accel_axis: 0., steer_axis: 0.}
+    self.flip_map = flip_map
+    self.min_axis_value = {accel_axis: accel_range[0], steer_axis: steer_range[0]}
+    self.max_axis_value = {accel_axis: accel_range[1], steer_axis: steer_range[1]}
     self.axes_order = [accel_axis, steer_axis]
-    self.cancel = False
+
+    new_values = {}
+    for ax in self.axes_order:
+      new_values[ax] = getattr(self, 'axes_values', {}).get(ax, 0.)
+    self.axes_values = new_values
 
   def update(self):
     try:
       joystick_event = get_gamepad()[0]
     except (OSError, UnpluggedError):
       self.axes_values = dict.fromkeys(self.axes_values, 0.)
+      now = time.monotonic()
+      if now - self._last_rescan > 2.0:
+        try:
+          dm = DeviceManager()
+          if dm.gamepads:
+            input_devices.gamepads[:] = dm.gamepads
+            self._detect_mapping()
+        except Exception:
+          pass
+        self._last_rescan = now
       return False
 
     event = (joystick_event.code, joystick_event.state)
@@ -84,8 +118,10 @@ class Joystick:
       self.min_axis_value[event[0]] = min(event[1], self.min_axis_value[event[0]])
 
       norm = -float(np.interp(event[1], [self.min_axis_value[event[0]], self.max_axis_value[event[0]]], [-1., 1.]))
-      norm = norm if abs(norm) > 0.03 else 0.  # center can be noisy, deadzone of 3%
-      self.axes_values[event[0]] = EXPO * norm ** 3 + (1 - EXPO) * norm  # less action near center for fine control
+      deadzone = STEER_DEADZONE if event[0] == self.axes_order[1] else 0.10
+      norm = norm if abs(norm) > deadzone else 0.
+      steer_exp = 4 if event[0] == self.axes_order[1] else 3
+      self.axes_values[event[0]] = EXPO * norm ** steer_exp + (1 - EXPO) * norm
     else:
       return False
     return True
@@ -110,7 +146,7 @@ def send_thread(joystick):
 
 
 def joystick_control_thread(joystick):
-  Params().put_bool('JoystickDebugMode', True)
+  Params().put_bool('JoystickDebugMode', True, block=True)
   threading.Thread(target=send_thread, args=(joystick,), daemon=True).start()
   while True:
     joystick.update()

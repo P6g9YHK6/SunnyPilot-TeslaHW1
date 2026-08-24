@@ -572,13 +572,6 @@
               "widget": "toggle",
               "title": "Dynamic Experimental Control",
               "description": "Let the model decide when to use sunnypilot ACC or sunnypilot End to End Longitudinal.",
-              "visibility": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
-                }
-              ],
               "enablement": [
                 {
                   "type": "capability",
@@ -610,13 +603,6 @@
                 {
                   "value": 2,
                   "label": "Relaxed"
-                }
-              ],
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
                 }
               ]
             },
@@ -943,23 +929,6 @@
               "widget": "toggle",
               "title": "Vision",
               "description": "Use vision path predictions to estimate the appropriate speed to drive through turns ahead.",
-              "visibility": [
-                {
-                  "type": "any",
-                  "conditions": [
-                    {
-                      "type": "capability",
-                      "field": "has_longitudinal_control",
-                      "equals": true
-                    },
-                    {
-                      "type": "capability",
-                      "field": "has_icbm",
-                      "equals": true
-                    }
-                  ]
-                }
-              ],
               "enablement": [
                 {
                   "type": "any",
@@ -983,23 +952,6 @@
               "widget": "toggle",
               "title": "Map",
               "description": "Use map data to estimate the appropriate speed to drive through turns ahead.",
-              "visibility": [
-                {
-                  "type": "any",
-                  "conditions": [
-                    {
-                      "type": "capability",
-                      "field": "has_longitudinal_control",
-                      "equals": true
-                    },
-                    {
-                      "type": "capability",
-                      "field": "has_icbm",
-                      "equals": true
-                    }
-                  ]
-                }
-              ],
               "enablement": [
                 {
                   "type": "any",
@@ -1664,13 +1616,13 @@
         {
           "id": "updates",
           "title": "Updates",
-          "description": "Control automatic software updates",
+          "description": "Control software updates",
           "items": [
             {
               "key": "DisableUpdates",
               "widget": "toggle",
               "title": "Disable Updates",
-              "description": "When enabled, automatic software updates will be off. This requires a reboot to take effect.",
+              "description": "When enabled, software updates will be off. This requires a reboot to take effect.",
               "enablement": [
                 {
                   "type": "offroad_only"

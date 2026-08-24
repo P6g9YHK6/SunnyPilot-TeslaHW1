@@ -107,7 +107,8 @@ class BigButton(Widget):
 
   """A lightweight stand-in for the Qt BigButton, drawn & updated each frame."""
 
-  def __init__(self, text: str, value: str = "", icon: Union[rl.Texture, None] = None, scroll: bool = False):
+  def __init__(self, text: str, value: str = "", icon: Union[rl.Texture, None] = None, scroll: bool = False,
+               sub_wrap_text: bool = True, sub_elide: bool = True):
     super().__init__()
     self.set_rect(rl.Rectangle(0, 0, 402, 180))
     self.text = text
@@ -126,7 +127,8 @@ class BigButton(Widget):
                                text_color=LABEL_COLOR, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM, scroll=scroll,
                                line_height=0.9)
     self._sub_label = UnifiedLabel(value, font_size=COMPLICATION_SIZE, font_weight=FontWeight.ROMAN,
-                                   text_color=COMPLICATION_GREY, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM)
+                                   text_color=COMPLICATION_GREY, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM,
+                                   wrap_text=sub_wrap_text, elide=sub_elide)
     self._update_label_layout()
 
     self._load_images()
@@ -387,7 +389,7 @@ class BigMultiParamToggle(BigMultiToggle):
   def _handle_mouse_release(self, mouse_pos: MousePos):
     super()._handle_mouse_release(mouse_pos)
     new_idx = self._options.index(self.value)
-    self._params.put_nonblocking(self._param, new_idx)
+    self._params.put(self._param, new_idx)
 
 
 class BigParamControl(BigToggle):
@@ -399,7 +401,7 @@ class BigParamControl(BigToggle):
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     super()._handle_mouse_release(mouse_pos)
-    self.params.put_bool(self.param, self._checked)
+    self.params.put_bool(self.param, self._checked, block=True)
 
   def refresh(self):
     self.set_checked(self.params.get_bool(self.param, False))
@@ -416,7 +418,7 @@ class BigCircleParamControl(BigCircleToggle):
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     super()._handle_mouse_release(mouse_pos)
-    self.params.put_bool(self._param, self._checked)
+    self.params.put_bool(self._param, self._checked, block=True)
 
   def refresh(self):
     self.set_checked(self.params.get_bool(self._param, False))
