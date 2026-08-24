@@ -229,6 +229,18 @@ jobs:
           # A plain empty file satisfies the existence check; nothing opens or
           # reads /dev/ion at build time, only at runtime on the real device.
           sudo touch /dev/ion
+
+          # tinygrad's QCOM backend (used to compile dmonitoring/dm_warp models
+          # during the scons build below) does an actual os.open() on this path
+          # at import/init time, unlike /dev/ion above which is only existence-
+          # checked. This runner has no real Adreno GPU, so without a stub the
+          # open() raises FileNotFoundError and aborts the whole scons build
+          # before "Replace CPU-compiled tinygrad models..." below ever runs to
+          # overwrite these files with real QCOM-compiled ones anyway. A plain
+          # empty file lets tinygrad get past open() and produce *some* output
+          # (compiled against no real GPU, thrown away by the replace step next).
+          sudo touch /dev/kgsl-3d0
+          sudo chmod 666 /dev/kgsl-3d0
           git show "$HEADER_SHA:third_party/linux/include/linux/ion.h" | sudo tee /usr/include/linux/ion.h > /dev/null
           git show "$HEADER_SHA:third_party/linux/include/msm_ion.h" | sudo tee /usr/include/linux/msm_ion.h > /dev/null
 
