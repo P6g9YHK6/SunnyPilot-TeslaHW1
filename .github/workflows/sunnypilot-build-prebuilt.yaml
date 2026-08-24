@@ -338,6 +338,11 @@ jobs:
           # exact flags/commands selfdrive/modeld/SConscript specifies, for
           # both driving and dmonitoring models plus both dm_warp resolutions.
           #
+          # Regenerated after the tinygrad_repo submodule bump during the
+          # upstream sync - the previous cache (b7f883939) was pickled
+          # against an older tinygrad and no longer unpickled cleanly on
+          # device (DType signature mismatch / MemoryError).
+          #
           # tg_input_devices.json is NOT in this list: unlike the .pkl files,
           # it's just the `tg_devices` dict from that SConscript dumped to
           # JSON - deterministic from source, no GPU needed - so the earlier
@@ -346,7 +351,7 @@ jobs:
           # pre-restructure keys (missing the "openpilot." prefix), which is
           # exactly what broke dmonitoringmodeld/modeld with a KeyError after
           # the nested-openpilot/-directory restructure.
-          CACHE_SHA=b7f883939580cc8e026e14437c55ddb5bc4eb468
+          CACHE_SHA=d7f1025998183039ffb78f8dab774448ebea4389
           git fetch --depth 1 origin "$CACHE_SHA"
           MODELS_DIR="${BUILD_DIR}/openpilot/selfdrive/modeld/models"
           for f in driving_tinygrad.pkl.chunkmanifest driving_tinygrad.pkl.chunk01of02 driving_tinygrad.pkl.chunk02of02 \
