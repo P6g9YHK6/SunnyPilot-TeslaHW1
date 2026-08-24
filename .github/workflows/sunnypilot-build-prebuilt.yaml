@@ -255,7 +255,7 @@ jobs:
       - name: Build Main Project
         run: |
           export PYTHONPATH="$BUILD_DIR"
-          ./tools/release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
+          ./tools/release/release_files.py | xargs -0 cp -pR --parents -t "$BUILD_DIR" --
           cd $BUILD_DIR
           echo "Building sunnypilot's modeld_v2..."
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal openpilot/sunnypilot/modeld_v2
