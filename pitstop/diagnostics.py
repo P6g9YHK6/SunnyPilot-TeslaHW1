@@ -7,7 +7,7 @@ from aiohttp import web
 
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.hardware.hw import Paths
-from cereal import messaging, log
+from openpilot.cereal import messaging, log
 
 logger = logging.getLogger("pitstop")
 

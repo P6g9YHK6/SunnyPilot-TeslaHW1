@@ -1,4 +1,4 @@
-import cereal.messaging as messaging
+import openpilot.cereal.messaging as messaging
 from openpilot.common.params import Params
 from opendbc.car.can_definitions import CanData
 from openpilot.selfdrive.pandad import can_list_to_can_capnp
