@@ -3,7 +3,7 @@ import logging
 import os
 import subprocess
 
-from openpilot.system.hardware.hw import Paths
+from openpilot.common.hardware.hw import Paths
 
 logger = logging.getLogger("pitstop")
 

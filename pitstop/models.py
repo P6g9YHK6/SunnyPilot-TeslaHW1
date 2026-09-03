@@ -8,7 +8,7 @@ from openpilot.sunnypilot.models.fetcher import ModelFetcher
 from openpilot.sunnypilot.models.helpers import get_active_bundle
 from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL
 from openpilot.common.params import Params
-from openpilot.system.hardware.hw import Paths
+from openpilot.common.hardware.hw import Paths
 
 logger = logging.getLogger("pitstop")
 

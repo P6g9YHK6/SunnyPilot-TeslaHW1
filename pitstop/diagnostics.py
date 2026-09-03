@@ -6,7 +6,7 @@ import time
 from aiohttp import web
 
 from openpilot.common.basedir import BASEDIR
-from openpilot.system.hardware.hw import Paths
+from openpilot.common.hardware.hw import Paths
 from cereal import messaging, log
 
 logger = logging.getLogger("pitstop")
