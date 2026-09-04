@@ -9,6 +9,7 @@ from openpilot.sunnypilot.models.helpers import get_active_bundle
 from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL
 from openpilot.common.params import Params
 from openpilot.common.hardware.hw import Paths
+from openpilot.selfdrive.modeld.helpers import chestnut_present
 
 logger = logging.getLogger("pitstop")
 
@@ -33,7 +34,9 @@ class ModelMixin:
   async def handle_models_list(self, request):
     try:
       fetcher = ModelFetcher(self.params)
-      bundles = fetcher.get_available_bundles()
+      # must match main_thread's chestnut-aware fetch, or indices returned here won't
+      # exist in the catalog the model manager actually checks against (silent no-op select)
+      bundles = fetcher.get_available_bundles(chestnut_present=chestnut_present())
       model_dir = Paths.model_root()
       result = []
       for b in bundles:
@@ -55,7 +58,7 @@ class ModelMixin:
       raise web.HTTPBadRequest(text="Missing bundle name")
     try:
       fetcher = ModelFetcher(self.params)
-      bundles = fetcher.get_available_bundles()
+      bundles = fetcher.get_available_bundles(chestnut_present=chestnut_present())
     except Exception as e:
       raise web.HTTPInternalServerError(text=str(e)) from e
     bundle = next((b for b in bundles if b.internalName == name), None)
@@ -102,7 +105,15 @@ class ModelMixin:
     index = body.get("index")
     if index is None:
       raise web.HTTPBadRequest(text="Missing 'index'")
-    self.params.put("ModelManager_DownloadIndex", int(index))
+    index = int(index)
+    # main_thread matches this index against the chestnut-aware catalog; validate against
+    # the same one here so a stale/mismatched index fails now instead of silently never downloading
+    fetcher = ModelFetcher(self.params)
+    bundles = fetcher.get_available_bundles(chestnut_present=chestnut_present())
+    if not any(b.index == index for b in bundles):
+      raise web.HTTPBadRequest(text=f"index {index} not in the current model catalog "
+                                     f"(chestnut_present={chestnut_present()}); refresh the list and retry")
+    self.params.put("ModelManager_DownloadIndex", index)
     logger.info(f"[MODEL] selected index {index}")
     return web.json_response({"status": "ok", "index": index})
 
