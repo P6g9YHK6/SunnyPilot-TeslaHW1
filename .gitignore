@@ -1,5 +1,13 @@
 venv/
 .venv/
+
+# regenerable onnx model sources - CI fetches these fresh from upstream via
+# git lfs pull, and the device only ever loads the compiled .pkl files, so
+# vendoring these in git just drags a multi-GB, constantly-reversioned blob
+# into this fork's LFS history every time upstream swaps its big model
+openpilot/selfdrive/modeld/models/big_driving_supercombo.onnx
+openpilot/selfdrive/modeld/models/driving_supercombo.onnx
+openpilot/selfdrive/modeld/models/dmonitoring_model.onnx
 .ci_cache
 .env
 .clang-format
