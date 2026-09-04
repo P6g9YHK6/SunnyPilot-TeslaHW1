@@ -1,7 +1,7 @@
 import logging
 import time
 
-from cereal import messaging, log
+from openpilot.cereal import messaging, log
 
 logger = logging.getLogger("pitstop")
 
