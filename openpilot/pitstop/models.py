@@ -5,7 +5,7 @@ import os
 from aiohttp import web
 
 from openpilot.sunnypilot.models.fetcher import ModelFetcher
-from openpilot.sunnypilot.models.helpers import get_active_bundle
+from openpilot.sunnypilot.models.helpers import get_active_bundle, bundle_artifacts, verify_file, ACTIVE_BUNDLE_KEYS
 from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL
 from openpilot.common.params import Params
 from openpilot.common.hardware.hw import Paths
@@ -16,36 +16,29 @@ logger = logging.getLogger("pitstop")
 
 class ModelMixin:
 
-  @staticmethod
-  def _model_file_cached(model_dir, fname):
-    return (os.path.isfile(os.path.join(model_dir, fname)) or
-            os.path.isfile(os.path.join(model_dir, fname + '.chunkmanifest')))
+  def _require_offroad(self):
+    if not self.params.get_bool("IsOffroad"):
+      raise web.HTTPConflict(text="Model changes are only allowed while the car is offroad")
 
   @staticmethod
-  def _bundle_files(bundle) -> set:
-    files = set()
-    for m in getattr(bundle, 'models', []):
-      if getattr(getattr(m, 'artifact', None), 'fileName', None):
-        files.add(m.artifact.fileName)
-      if getattr(getattr(m, 'metadata', None), 'fileName', None):
-        files.add(m.metadata.fileName)
-    return files
+  def _active_source_bundles(params):
+    # must match main_thread's chestnut-aware fetch, or refs/indices returned here won't
+    # exist in the catalog the model manager actually checks against (silent no-op select)
+    fetcher = ModelFetcher(params)
+    source = ModelFetcher.active_source(chestnut_present())
+    return fetcher.get_bundles_for_source(source), source
 
   async def handle_models_list(self, request):
     try:
-      fetcher = ModelFetcher(self.params)
-      # must match main_thread's chestnut-aware fetch, or indices returned here won't
-      # exist in the catalog the model manager actually checks against (silent no-op select)
-      bundles = fetcher.get_available_bundles(chestnut_present=chestnut_present())
+      bundles, _ = self._active_source_bundles(self.params)
       model_dir = Paths.model_root()
       result = []
       for b in bundles:
         d = b.to_dict()
-        files = self._bundle_files(b)
-        d['isCached'] = bool(files) and all(
-          self._model_file_cached(model_dir, f) for f in files
-        )
-        d['cachedFiles'] = [f for f in files if self._model_file_cached(model_dir, f)]
+        artifacts = bundle_artifacts(b)
+        cached_files = [f for f, sha in artifacts if await verify_file(os.path.join(model_dir, f), sha)]
+        d['isCached'] = bool(artifacts) and len(cached_files) == len(artifacts)
+        d['cachedFiles'] = cached_files
         result.append(d)
       return web.json_response(result)
     except Exception as e:
@@ -53,41 +46,34 @@ class ModelMixin:
       return web.json_response({"error": str(e)}, status=500)
 
   async def handle_models_delete(self, request):
+    self._require_offroad()
     name = request.match_info.get("name", "")
     if not name:
       raise web.HTTPBadRequest(text="Missing bundle name")
     try:
-      fetcher = ModelFetcher(self.params)
-      bundles = fetcher.get_available_bundles(chestnut_present=chestnut_present())
+      bundles, _ = self._active_source_bundles(self.params)
     except Exception as e:
       raise web.HTTPInternalServerError(text=str(e)) from e
     bundle = next((b for b in bundles if b.internalName == name), None)
     if bundle is None:
       raise web.HTTPNotFound(text=f"Bundle '{name}' not found")
     model_dir = Paths.model_root()
-    files = self._bundle_files(bundle)
     deleted = []
-    for fname in files:
-      base = os.path.join(model_dir, fname)
-      if os.path.isfile(base):
-        os.remove(base)
-        deleted.append(fname)
-      manifest = base + '.chunkmanifest'
-      if os.path.isfile(manifest):
+    for fname, _ in bundle_artifacts(bundle):
+      path = os.path.join(model_dir, fname)
+      if os.path.isfile(path):
         try:
-          num_chunks = int(open(manifest).read().strip())
-        except Exception:
-          num_chunks = 0
-        os.remove(manifest)
-        deleted.append(fname + '.chunkmanifest')
-        for i in range(num_chunks):
-          chunk = f"{base}.chunk{i+1:02d}of{num_chunks:02d}"
-          if os.path.isfile(chunk):
-            try:
-              os.remove(chunk)
-              deleted.append(os.path.basename(chunk))
-            except Exception as e:
-              logger.warning(f"[MODEL] failed to remove chunk {chunk}: {e}")
+          os.remove(path)
+          deleted.append(fname)
+        except Exception as e:
+          logger.warning(f"[MODEL] failed to remove {fname}: {e}")
+    for model in getattr(bundle, 'models', []):
+      artifact = getattr(model, 'artifact', None)
+      if artifact and getattr(artifact, 'fileName', None) and len(getattr(artifact, 'chunks', []) or []) > 0:
+        manifest = os.path.join(model_dir, artifact.fileName + '.chunkmanifest')
+        if os.path.isfile(manifest):
+          os.remove(manifest)
+          deleted.append(artifact.fileName + '.chunkmanifest')
     logger.info(f"[MODEL] deleted {name} ({len(deleted)} files)")
     return web.json_response({"status": "ok", "deleted": deleted, "bundle": name})
 
@@ -98,6 +84,7 @@ class ModelMixin:
     return web.json_response({"internalName": DEFAULT_MODEL, "displayName": DEFAULT_MODEL, "isDefault": True})
 
   async def handle_models_select(self, request):
+    self._require_offroad()
     try:
       body = await request.json()
     except Exception:
@@ -106,20 +93,24 @@ class ModelMixin:
     if index is None:
       raise web.HTTPBadRequest(text="Missing 'index'")
     index = int(index)
-    # main_thread matches this index against the chestnut-aware catalog; validate against
+    # main_thread matches this ref against the chestnut-aware catalog; validate against
     # the same one here so a stale/mismatched index fails now instead of silently never downloading
-    fetcher = ModelFetcher(self.params)
-    bundles = fetcher.get_available_bundles(chestnut_present=chestnut_present())
-    if not any(b.index == index for b in bundles):
+    bundles, _ = self._active_source_bundles(self.params)
+    bundle = next((b for b in bundles if b.index == index), None)
+    if bundle is None:
       raise web.HTTPBadRequest(text=f"index {index} not in the current model catalog "
                                      f"(chestnut_present={chestnut_present()}); refresh the list and retry")
-    self.params.put("ModelManager_DownloadIndex", index)
-    logger.info(f"[MODEL] selected index {index}")
+    if not bundle.ref:
+      raise web.HTTPInternalServerError(text=f"Bundle '{bundle.internalName}' has no ref; cannot select")
+    self.params.put("ModelManager_DownloadRef", bundle.ref)
+    logger.info(f"[MODEL] selected index {index} (ref={bundle.ref})")
     return web.json_response({"status": "ok", "index": index})
 
   async def handle_models_select_default(self, request):
-    self.params.remove("ModelManager_ActiveBundle")
-    logger.info("[MODEL] reset to default")
+    self._require_offroad()
+    source = ModelFetcher.active_source(chestnut_present())
+    self.params.remove(ACTIVE_BUNDLE_KEYS[source])
+    logger.info(f"[MODEL] reset to default ({source})")
     return web.json_response({"status": "ok"})
 
   async def handle_models_progress(self, request):
@@ -133,16 +124,18 @@ class ModelMixin:
     })
 
   async def handle_models_cancel(self, request):
-    self.params.remove("ModelManager_DownloadIndex")
+    self.params.remove("ModelManager_DownloadRef")
     logger.info("[MODEL] download cancelled")
     return web.json_response({"status": "ok"})
 
   async def handle_models_refresh(self, request):
-    self.params.remove("ModelManager_LastSyncTime")
+    for _, suffix in ModelFetcher.MODEL_SOURCES.values():
+      self.params.remove(f"ModelManager_LastSyncTime{suffix}")
     logger.info("[MODEL] refresh triggered")
     return web.json_response({"status": "ok"})
 
   async def handle_models_cache_clear(self, request):
+    self._require_offroad()
     self.params.put_bool("ModelManager_ClearCache", True)
     logger.info("[MODEL] cache clear requested")
     return web.json_response({"status": "ok"})
