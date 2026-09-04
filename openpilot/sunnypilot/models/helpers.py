@@ -60,7 +60,7 @@ def is_bundle_version_compatible(bundle: dict) -> bool:
   return bundle.get("minimumSelectorVersion", 0) == REQUIRED_JSON_VERSION
 
 
-def _bundle_artifacts(bundle: custom.ModelManagerSP.ModelBundle) -> list[tuple[str, str]]:
+def bundle_artifacts(bundle: custom.ModelManagerSP.ModelBundle) -> list[tuple[str, str]]:
   artifacts = []
   from openpilot.common.file_chunker import get_chunk_name
   for model in getattr(bundle, 'models', []) or []:
@@ -82,7 +82,7 @@ def _bundle_artifacts(bundle: custom.ModelManagerSP.ModelBundle) -> list[tuple[s
 def _bundle_is_valid_locally(bundle: custom.ModelManagerSP.ModelBundle) -> bool:
   model_root = Paths.model_root()
   return all(_verify_file(os.path.join(model_root, file_name), expected_hash)
-             for file_name, expected_hash in _bundle_artifacts(bundle))
+             for file_name, expected_hash in bundle_artifacts(bundle))
 
 
 def _bundle_needs_reset(active_bundle: custom.ModelManagerSP.ModelBundle, available_bundles: list[custom.ModelManagerSP.ModelBundle] | None) -> bool:
@@ -106,7 +106,7 @@ def _bundle_needs_reset(active_bundle: custom.ModelManagerSP.ModelBundle, availa
       return True
     if active_bundle.runner != matching_bundle.runner:
       return True
-    if set(_bundle_artifacts(active_bundle)) != set(_bundle_artifacts(matching_bundle)):
+    if set(bundle_artifacts(active_bundle)) != set(bundle_artifacts(matching_bundle)):
       return True
 
   return not _bundle_is_valid_locally(active_bundle)

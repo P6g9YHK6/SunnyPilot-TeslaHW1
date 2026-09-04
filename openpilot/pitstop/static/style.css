@@ -774,6 +774,7 @@ select.setting-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px
 }
 .btn:hover  { background: var(--surface3); border-color: rgba(255,255,255,0.14); }
 .btn:active { transform: scale(0.96); }
+.btn:disabled { opacity: 0.35; cursor: default; pointer-events: none; transform: none; box-shadow: none; }
 
 .btn-primary {
   background: var(--accent);

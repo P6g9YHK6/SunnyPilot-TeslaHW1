@@ -48,7 +48,7 @@ let _pageLoaded = {};
 function loadPage(name, force) {
   if (name !== 'settings') { stopSettingsStatusPoll(); discardPendingChanges(); }
   if (name !== 'dashboard') stopDashboardPoll();
-  if (name !== 'models') stopModelsProgressPoll();
+  if (name !== 'models') { stopModelsProgressPoll(); stopModelsStatusPoll(); }
   if (name !== 'cockpit') stopCockpitPoll();
   if (name !== 'maps') stopMapProgressPoll();
   if (name === 'dashboard') loadDashboard();
@@ -1750,19 +1750,71 @@ function toggleSearchClear(prefix) {
 /* ============ MODELS ============ */
 let modelsData = null;
 let modelsProgressInterval = null;
+let modelsStatus = { is_offroad: true };
+let modelsStatusInterval = null;
 
 function stopModelsProgressPoll() {
   if (modelsProgressInterval) { clearInterval(modelsProgressInterval); modelsProgressInterval = null; }
 }
 
+/* ---- Poll offroad state while the Models page is active, same pattern as Settings ---- */
+function startModelsStatusPoll() {
+  if (modelsStatusInterval) return;
+  modelsStatusInterval = setInterval(async () => {
+    try {
+      const s = await api('/api/status', { silent: true });
+      if (s.is_offroad !== modelsStatus.is_offroad) {
+        modelsStatus = s;
+        if (modelsData) renderBundleList(modelsData.bundles, modelsData.active, modelsData.favorites);
+        updateModelsToolbar();
+        renderModelsOffroadBanner();
+      }
+    } catch {}
+  }, 3000);
+}
+function stopModelsStatusPoll() {
+  clearInterval(modelsStatusInterval);
+  modelsStatusInterval = null;
+}
+
+function renderModelsOffroadBanner() {
+  const toolbar = document.querySelector('#page-models .model-toolbar');
+  if (!toolbar) return;
+  let banner = document.getElementById('models-offroad-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'models-offroad-banner';
+    toolbar.parentElement.insertBefore(banner, toolbar);
+  }
+  if (modelsStatus.is_offroad) {
+    banner.className = 'offroad-banner offroad-banner-on';
+    banner.innerHTML = '&#9989; Offroad &mdash; model changes unlocked';
+  } else {
+    banner.className = 'offroad-banner offroad-banner-off';
+    banner.innerHTML = '&#128664; Onroad &mdash; <span class="badge-offroad">Offroad</span> model changes are locked until parked';
+  }
+}
+
+function updateModelsToolbar() {
+  const disabled = !modelsStatus.is_offroad;
+  ['model-clear-cache-btn', 'model-use-default-btn'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = disabled;
+    btn.title = disabled ? 'Requires offroad mode' : '';
+  });
+}
+
 async function loadModels() {
   try {
-    const [active, bundles, favorites] = await Promise.all([
+    const [active, bundles, favorites, status] = await Promise.all([
       api('/api/models/active'),
       api('/api/models'),
       api('/api/models/favorites'),
+      api('/api/status', { silent: true }),
     ]);
     modelsData = { active, bundles, favorites };
+    modelsStatus = status;
 
     document.getElementById('active-model-name').textContent = active.displayName || active.internalName || '—';
     document.getElementById('active-model-runner').textContent = active.runner !== undefined ? fmtRunner(active.runner) : 'Stock';
@@ -1770,7 +1822,10 @@ async function loadModels() {
     document.getElementById('active-model-env').textContent = active.environment || '—';
 
     renderBundleList(bundles, active, favorites);
+    updateModelsToolbar();
+    renderModelsOffroadBanner();
     checkCacheSize();
+    startModelsStatusPoll();
 
     /* Start progress polling */
     checkDownloadProgress();
@@ -1790,6 +1845,8 @@ function renderBundleList(bundles, active, favorites) {
 
   const activeRef = active.ref;
   const favSet = new Set(favorites || []);
+  const isOffroad = modelsStatus.is_offroad;
+  const lockedAttr = isOffroad ? '' : 'disabled';
 
   /* Group by folder from overrides */
   const folders = {};
@@ -1819,7 +1876,7 @@ function renderBundleList(bundles, active, favorites) {
       const actionLabel = isCached ? 'Select' : 'Download';
       const actionCls   = isCached ? 'btn-primary' : 'btn-download';
       const deleteBtn   = isCached && !isActive
-        ? `<button class="btn btn-sm btn-danger model-delete-btn" onclick="deleteModel('${safeInternalName}', '${safeDisplayName}')" title="Delete from disk">🗑</button>`
+        ? `<button class="btn btn-sm btn-danger model-delete-btn" ${lockedAttr} onclick="deleteModel('${safeInternalName}', '${safeDisplayName}')" title="${isOffroad ? 'Delete from disk' : 'Requires offroad mode'}">🗑</button>`
         : '';
       html += `<div class="model-item">
         <div class="model-item-info">
@@ -1828,7 +1885,7 @@ function renderBundleList(bundles, active, favorites) {
         </div>
         <div class="model-item-actions">
           <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFav('${b.ref}', this)" title="Favorite">${isFav ? '★' : '☆'}</button>
-          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm ${actionCls}" onclick="selectModel(${b.index}, '${safeDisplayName}', ${isCached})">${actionLabel}</button>`}
+          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm ${actionCls}" ${lockedAttr} title="${isOffroad ? '' : 'Requires offroad mode'}" onclick="selectModel(${b.index}, '${safeDisplayName}', ${isCached})">${actionLabel}</button>`}
           ${deleteBtn}
         </div>
       </div>`;
