@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PitStop</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="nav">
+    <div class="nav-brand">PitStop</div>
+    <button class="nav-hamburger" id="nav-hamburger" onclick="toggleNavMenu()" aria-label="Menu">&#9776;</button>
+    <div class="nav-links" id="nav-links">
+      <button class="nav-btn" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="cockpit">Cockpit</button>
+      <button class="nav-btn" data-page="settings">Settings</button>
+      <button class="nav-btn" data-page="models">Models</button>
+      <button class="nav-btn" data-page="vehicle">Vehicle</button>
+      <button class="nav-btn" data-page="maps">Maps</button>
+      <button class="nav-btn" data-page="backup">Backups</button>
+      <button class="nav-btn" data-page="params">Params</button>
+      <button class="nav-btn" data-page="logs">Log <span id="nav-logs-badge" class="nav-err-badge hidden"></span></button>
+      <a class="nav-btn" href="/docs" target="_blank">API</a>
+    </div>
+    <div class="nav-refresh">
+      <button class="nav-refresh-btn font-scale-btn" id="font-dec-btn" onclick="adjFont(-0.1)" title="Decrease font size">A−</button>
+      <button class="nav-refresh-btn font-scale-btn" id="font-inc-btn" onclick="adjFont(0.1)" title="Increase font size">A+</button>
+      <button class="nav-refresh-btn" id="theme-cycle-btn" onclick="cycleTheme()" title="Toggle theme">&#9775;</button>
+      <button class="nav-refresh-btn" id="refresh-now-btn" onclick="refreshNow()" title="Refresh now">&#8635;</button>
+      <select id="refresh-interval-select" onchange="setAutoRefresh(this.value)">
+        <option value="0">Off</option>
+        <option value="0.5">0.5s</option>
+        <option value="1">1s</option>
+        <option value="2">2s</option>
+        <option value="5">5s</option>
+        <option value="10">10s</option>
+        <option value="15">15s</option>
+        <option value="20">20s</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <button class="nav-refresh-btn" id="reset-ui-btn" onclick="resetWebUI()" title="Reset Web UI">&#128465;</button>
+    </div>
+  </nav>
+
+  <div id="web-version-banner" onclick="location.reload(true)" style="
+    cursor:pointer;text-align:center;padding:6px 12px;font-size:0.8rem;font-weight:600;
+    background:var(--warn,#b8860b);color:#fff;display:none;
+  ">&#9888; New UI version available — click to reload</div>
+
+  <main id="main">
+    <div id="page-dashboard" class="page active">
+      <h1>Dashboard</h1>
+      <div class="cards">
+        <div class="card" id="card-device">
+          <h3>Interceptor</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-capabilities">
+          <h3>Capabilities</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-model">
+          <h3>Active Model</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-telemetry">
+          <h3>Vehicle</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-system">
+          <h3>Device</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-gps">
+          <h3>GPS</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-calibration">
+          <h3>Calibration</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-network">
+          <h3>Network</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-sunnylink">
+          <h3>Sunnylink</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card card-wide" id="card-diag">
+          <h3>Services <span id="diag-summary-badge"></span></h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card card-wide" id="card-storage">
+          <h3>Storage</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card card-wide" id="card-processes">
+          <h3>Processes</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-vehicle" class="page">
+      <h1>Vehicle</h1>
+      <p class="page-desc">Fingerprint and platform selection</p>
+      <div class="construction-banner"><span>&#9888; Under Construction &#9888;</span></div>
+      <div id="vehicle-content">
+        <div class="vehicle-current" id="vehicle-current">
+          <div class="vehicle-status-card">
+            <div class="vehicle-status-header">
+              <span class="vehicle-name" id="vehicle-name">Loading...</span>
+              <span class="vehicle-status-badge" id="vehicle-status-badge"></span>
+            </div>
+            <div class="vehicle-status-details" id="vehicle-status-details"></div>
+            <div class="vehicle-actions" id="vehicle-actions"></div>
+          </div>
+        </div>
+        <div class="vehicle-selector" id="vehicle-selector" style="display:none">
+          <div class="vehicle-selector-header">
+            <h3>Select Vehicle</h3>
+            <button class="btn btn-sm" onclick="closeVehicleSelector()">Cancel</button>
+          </div>
+          <div class="search-wrap">
+            <input type="text" id="vehicle-search" placeholder="Search vehicles..." oninput="filterVehicles()">
+            <button class="search-clear" id="vehicle-search-clear" onclick="clearVehicleSearch()">&#10005;</button>
+          </div>
+          <div class="vehicle-list" id="vehicle-list"></div>
+        </div>
+        <div class="vehicle-legend">
+          <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span> Auto-detected</div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span> Manual selection</div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span> Unrecognized</div>
+        </div>
+        <div class="fingerprint-section">
+          <h3>Fingerprinting Troubleshooting</h3>
+          <div class="fp-tree" id="fp-tree"></div>
+          <div class="fingerprint-workflow" id="fingerprint-workflow"></div>
+        </div>
+        <div class="ignition-section">
+          <h3>Ignition Troubleshooting</h3>
+          <div class="fp-tree" id="ignition-tree"></div>
+          <div class="ignition-workflow" id="ignition-workflow"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-maps" class="page">
+      <h1>Maps</h1>
+      <p class="page-desc">Offline map data for navigation</p>
+      <div id="maps-content">
+        <div class="map-version">
+          <span class="label">Mapd Version</span>
+          <span class="value" id="map-version">Loading...</span>
+        </div>
+        <div class="map-section" id="map-download-section">
+          <h3>Offline Maps</h3>
+          <div class="map-size-row" style="margin-bottom:0.75rem">
+            <span id="map-size">Calculating...</span>
+          </div>
+          <div class="search-wrap search-wrap--full" style="margin-bottom:0.5rem">
+            <input type="text" id="map-country-search" placeholder="Search countries…" oninput="filterMapCountries()">
+            <button class="search-clear" id="map-country-search-clear" onclick="clearMapCountrySearch()" title="Clear search">&#10005;</button>
+          </div>
+          <div id="map-country-list"></div>
+          <div id="map-state-section" style="display:none">
+            <h4 style="margin:1rem 0 0.5rem;font-size:0.85rem">State / Region</h4>
+            <div class="search-wrap search-wrap--full" style="margin-bottom:0.5rem">
+              <input type="text" id="map-state-search" placeholder="Search states…" oninput="filterMapStates()">
+              <button class="search-clear" id="map-state-search-clear" onclick="clearMapStateSearch()" title="Clear search">&#10005;</button>
+            </div>
+            <div id="map-state-list"></div>
+          </div>
+        </div>
+        <div class="map-progress" id="map-progress" style="display:none">
+          <h3>Downloading Map</h3>
+          <div class="progress-bar"><div class="progress-fill" id="map-progress-fill"></div></div>
+          <div class="progress-text" id="map-progress-text">0%</div>
+        </div>
+        <div class="map-last-checked">
+          <span>Last checked: </span><span id="map-last-checked">Never</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-cockpit" class="page">
+      <h1>Cockpit</h1>
+      <div class="construction-banner"><span>&#9888; Under Construction &#9888;</span></div>
+      <div class="cards">
+        <div class="card" id="card-cockpit-speeds">
+          <h3>Speeds</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-speed-limits">
+          <h3>Speed Limits</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-params">
+          <h3>Live Parameters</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-pose">
+          <h3>Pose / Velocity</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-driver">
+          <h3>Driver</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+        <div class="card" id="card-cockpit-state">
+          <h3>System State</h3>
+          <div class="card-body">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-settings" class="page">
+      <h1>Settings</h1>
+      <div class="settings-toolbar">
+        <div class="search-wrap">
+          <input type="text" id="settings-search" placeholder="Search settings…" oninput="onSettingsSearchInput()">
+          <button class="search-clear" id="settings-search-clear" onclick="clearSettingsSearch()" title="Clear search">&#10005;</button>
+        </div>
+        <span id="settings-search-count"></span>
+      </div>
+      <div id="settings-panels">Loading settings...</div>
+    </div>
+
+    <div id="page-models" class="page">
+      <h1>Model Manager</h1>
+
+      <div class="model-active-card" id="model-active">
+        <div class="row"><span class="label">Active Model</span><span class="value" id="active-model-name">—</span></div>
+        <div class="row"><span class="label">Runner</span><span class="value" id="active-model-runner">—</span></div>
+        <div class="row"><span class="label">Generation</span><span class="value" id="active-model-gen">—</span></div>
+        <div class="row"><span class="label">Environment</span><span class="value" id="active-model-env">—</span></div>
+      </div>
+
+      <div class="model-download-progress hidden" id="model-dl-progress">
+        <h3>Downloading: <span id="dl-bundle-name">...</span></h3>
+        <div id="dl-progress-items"></div>
+        <div class="dl-actions">
+          <button class="btn btn-danger btn-sm" onclick="cancelDownload()">Cancel</button>
+        </div>
+      </div>
+
+      <div class="model-toolbar">
+        <button class="btn btn-sm" onclick="refreshModelList()">Refresh</button>
+        <button class="btn btn-sm btn-danger" onclick="clearModelCache()">Clear Cache</button>
+        <button class="btn btn-sm" onclick="selectDefaultModel()">Use Default</button>
+        <span id="model-cache-size"></span>
+      </div>
+
+      <div class="search-wrap search-wrap--full">
+        <input type="text" id="model-search" placeholder="Search models…" oninput="filterModels()">
+        <button class="search-clear" id="model-search-clear" onclick="clearModelSearch()" title="Clear search">&#10005;</button>
+      </div>
+
+      <div id="model-list"></div>
+    </div>
+
+    <div id="page-params" class="page">
+      <h1>Parameter Explorer</h1>
+      <div class="param-toolbar">
+        <input type="text" id="param-search" placeholder="Search params..." oninput="filterParams()">
+        <span id="param-count"></span>
+      </div>
+      <div id="params-list">Loading params...</div>
+    </div>
+
+    <div id="page-backup" class="page">
+      <h1>Backup & Restore</h1>
+      <div class="backup-actions">
+        <button class="btn btn-primary" onclick="createBackup()">Create Backup</button>
+        <button class="btn btn-sm" onclick="uploadBackup()">Upload Backup</button>
+        <input type="file" id="backup-file-input" accept=".json" style="display:none" onchange="onBackupFileSelected(event)">
+      </div>
+      <div id="backup-list">Loading backups...</div>
+    </div>
+
+    <div id="page-logs" class="page">
+      <h1>Logs</h1>
+      <div class="log-toolbar">
+        <div class="log-sources" id="log-sources">
+          <button class="log-src-btn active" data-src="swaglog">Swaglog</button>
+          <button class="log-src-btn" data-src="journal">Services</button>
+          <button class="log-src-btn" data-src="kernel">Kernel</button>
+          <button class="log-src-btn" data-src="crash">Crashes</button>
+          <button class="log-src-btn" data-src="pitstop">Pitstop</button>
+        </div>
+        <div class="log-levels" id="log-levels">
+          <button class="log-lvl-btn active" data-level="0">All</button>
+          <button class="log-lvl-btn" data-level="10">Debug</button>
+          <button class="log-lvl-btn" data-level="20">Info</button>
+          <button class="log-lvl-btn" data-level="30">Warn</button>
+          <button class="log-lvl-btn" data-level="40">Error</button>
+        </div>
+        <div id="log-proc-wrap">
+          <select id="log-proc-select" onchange="onLogProcChange()">
+            <option value="">All services</option>
+          </select>
+        </div>
+        <input type="text" id="log-search" placeholder="Search logs…" oninput="onLogSearch()">
+        <div class="log-toolbar-right">
+          <span id="log-count"></span>
+          <button class="btn btn-sm" onclick="loadLogs()" title="Refresh">&#8635;</button>
+        </div>
+      </div>
+      <div id="logs-list" class="logs-list"></div>
+    </div>
+  </main>
+
+  <div id="pending-bar" class="pending-bar hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+  <div id="modal-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
