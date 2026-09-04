@@ -1,3 +1,5 @@
+import ast
+import datetime
 import json
 import logging
 import os
@@ -7,7 +9,7 @@ import time
 
 from aiohttp import web
 
-from openpilot.common.params import Params, ParamKeyFlag
+from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType, UnknownKeyName
 from openpilot.common.version import get_build_metadata
 from openpilot.sunnypilot.sunnylink.capabilities import generate_capabilities
 from openpilot.sunnypilot.sunnylink.tools.generate_settings_schema import generate_schema
@@ -503,8 +505,41 @@ class HandlerMixin:
       data = json.load(f)
     restored = 0
     for key, val in data.get("params", {}).items():
+      # handle_backup_create() serializes each value as val.hex() for bytes params
+      # and str(val) for everything else (bool/int/float/dict/list all become a
+      # plain string, and a dict/list goes through Python repr, not JSON). Decode
+      # each key according to its actual schema type rather than guessing from
+      # the string's shape, since e.g. a hex-looking DongleId or a bare "0"/"1"
+      # would otherwise round-trip through the wrong type or corrupt silently.
       try:
-        self.params.put(key, bytes.fromhex(val) if isinstance(val, str) and len(val) > 0 else val)
+        t = self.params.get_type(key)
+      except UnknownKeyName:
+        logger.warning(f"Skipping unknown param {key} (not in current schema)")
+        continue
+      try:
+        if t == ParamKeyType.STRING:
+          decoded = val
+        elif t == ParamKeyType.BOOL:
+          decoded = val == "True"
+        elif t == ParamKeyType.INT:
+          decoded = int(val)
+        elif t == ParamKeyType.FLOAT:
+          decoded = float(val)
+        elif t == ParamKeyType.TIME:
+          try:
+            decoded = datetime.datetime.fromisoformat(val)
+          except ValueError:
+            decoded = datetime.datetime.fromisoformat(val.replace(" ", "T", 1))
+        elif t == ParamKeyType.JSON:
+          try:
+            decoded = json.loads(val)
+          except json.JSONDecodeError:
+            decoded = ast.literal_eval(val)
+        elif t == ParamKeyType.BYTES:
+          decoded = bytes.fromhex(val) if val else b""
+        else:
+          raise TypeError(f"unhandled ParamKeyType {t}")
+        self.params.put(key, decoded, block=True)
         restored += 1
       except Exception:
         logger.exception(f"Failed to restore param {key}")
