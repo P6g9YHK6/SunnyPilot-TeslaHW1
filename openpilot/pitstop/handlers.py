@@ -8,7 +8,7 @@ import time
 from aiohttp import web
 
 from openpilot.common.params import Params, ParamKeyFlag
-from openpilot.system.version import get_build_metadata
+from openpilot.common.version import get_build_metadata
 from openpilot.sunnypilot.sunnylink.capabilities import generate_capabilities
 from openpilot.sunnypilot.sunnylink.tools.generate_settings_schema import generate_schema
 from openpilot.pitstop.schema import generate_openapi_schema

@@ -5,7 +5,7 @@ import time
 
 from aiohttp import web
 
-from openpilot.system.hardware.hw import Paths
+from openpilot.common.hardware.hw import Paths
 from openpilot.common.params import Params
 
 from .constants import PITSTOP_DATA_DIR
