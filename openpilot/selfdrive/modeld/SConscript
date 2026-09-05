@@ -3,7 +3,7 @@ import json
 import os
 import time
 from SCons.Script import Action, Value
-from openpilot.common.file_chunker import chunk_file, get_chunk_targets, get_existing_chunks
+from openpilot.common.file_chunker import chunk_file, get_chunk_targets, get_existing_chunks, get_manifest_path
 from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
 from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE, DM_INPUT_SIZE
 from openpilot.selfdrive.modeld.constants import ModelConstants
@@ -74,7 +74,14 @@ if not os.getenv('SKIP_TINYGRAD_COMPILE'):
   for chestnut in [False, True] if CHESTNUT else [False]:
     target_pkl_path = File(modeld_pkl_path(chestnut)).abspath
     file_prefix, cmd_flags = ('big_', chestnut_tg_flags) if chestnut else ('', tg_flags)
-    driving_onnx_deps = get_existing_chunks(File(f"models/{file_prefix}driving_supercombo.onnx").abspath)
+    onnx_path = File(f"models/{file_prefix}driving_supercombo.onnx").abspath
+    if not os.path.isfile(onnx_path) and not os.path.isfile(get_manifest_path(onnx_path)):
+      # onnx source isn't vendored in this checkout (this fork doesn't track it in git -
+      # CI fetches it fresh from upstream, and end-user devices get compiled pkls via the
+      # model-bundle download system instead) - nothing to (re)compile from, so keep
+      # whatever pkl is already shipped/selected for this target.
+      continue
+    driving_onnx_deps = get_existing_chunks(onnx_path)
     camera_res_args = ' '.join(f'{cw}x{ch}' for cw, ch in camera_configs)
     # CPU 7 is isolated with isolcpus on AGNOS, so explicitly pin the compiler to it.
     taskset = 'taskset -c 7 ' if arch == 'comma_arm64' else ''
@@ -111,9 +118,10 @@ if not os.getenv('SKIP_TINYGRAD_COMPILE'):
 
 # get model metadata
 fn = File(f"models/dmonitoring_model").abspath
-script_files = [File(Dir("#openpilot/selfdrive/modeld").File("get_model_metadata.py").abspath)]
-cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#openpilot/selfdrive/modeld").abspath}/get_model_metadata.py {fn}.onnx'
-lenv.Command(fn + "_metadata.pkl", [fn + ".onnx"] + tinygrad_files + script_files + [tg_devices_node], cmd)
+if os.path.isfile(fn + ".onnx"):
+  script_files = [File(Dir("#openpilot/selfdrive/modeld").File("get_model_metadata.py").abspath)]
+  cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#openpilot/selfdrive/modeld").abspath}/get_model_metadata.py {fn}.onnx'
+  lenv.Command(fn + "_metadata.pkl", [fn + ".onnx"] + tinygrad_files + script_files + [tg_devices_node], cmd)
 
 dm_w, dm_h = DM_INPUT_SIZE
 compile_dm_warp_script = [File(f"{modeld_dir}/compile_dm_warp.py")]
@@ -129,6 +137,10 @@ def tg_compile(flags, model_name):
   fn = File(f"models/{model_name}").abspath
   pkl = fn + "_tinygrad.pkl"
   onnx_path = fn + ".onnx"
+  if not os.path.isfile(onnx_path) and not os.path.isfile(get_manifest_path(onnx_path)):
+    # same rationale as the driving model above: no vendored onnx, nothing to compile,
+    # keep whatever pkl is already shipped/selected.
+    return None
   chunk_targets = get_chunk_targets(pkl, estimate_pickle_max_size(os.path.getsize(onnx_path)))
   def do_chunk(target, source, env):
     chunk_file(pkl, chunk_targets)
