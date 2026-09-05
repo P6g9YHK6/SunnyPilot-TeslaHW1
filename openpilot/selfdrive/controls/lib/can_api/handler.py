@@ -22,7 +22,7 @@ class CanApiHandler:
     cp_raw = self.params.get("CarParamsCache")
     if cp_raw is None:
       return None
-    from openpilot.cereal import car
+    from opendbc.car.structs import car
     with car.CarParams.from_bytes(cp_raw) as cp:
       fingerprint = cp.carFingerprint
     platform = PLATFORMS.get(fingerprint)

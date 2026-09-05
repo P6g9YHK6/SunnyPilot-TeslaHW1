@@ -55,14 +55,14 @@ class DiagnosticMixin:
       try:
         cp_bytes = self.params.get("CarParamsPersistent")
         if cp_bytes:
-          from openpilot.cereal import car
+          from opendbc.car.structs import car
           cp = messaging.log_from_bytes(cp_bytes, car.CarParams)
           fingerprint = str(cp.carFingerprint) if cp.carFingerprint != "MOCK" else None
       except Exception:
         pass
     bundle_brand = platform_bundle.get("brand", "") if platform_bundle else ""
     if not bundle_brand and fingerprint:
-      from openpilot.cereal import car
+      from opendbc.car.structs import car
       try:
         cp_bytes = self.params.get("CarParamsPersistent")
         if cp_bytes:
@@ -341,7 +341,7 @@ class DiagnosticMixin:
 
     if persistent_raw:
       try:
-        from openpilot.cereal import car
+        from opendbc.car.structs import car
         cp = messaging.log_from_bytes(persistent_raw, car.CarParams)
         fingerprint = str(cp.carFingerprint) if cp.carFingerprint else None
         source = str(cp.fingerprintSource).split(".")[-1] if cp.fingerprintSource else None

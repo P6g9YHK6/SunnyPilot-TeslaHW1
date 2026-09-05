@@ -36,18 +36,18 @@ class SubscriberMixin:
     logger.info("[LOOP] diagnostic monitor started")
     try:
       sm = messaging.SubMaster([
-        'liveCalibration', 'livePose', 'liveParameters', 'longitudinalPlan',
+        'extrinsicsCalibration', 'deviceMotion', 'vehicleParameters', 'longitudinalPlan',
         'modelV2', 'cameraOdometry', 'driverMonitoringState',
-        'liveTorqueParameters', 'radarState', 'liveDelay',
+        'lateralTorqueParameters', 'radarState', 'lateralDelay',
         'selfdriveState', 'managerState', 'controlsState',
         'longitudinalPlanSP', 'liveMapDataSP', 'carStateSP', 'selfdriveStateSP',
       ])
       while self._running:
         sm.update(2000)
         services = []
-        for s in ['liveCalibration', 'livePose', 'liveParameters', 'longitudinalPlan',
+        for s in ['extrinsicsCalibration', 'deviceMotion', 'vehicleParameters', 'longitudinalPlan',
                    'modelV2', 'cameraOdometry', 'driverMonitoringState',
-                   'liveTorqueParameters', 'radarState', 'liveDelay']:
+                   'lateralTorqueParameters', 'radarState', 'lateralDelay']:
           readers = self._msgq_readers(s)
           services.append({
             'name': s, 'valid': bool(sm.valid[s]), 'alive': bool(sm.alive[s]),
@@ -70,8 +70,8 @@ class SubscriberMixin:
           'services_ok': all(s['valid'] and s['alive'] and s['freq_ok'] for s in services),
           'alert': alert, 'processes': processes,
         }
-        if sm.updated['liveCalibration']:
-          lc = sm['liveCalibration']
+        if sm.updated['extrinsicsCalibration']:
+          lc = sm['extrinsicsCalibration']
           self._calibration = {
             'status': str(lc.calStatus).split('.')[-1], 'percent': lc.calPerc,
             'valid_blocks': lc.validBlocks,
@@ -80,10 +80,10 @@ class SubscriberMixin:
             'yaw': lc.rpyCalib[2] if len(lc.rpyCalib) > 2 else None,
           }
         try:
-          lp = sm['liveParameters'] if sm.seen['liveParameters'] else None
-          pose = sm['livePose'] if sm.seen['livePose'] else None
-          ltp = sm['liveTorqueParameters'] if sm.seen['liveTorqueParameters'] else None
-          ld = sm['liveDelay'] if sm.seen['liveDelay'] else None
+          lp = sm['vehicleParameters'] if sm.seen['vehicleParameters'] else None
+          pose = sm['deviceMotion'] if sm.seen['deviceMotion'] else None
+          ltp = sm['lateralTorqueParameters'] if sm.seen['lateralTorqueParameters'] else None
+          ld = sm['lateralDelay'] if sm.seen['lateralDelay'] else None
           dms = sm['driverMonitoringState'] if sm.seen['driverMonitoringState'] else None
           sd2 = sm['selfdriveState'] if sm.seen['selfdriveState'] else None
           cs = sm['controlsState'].deprecated if sm.seen['controlsState'] else None
