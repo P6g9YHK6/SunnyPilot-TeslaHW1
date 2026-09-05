@@ -297,9 +297,9 @@ class HandlerMixin:
         freqs = [int(x) for x in avail_freqs.split()]
         times = [int(x) for x in clock_stats.split()]
         total_ns = sum(times)
-        for mhz, ns in zip(freqs, times):
+        for hz, ns in zip(freqs, times):
           clocks.append({
-            "mhz": mhz,
+            "mhz": hz // 1000000,
             "time_ns": ns,
             "pct": round(100.0 * ns / total_ns, 2) if total_ns else 0.0,
           })
@@ -341,7 +341,7 @@ class HandlerMixin:
         "present": present,
         "active": bool(busy_percent) if busy_percent is not None else None,
         "max_mode": bool(max_clock_mhz and max_clock_mhz >= max_gpu_clock),
-        "throttled": bool(throttling) if throttling is not None else None,
+        "throttled": bool(thermal_pwrlevel) if thermal_pwrlevel is not None else None,
         "thermal_pwrlevel": thermal_pwrlevel,
       },
       "clock": {
@@ -358,6 +358,7 @@ class HandlerMixin:
         "max_pwrlevel": max_pwrlevel,
         "num_pwrlevels": num_pwrlevels,
         "reset_count": reset_count,
+        "throttling_raw": throttling,
       },
       "clocks": clocks,
       "temps_c": gpu_temps,
