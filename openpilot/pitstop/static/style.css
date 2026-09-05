@@ -648,6 +648,14 @@ h1 {
 .badge-ign-off     { background: var(--surface3);   color: var(--text-muted); border: 1px solid var(--border-mid); }
 .badge-ign-unknown { background: var(--surface3);   color: var(--text-muted); border: 1px solid var(--border-mid); }
 
+/* ─── GPU histogram ─────────────────────────────────────────────── */
+.gpu-hist { display: flex; flex-direction: column; gap: 2px; }
+.gpu-hist-row { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; }
+.gpu-hist-label { width: 3.2rem; text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.gpu-hist-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.gpu-hist-fill { height: 100%; background: var(--accent); border-radius: 4px; min-width: 0; }
+.gpu-hist-pct { width: 3.2rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
 /* ─── Update status badge ───────────────────────────────────────── */
 .badge-update-ready    { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(62,207,142,0.3); }
 .badge-update-progress { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(91,157,248,0.3); }

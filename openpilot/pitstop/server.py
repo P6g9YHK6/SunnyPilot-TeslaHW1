@@ -59,6 +59,7 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
     self._running = True
     self._model_state = None
     self._device_state = None
+    self._chestnut_state = None
     self._diag = None
     self._gps_location = None
     self._calibration = None
@@ -78,6 +79,7 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
     for target in (
       self._model_manager_loop,
       self._device_state_loop,
+      self._chestnut_state_loop,
       self._diag_loop,
       self._gps_location_loop,
     ):
@@ -91,6 +93,7 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
     app.router.add_get("/api/status", self.handle_status)
     app.router.add_get("/api/device", self.handle_device)
     app.router.add_get("/api/telemetry", self.handle_telemetry)
+    app.router.add_get("/api/gpu", self.handle_gpu)
     app.router.add_get("/api/diag", self.handle_diag)
 
     # Telemetry / GPS / Storage

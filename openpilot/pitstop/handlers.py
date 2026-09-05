@@ -244,6 +244,127 @@ class HandlerMixin:
       },
     })
 
+  @staticmethod
+  def _sysfs_read(path):
+    try:
+      with open(path) as f:
+        return f.read().strip()
+    except Exception:
+      return None
+
+  @staticmethod
+  def _sysfs_int(path):
+    val = HandlerMixin._sysfs_read(path)
+    try:
+      return int(val.split()[0]) if val else None
+    except Exception:
+      return None
+
+  async def handle_gpu(self, request):
+    ds = self._device_state
+    kgsl = "/sys/class/kgsl/kgsl-3d0"
+
+    present = os.path.exists("/dev/dri/renderD128") or os.path.exists("/dev/kgsl-3d0") or os.path.isdir(kgsl)
+
+    model = self._sysfs_read(f"{kgsl}/gpu_model")
+    clock_mhz = self._sysfs_int(f"{kgsl}/clock_mhz")
+    max_clock_mhz = self._sysfs_int(f"{kgsl}/max_clock_mhz")
+    min_clock_mhz = self._sysfs_int(f"{kgsl}/min_clock_mhz")
+    busy_percent = self._sysfs_int(f"{kgsl}/gpu_busy_percentage")
+    default_pwrlevel = self._sysfs_int(f"{kgsl}/default_pwrlevel")
+    min_pwrlevel = self._sysfs_int(f"{kgsl}/min_pwrlevel")
+    max_pwrlevel = self._sysfs_int(f"{kgsl}/max_pwrlevel")
+    num_pwrlevels = self._sysfs_int(f"{kgsl}/num_pwrlevels")
+    thermal_pwrlevel = self._sysfs_int(f"{kgsl}/thermal_pwrlevel")
+    reset_count = self._sysfs_int(f"{kgsl}/reset_count")
+    governor = self._sysfs_read(f"{kgsl}/devfreq/governor")
+    throttling = self._sysfs_int(f"{kgsl}/throttling")
+
+    gpu_busy = None
+    raw_busy = self._sysfs_read(f"{kgsl}/gpubusy")
+    if raw_busy:
+      try:
+        used, total = raw_busy.split()
+        gpu_busy = {"used": int(used), "total": int(total)}
+      except Exception:
+        pass
+
+    clocks = []
+    avail_freqs = self._sysfs_read(f"{kgsl}/gpu_available_frequencies")
+    clock_stats = self._sysfs_read(f"{kgsl}/gpu_clock_stats")
+    if avail_freqs and clock_stats:
+      try:
+        freqs = [int(x) for x in avail_freqs.split()]
+        times = [int(x) for x in clock_stats.split()]
+        total_ns = sum(times)
+        for mhz, ns in zip(freqs, times):
+          clocks.append({
+            "mhz": mhz,
+            "time_ns": ns,
+            "pct": round(100.0 * ns / total_ns, 2) if total_ns else 0.0,
+          })
+      except Exception:
+        clocks = []
+
+    gpu_temps = list(ds.gpuTempC) if ds is not None and ds.gpuTempC else []
+    thermal_status = None
+    if ds is not None:
+      try:
+        thermal_status = str(ds.thermalStatus).split('.')[-1].lower()
+      except Exception:
+        pass
+
+    max_gpu_clock = max((c["mhz"] for c in clocks), default=0)
+
+    chestnut = None
+    cs = self._chestnut_state
+    if cs is not None:
+      chestnut = {
+        "valid": bool(cs.valid) if hasattr(cs, "valid") else True,
+        "temp_c": float(cs.tempC),
+        "memory_temp_c": float(cs.memoryTempC),
+        "power_draw_w": float(cs.powerDrawW),
+        "power_limit_w": float(cs.powerLimitW),
+        "gpu_usage_percent": int(cs.gpuUsagePercent),
+        "gpu_clock_mhz": int(cs.gpuClockMhz),
+        "fan_speed_rpm": int(cs.fanSpeedRpm),
+        "pcie_ltssm": int(cs.pcieLtssm),
+        "supply_voltage": int(cs.supplyVoltage),
+        "supply_current": int(cs.supplyCurrent),
+        "supply_fault": bool(cs.supplyFault),
+      }
+
+    return web.json_response({
+      "present": present,
+      "model": model,
+      "status": {
+        "present": present,
+        "active": bool(busy_percent) if busy_percent is not None else None,
+        "max_mode": bool(max_clock_mhz and max_clock_mhz >= max_gpu_clock),
+        "throttled": bool(throttling) if throttling is not None else None,
+        "thermal_pwrlevel": thermal_pwrlevel,
+      },
+      "clock": {
+        "current_mhz": clock_mhz,
+        "min_mhz": min_clock_mhz,
+        "max_mhz": max_clock_mhz,
+        "governor": governor,
+      },
+      "busy_percent": busy_percent,
+      "busy": gpu_busy,
+      "power": {
+        "default_pwrlevel": default_pwrlevel,
+        "min_pwrlevel": min_pwrlevel,
+        "max_pwrlevel": max_pwrlevel,
+        "num_pwrlevels": num_pwrlevels,
+        "reset_count": reset_count,
+      },
+      "clocks": clocks,
+      "temps_c": gpu_temps,
+      "thermal_status": thermal_status,
+      "chestnut": chestnut,
+    })
+
   async def handle_status(self, request):
     return web.json_response({
       "enabled": self.params.get_bool("PitStopEnabled"),

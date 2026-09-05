@@ -323,6 +323,77 @@ function renderSystemCard(t, status) {
   `;
 }
 
+/* ── GPU card ── */
+function fmtMhz(v) {
+  if (v === null || v === undefined) return '—';
+  return v + ' MHz';
+}
+
+function renderGpuCard(g) {
+  const el = document.getElementById('card-gpu').querySelector('.card-body');
+  if (!g) { el.textContent = 'No data'; return; }
+  const st = g.status || {};
+  const clk = g.clock || {};
+  const badges = [];
+  if (st.present) badges.push('<span class="diag-badge diag-ok">DETECTED</span>');
+  else badges.push('<span class="diag-badge diag-fail">MISSING</span>');
+  if (st.present && st.active) badges.push('<span class="badge-ign badge-ign-on">ACTIVE</span>');
+  else if (st.present) badges.push('<span class="badge-ign badge-ign-off">IDLE</span>');
+  if (st.max_mode) badges.push('<span class="badge-ign badge-ign-on" title="GPU clock set to hardware max">MAX</span>');
+  if (clk.governor) badges.push('<span class="badge-ign badge-ign-unknown">' + escHtml(clk.governor) + '</span>');
+  if (st.throttled) badges.push('<span class="badge-ign badge-ign-off" title="currently throttled">THROTTLED</span>');
+
+  let rows = `
+    <div class="row"><span class="label">Status</span><span class="value"><span style="display:inline-flex;gap:0.3rem;flex-wrap:wrap">${badges.join('') || '—'}</span></span></div>
+    <div class="row"><span class="label">Model</span><span class="value">${escHtml(g.model || '—')}</span></div>
+    <div class="row"><span class="label">Load</span><span class="value">${fmtPct(g.busy_percent)}</span></div>
+    <div class="row"><span class="label">Clock</span><span class="value">${fmtMhz(clk.current_mhz)} / max ${fmtMhz(clk.max_mhz)}</span></div>
+    ${clk.min_mhz != null ? `<div class="row"><span class="label">Min Clock</span><span class="value">${fmtMhz(clk.min_mhz)}</span></div>` : ''}
+  `;
+  if (g.power) {
+    const pw = g.power;
+    rows += `<div class="row"><span class="label">Pwr Level</span><span class="value">${pw.min_pwrlevel != null && pw.max_pwrlevel != null ? 'L' + pw.min_pwrlevel + '..H' + pw.max_pwrlevel : '—'}${pw.default_pwrlevel != null ? ' (def ' + pw.default_pwrlevel + ')' : ''}</span></div>`;
+  }
+  if (g.power && g.power.reset_count != null) {
+    rows += `<div class="row"><span class="label">Resets</span><span class="value">${g.power.reset_count}</span></div>`;
+  }
+  rows += `<div class="row"><span class="label">GPU Temp</span><span class="value">${g.temps_c && g.temps_c.length ? g.temps_c.map(t => fmtTemp(t)).join(' / ') : '—'}</span></div>`;
+  if (st.thermal_pwrlevel != null && st.thermal_pwrlevel > 0) {
+    rows += `<div class="row"><span class="label">Thermal Limit</span><span class="value">pwrlevel ${st.thermal_pwrlevel}</span></div>`;
+  }
+  rows += `<div class="row"><span class="label">Thermal</span><span class="value">${g.thermal_status || '—'}</span></div>`;
+
+  const histHtml = (g.clocks && g.clocks.length)
+    ? `<div class="gpu-hist">${g.clocks.map(c => `
+        <div class="gpu-hist-row">
+          <span class="gpu-hist-label">${c.mhz}</span>
+          <div class="gpu-hist-track"><div class="gpu-hist-fill" style="width:${Math.min(100, c.pct)}%"></div></div>
+          <span class="gpu-hist-pct">${c.pct}%</span>
+        </div>`).join('')}</div>`
+    : '';
+
+  let chestnutHtml = '';
+  if (g.chestnut) {
+    const c = g.chestnut;
+    const pcieStates = { 0:'unknown', 1:'L0', 2:'L1', 3:'L2', 4:'L3', 0x10:'L0', 0x11:'L0', 0x15:'recovery', 0x16:'L1', 0x17:'L2', 0x18:'L3' };
+    const pcie = pcieStates[c.pcie_ltssm] !== undefined ? pcieStates[c.pcie_ltssm] : '0x' + c.pcie_ltssm.toString(16);
+    const faultBadge = c.supply_fault ? '<span class="badge-ign badge-ign-off">FAULT</span>' : '<span class="badge-ign badge-ign-on">OK</span>';
+    chestnutHtml = `
+      <hr style="margin:6px 0;border-color:var(--border)">
+      <div class="row"><span class="label">Chestnut eGPU</span><span class="value">${faultBadge}</span></div>
+      <div class="row"><span class="label">GPU</span><span class="value">${fmtPct(c.gpu_usage_percent)} @ ${fmtMhz(c.gpu_clock_mhz)}</span></div>
+      <div class="row"><span class="label">Temp</span><span class="value">${fmtTemp(c.temp_c)}${c.memory_temp_c != null ? ' (mem ' + fmtTemp(c.memory_temp_c) + ')' : ''}</span></div>
+      <div class="row"><span class="label">Power</span><span class="value">${c.power_draw_w != null ? c.power_draw_w.toFixed(1) + ' W' : '—'}${c.power_limit_w != null ? ' / ' + c.power_limit_w.toFixed(1) + ' W' : ''}</span></div>
+      <div class="row"><span class="label">Fan</span><span class="value">${c.fan_speed_rpm != null ? c.fan_speed_rpm + ' RPM' : '—'}</span></div>
+      <div class="row"><span class="label">PCIe Link</span><span class="value">${pcie}</span></div>
+      <div class="row"><span class="label">Supply</span><span class="value">${c.supply_voltage != null ? (c.supply_voltage / 1000).toFixed(2) + ' V' : '—'}${c.supply_current != null ? ' @ ' + (c.supply_current / 1000).toFixed(2) + ' A' : ''}</span></div>`;
+  }
+
+  el.innerHTML = rows + (histHtml ? `
+    <div class="row" style="margin-top:0.4rem"><span class="label">Freq Time</span><span class="value"></span></div>
+    ${histHtml}` : '') + chestnutHtml;
+}
+
 /* ── Diagnostic card (services / alert / error badge) ── */
 function renderDiagCard(d) {
   const body = document.getElementById('card-diag').querySelector('.card-body');
@@ -808,12 +879,13 @@ async function loadCockpit() {
 
 async function loadDashboard() {
   try {
-    const [device, caps, status, activeModel, telemetry, diag, updateStatus, gps, calibration, network, sunnylink, storage] = await Promise.all([
+    const [device, caps, status, activeModel, telemetry, gpu, diag, updateStatus, gps, calibration, network, sunnylink, storage] = await Promise.all([
       api('/api/device'),
       api('/api/capabilities'),
       api('/api/status'),
       api('/api/models/active'),
       api('/api/telemetry', { silent: true }).catch(() => null),
+      api('/api/gpu', { silent: true }).catch(() => null),
       api('/api/diag', { silent: true }).catch(() => null),
       api('/api/update', { silent: true }).catch(() => null),
       api('/api/gps', { silent: true }).catch(() => null),
@@ -856,6 +928,7 @@ async function loadDashboard() {
 
     renderTelemetryCard(telemetry);
     renderSystemCard(telemetry, status);
+    renderGpuCard(gpu);
     renderDiagCard(diag);
     renderProcessesCard(diag);
     renderGpsCard(gps);

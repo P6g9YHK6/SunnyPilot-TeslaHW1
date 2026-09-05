@@ -26,6 +26,9 @@ class SubscriberMixin:
   def _device_state_loop(self):
     self._subscriber_loop('deviceState', '_device_state', 'deviceState')
 
+  def _chestnut_state_loop(self):
+    self._subscriber_loop('chestnutState', '_chestnut_state', 'chestnutState')
+
   def _gps_location_loop(self):
     self._subscriber_loop('gpsLocationExternal', '_gps_location', 'gpsLocationExternal')
 
