@@ -329,6 +329,11 @@ function fmtMhz(v) {
   return v + ' MHz';
 }
 
+function fmtMbps(v) {
+  if (v === null || v === undefined) return '—';
+  return v + ' Mbps';
+}
+
 function renderGpuCard(g) {
   const el = document.getElementById('card-gpu').querySelector('.card-body');
   if (!g) { el.textContent = 'No data'; return; }
@@ -372,21 +377,29 @@ function renderGpuCard(g) {
         </div>`).join('')}</div>`
     : '';
 
-  let chestnutHtml = '';
+let chestnutHtml = '';
   if (g.chestnut) {
     const c = g.chestnut;
+    const hasState = c.gpu_usage_percent !== undefined;
     const pcieStates = { 0:'unknown', 1:'L0', 2:'L1', 3:'L2', 4:'L3', 0x10:'L0', 0x11:'L0', 0x15:'recovery', 0x16:'L1', 0x17:'L2', 0x18:'L3' };
-    const pcie = pcieStates[c.pcie_ltssm] !== undefined ? pcieStates[c.pcie_ltssm] : '0x' + c.pcie_ltssm.toString(16);
-    const faultBadge = c.supply_fault ? '<span class="badge-ign badge-ign-off">FAULT</span>' : '<span class="badge-ign badge-ign-on">OK</span>';
-    chestnutHtml = `
-      <hr style="margin:6px 0;border-color:var(--border)">
-      <div class="row"><span class="label">Chestnut eGPU</span><span class="value">${faultBadge}</span></div>
-      <div class="row"><span class="label">GPU</span><span class="value">${fmtPct(c.gpu_usage_percent)} @ ${fmtMhz(c.gpu_clock_mhz)}</span></div>
-      <div class="row"><span class="label">Temp</span><span class="value">${fmtTemp(c.temp_c)}${c.memory_temp_c != null ? ' (mem ' + fmtTemp(c.memory_temp_c) + ')' : ''}</span></div>
-      <div class="row"><span class="label">Power</span><span class="value">${c.power_draw_w != null ? c.power_draw_w.toFixed(1) + ' W' : '—'}${c.power_limit_w != null ? ' / ' + c.power_limit_w.toFixed(1) + ' W' : ''}</span></div>
-      <div class="row"><span class="label">Fan</span><span class="value">${c.fan_speed_rpm != null ? c.fan_speed_rpm + ' RPM' : '—'}</span></div>
-      <div class="row"><span class="label">PCIe Link</span><span class="value">${pcie}</span></div>
-      <div class="row"><span class="label">Supply</span><span class="value">${c.supply_voltage != null ? (c.supply_voltage / 1000).toFixed(2) + ' V' : '—'}${c.supply_current != null ? ' @ ' + (c.supply_current / 1000).toFixed(2) + ' A' : ''}</span></div>`;
+    let stateRows = '';
+    if (hasState) {
+      const pcie = c.pcie_ltssm != null ? (pcieStates[c.pcie_ltssm] !== undefined ? pcieStates[c.pcie_ltssm] : '0x' + c.pcie_ltssm.toString(16)) : '—';
+      const faultBadge = c.supply_fault ? '<span class="badge-ign badge-ign-off">FAULT</span>' : '<span class="badge-ign badge-ign-on">OK</span>';
+      stateRows = '<div class="row"><span class="label">Chestnut eGPU</span><span class="value">' + faultBadge + '</span></div>'
+        + '<div class="row"><span class="label">GPU</span><span class="value">' + fmtPct(c.gpu_usage_percent) + ' @ ' + fmtMhz(c.gpu_clock_mhz) + '</span></div>'
+        + '<div class="row"><span class="label">Temp</span><span class="value">' + fmtTemp(c.temp_c) + (c.memory_temp_c != null ? ' (mem ' + fmtTemp(c.memory_temp_c) + ')' : '') + '</span></div>'
+        + '<div class="row"><span class="label">Power</span><span class="value">' + (c.power_draw_w != null ? c.power_draw_w.toFixed(1) + ' W' : '—') + (c.power_limit_w != null ? ' / ' + c.power_limit_w.toFixed(1) + ' W' : '') + '</span></div>'
+        + '<div class="row"><span class="label">Fan</span><span class="value">' + (c.fan_speed_rpm != null ? c.fan_speed_rpm + ' RPM' : '—') + '</span></div>'
+        + '<div class="row"><span class="label">PCIe Link</span><span class="value">' + pcie + '</span></div>'
+        + '<div class="row"><span class="label">Supply</span><span class="value">' + (c.supply_voltage != null ? (c.supply_voltage / 1000).toFixed(2) + ' V' : '—') + (c.supply_current != null ? ' @ ' + (c.supply_current / 1000).toFixed(2) + ' A' : '') + '</span></div>';
+    }
+    let usbRow = '<div class="row"><span class="label">USB Link</span><span class="value">' + (c.usb ? fmtMbps(c.usb.speed_mbps) + ' ' + (c.usb.slow ? '<span class="badge-ign badge-ign-warn" title="Chestnut USB link is slow. Check the USB cable.">SLOW</span>' : '<span class="badge-ign badge-ign-on">OK</span>') : '—') + '</span></div>';
+    const usbExtras = (c.usb && c.usb.usb3_lane && c.usb.usb3_lane !== 'unknown')
+      ? '<div class="row"><span class="label">USB3 Lane</span><span class="value">' + escHtml(c.usb.usb3_lane) + '</span></div>' : '';
+    const usbErrors = (c.usb && c.usb.link_error_count > 0)
+      ? '<div class="row"><span class="label">Link Errors</span><span class="value">' + c.usb.link_error_count + '</span></div>' : '';
+    chestnutHtml = '<hr style="margin:6px 0;border-color:var(--border)">' + stateRows + usbRow + usbExtras + usbErrors;
   }
 
   el.innerHTML = rows + (histHtml ? `

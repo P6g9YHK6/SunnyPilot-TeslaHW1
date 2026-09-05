@@ -9,6 +9,7 @@ import time
 
 from aiohttp import web
 
+from openpilot.common.hardware.usb import get_usb_state, is_chestnut_usb_id
 from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType, UnknownKeyName
 from openpilot.common.version import get_build_metadata
 from openpilot.sunnypilot.sunnylink.capabilities import generate_capabilities
@@ -260,6 +261,26 @@ class HandlerMixin:
     except Exception:
       return None
 
+  @staticmethod
+  def _chestnut_usb_state():
+    try:
+      usb = get_usb_state()
+    except Exception:
+      return None
+    firmware = [d for d in usb if is_chestnut_usb_id(d["vendorId"], d["productId"])]
+    if not firmware:
+      return None
+    device = next((d for d in firmware if d["speedMbps"]), firmware[0])
+    speed = device["speedMbps"]
+    return {
+      "present": True,
+      "speed_mbps": speed,
+      "slow": len(firmware) == 1 and speed < 5000,
+      "usb3_lane": device.get("usb3Lane", "unknown"),
+      "link_error_count": device.get("linkErrorCount", 0),
+      "product": device.get("product", ""),
+    }
+
   async def handle_gpu(self, request):
     ds = self._device_state
     kgsl = "/sys/class/kgsl/kgsl-3d0"
@@ -317,22 +338,27 @@ class HandlerMixin:
     max_gpu_clock = max((c["mhz"] for c in clocks), default=0)
 
     chestnut = None
+    chestnut_usb = self._chestnut_usb_state()
     cs = self._chestnut_state
-    if cs is not None:
-      chestnut = {
-        "valid": bool(cs.valid) if hasattr(cs, "valid") else True,
-        "temp_c": float(cs.tempC),
-        "memory_temp_c": float(cs.memoryTempC),
-        "power_draw_w": float(cs.powerDrawW),
-        "power_limit_w": float(cs.powerLimitW),
-        "gpu_usage_percent": int(cs.gpuUsagePercent),
-        "gpu_clock_mhz": int(cs.gpuClockMhz),
-        "fan_speed_rpm": int(cs.fanSpeedRpm),
-        "pcie_ltssm": int(cs.pcieLtssm),
-        "supply_voltage": int(cs.supplyVoltage),
-        "supply_current": int(cs.supplyCurrent),
-        "supply_fault": bool(cs.supplyFault),
-      }
+    if chestnut_usb is not None or cs is not None:
+      chestnut = {}
+      if chestnut_usb is not None:
+        chestnut["usb"] = chestnut_usb
+      if cs is not None:
+        chestnut.update({
+          "valid": bool(cs.valid) if hasattr(cs, "valid") else True,
+          "temp_c": float(cs.tempC),
+          "memory_temp_c": float(cs.memoryTempC),
+          "power_draw_w": float(cs.powerDrawW),
+          "power_limit_w": float(cs.powerLimitW),
+          "gpu_usage_percent": int(cs.gpuUsagePercent),
+          "gpu_clock_mhz": int(cs.gpuClockMhz),
+          "fan_speed_rpm": int(cs.fanSpeedRpm),
+          "pcie_ltssm": int(cs.pcieLtssm),
+          "supply_voltage": int(cs.supplyVoltage),
+          "supply_current": int(cs.supplyCurrent),
+          "supply_fault": bool(cs.supplyFault),
+        })
 
     return web.json_response({
       "present": present,

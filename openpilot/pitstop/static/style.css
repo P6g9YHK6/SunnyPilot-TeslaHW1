@@ -647,6 +647,7 @@ h1 {
 .badge-ign-on      { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(62,207,142,0.3); }
 .badge-ign-off     { background: var(--surface3);   color: var(--text-muted); border: 1px solid var(--border-mid); }
 .badge-ign-unknown { background: var(--surface3);   color: var(--text-muted); border: 1px solid var(--border-mid); }
+.badge-ign-warn    { background: var(--orange-dim, rgba(255,152,0,.15)); color: var(--orange, #ff9800); border: 1px solid rgba(255,152,0,0.35); }
 
 /* ─── GPU histogram ─────────────────────────────────────────────── */
 .gpu-hist { display: flex; flex-direction: column; gap: 2px; }
