@@ -3,11 +3,22 @@ import time
 from openpilot.common.hardware.usb import CHESTNUT_USB_PRODUCT, is_chestnut_usb_id
 from openpilot.common.version import get_build_metadata, CHESTNUT_BRANCHES
 from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_compiled
+from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 
 
 CHESTNUT_RELEASE_BRANCHES = ("release-chestnut", "release-chestnut-staging")
 CHESTNUT_POWERED_VOLTAGE = 5000
 GPU_TEMP_LIMIT = 100.
+
+
+def chestnut_bundle_active(params, model_active, model_loading, offroad) -> bool:
+  # mirrors selfdrive/ui/sunnypilot/ui_state.py's model_runner_tinygrad fallback: a downloaded
+  # bundle (picked via pitstop) runs on the chestnut just the same as the default compiled
+  # model, so the offroad alerts below shouldn't nag about the literal default file existing
+  # when a perfectly good alternate model is already active.
+  source = get_active_source(chestnut=True, chestnut_active=model_active, chestnut_loading=model_loading, offroad=offroad)
+  active_bundle = params.get(ACTIVE_BUNDLE_KEYS[source])
+  return active_bundle is not None and active_bundle.get("runner") == "tinygrad"
 MEMORY_TEMP_LIMIT = 95.
 TEMP_HYSTERESIS = 5.
 
@@ -29,7 +40,7 @@ class ChestnutStatus:
     self.usb_failed = False
 
   def update(self, offroad: bool, branch: str, usb_state: list[dict], firmware_failed: bool,
-             model_loading: bool, model_active: bool | None, state, set_alert) -> None:
+             model_loading: bool, model_active: bool | None, state, set_alert, params) -> None:
     detected = [d for d in usb_state if is_chestnut_usb_id(d["vendorId"], d["productId"], include_bootloader=True)]
     devices = [d for d in detected if is_chestnut_usb_id(d["vendorId"], d["productId"])]
     firmware_ok = len(devices) == 1 and devices[0]["product"] == CHESTNUT_USB_PRODUCT
@@ -81,7 +92,8 @@ class ChestnutStatus:
     release = branch in CHESTNUT_RELEASE_BRANCHES
     missing = self.usb_failed or (offroad and release and time.monotonic() - self.started > 10. and len(detected) != 1)
     slow_usb = offroad and len(devices) == 1 and devices[0]["speedMbps"] < 5000
-    big_model_available = (MODELS_DIR / 'big_driving_supercombo.onnx').is_file() or chestnut_compiled()
+    bundle_active = chestnut_bundle_active(params, model_active, model_loading, offroad)
+    big_model_available = (MODELS_DIR / 'big_driving_supercombo.onnx').is_file() or chestnut_compiled() or bundle_active
     current_channel = get_build_metadata().channel
     chestnut_target = CHESTNUT_BRANCHES.get(current_channel)
     chestnut_needs_switch = len(devices) == 1 and not big_model_available and chestnut_target is not None
@@ -96,6 +108,6 @@ class ChestnutStatus:
     else:
       pcie_alert = "Chestnut GPU unavailable. PCIe link is not up. Check the GPU is securely seated."
     set_alert("Offroad_ChestnutPcieUnavailable", self.pcie_failed, pcie_alert)
-    set_alert("Offroad_ChestnutUncompiled", offroad and firmware_ok and not chestnut_compiled())
+    set_alert("Offroad_ChestnutUncompiled", offroad and firmware_ok and not chestnut_compiled() and not bundle_active)
     set_alert("Offroad_ChestnutUpdateFailed", offroad and firmware_failed)
     self.offroad = offroad
