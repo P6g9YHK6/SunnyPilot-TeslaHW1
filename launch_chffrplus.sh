@@ -72,6 +72,10 @@ function launch {
   ln -sfn $(pwd) /data/pythonpath
   export PYTHONPATH="$PWD"
 
+  # use this checkout's own venv (source builds keep their own .venv;
+  # /usr/local/venv is the shared read-only venv baked for -prebuilt deploys)
+  source "$DIR/.venv/bin/activate"
+
   # submodule package symlinks for PYTHONPATH imports on device.
   # on PC these come from editable installs via pyproject.toml / uv.
   ln -sfn msgq_repo/msgq msgq
