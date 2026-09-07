@@ -32,6 +32,13 @@ class SubscriberMixin:
   def _gps_location_loop(self):
     self._subscriber_loop('gpsLocationExternal', '_gps_location', 'gpsLocationExternal')
 
+  # UI-facing diagnostics don't need sub-frame freshness, and several subscribed
+  # topics publish at 20-100Hz - without a floor here sm.update() returns almost
+  # immediately every time, and this loop (plus its per-service _msgq_readers()
+  # opens) ends up spinning at ~250+ Hz, pegging a full core competing with the
+  # actual driving stack for CPU. See dev commit history around 2026-09-07.
+  MIN_UPDATE_INTERVAL = 0.2  # 5Hz cap
+
   def _diag_loop(self):
     logger.info("[LOOP] diagnostic monitor started")
     try:
@@ -42,8 +49,19 @@ class SubscriberMixin:
         'selfdriveState', 'managerState', 'controlsState',
         'longitudinalPlanSP', 'liveMapDataSP', 'carStateSP', 'selfdriveStateSP',
       ])
+      last_update = 0.0
       while self._running:
         sm.update(2000)
+        now = time.monotonic()
+        elapsed = now - last_update
+        if elapsed < self.MIN_UPDATE_INTERVAL:
+          # sm.update() returns almost instantly under normal onroad publish
+          # rates, so without an actual sleep here this would still poll (and
+          # reopen each topic's shm segment) at full message rate - the sleep,
+          # not the skip, is what caps the CPU cost.
+          time.sleep(self.MIN_UPDATE_INTERVAL - elapsed)
+          continue
+        last_update = now
         services = []
         for s in ['extrinsicsCalibration', 'deviceMotion', 'vehicleParameters', 'longitudinalPlan',
                    'modelV2', 'cameraOdometry', 'driverMonitoringState',
