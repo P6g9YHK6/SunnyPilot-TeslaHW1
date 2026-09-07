@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -28,9 +29,16 @@ class ModelMixin:
     source = ModelFetcher.active_source(chestnut_present())
     return fetcher.get_bundles_for_source(source), source
 
+  async def _active_source_bundles_async(self):
+    # get_bundles_for_source() does a blocking requests.get(timeout=10) on a cache miss/
+    # expiry - run it off the event loop so one slow/expired fetch doesn't stall every
+    # other pitstop request for up to 10s (see dev commit history around 2026-09-07)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, self._active_source_bundles, self.params)
+
   async def handle_models_list(self, request):
     try:
-      bundles, _ = self._active_source_bundles(self.params)
+      bundles, _ = await self._active_source_bundles_async()
       model_dir = Paths.model_root()
       result = []
       for b in bundles:
@@ -51,7 +59,7 @@ class ModelMixin:
     if not name:
       raise web.HTTPBadRequest(text="Missing bundle name")
     try:
-      bundles, _ = self._active_source_bundles(self.params)
+      bundles, _ = await self._active_source_bundles_async()
     except Exception as e:
       raise web.HTTPInternalServerError(text=str(e)) from e
     bundle = next((b for b in bundles if b.internalName == name), None)
@@ -95,7 +103,7 @@ class ModelMixin:
     index = int(index)
     # main_thread matches this ref against the chestnut-aware catalog; validate against
     # the same one here so a stale/mismatched index fails now instead of silently never downloading
-    bundles, _ = self._active_source_bundles(self.params)
+    bundles, _ = await self._active_source_bundles_async()
     bundle = next((b for b in bundles if b.index == index), None)
     if bundle is None:
       raise web.HTTPBadRequest(text=f"index {index} not in the current model catalog "
