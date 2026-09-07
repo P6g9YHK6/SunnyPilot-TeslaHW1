@@ -172,6 +172,23 @@ def init_overlay() -> None:
   cloudlog.info(f"git diff output:\n{git_diff}")
 
 
+def sync_venv(target_dir: str) -> None:
+  """Ensure target_dir's own .venv matches its own uv.lock/pyproject.toml, so the
+  candidate that gets swapped in at BASEDIR is runnable with zero network access at
+  car-start time. Must be called against the update candidate's own path, never
+  BASEDIR - this provisions the NEW checkout, not the one currently running."""
+  if shutil.which("uv") is None:
+    raise RuntimeError("uv not found on PATH; cannot provision venv for update candidate")
+  cloudlog.info(f"syncing venv for update candidate at {target_dir}")
+  # bare `uv sync --frozen`: [tool.uv] default-groups = ["standalone"] in pyproject.toml
+  # already resolves to openpilot[submodules] - the full runtime stack (aiohttp, numpy,
+  # pycapnp, the msgq/opendbc/pandacan/rednose/teleoprtc/tinygrad path-editable installs,
+  # ...). --all-extras (used by tools/setup_dependencies.sh for dev-workstation setup)
+  # additionally pulls docs/dev/testing/tools extras that nothing at car-runtime imports;
+  # skip them so an unattended background update can't be sunk by a dev-only dependency.
+  run(["uv", "sync", "--frozen"], target_dir)
+
+
 def finalize_update() -> None:
   """Take the current OverlayFS merged view and finalize a copy outside of
   OverlayFS, ready to be swapped-in at BASEDIR. Copy using shutil.copytree"""
@@ -187,6 +204,18 @@ def finalize_update() -> None:
 
   run(["git", "reset", "--hard"], FINALIZED)
   run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
+
+  # Self-heal .venv and the static model weights against THIS candidate's own
+  # lockfile/tinygrad pin. Deliberately done here (background staging, device
+  # still drivable on the old BASEDIR) rather than at launch_chffrplus.sh/boot
+  # time, where a missing network would leave the car unable to start. No
+  # try/except: any failure here must propagate so set_consistent_flag(True)
+  # below is never reached - a broken update must never be marked ready to
+  # swap in; fail the update, not the car.
+  sync_venv(FINALIZED)
+  from openpilot.selfdrive.modeld.helpers import chestnut_present
+  from openpilot.sunnypilot.models.static_provisioning import verify_and_refresh_static_models
+  verify_and_refresh_static_models(FINALIZED, chestnut=chestnut_present())
 
   set_consistent_flag(True)
   cloudlog.info("done finalizing overlay")
@@ -377,7 +406,13 @@ class Updater:
       ["git", "checkout", "--force", "--no-recurse-submodules", "-B", branch, "FETCH_HEAD"],
       ["git", "branch", "--set-upstream-to", f"origin/{branch}"],
       ["git", "reset", "--hard"],
-      ["git", "clean", "-xdff"],
+      # -e excludes: .venv/ (created by uv sync) and the static model .pkl weights
+      # under selfdrive/modeld/models/ are both gitignored, so a plain -xdff would
+      # delete them from this overlay view - and finalize_update() copies THIS view
+      # into the update candidate, so every update would silently wipe them from the
+      # swapped-in checkout. sync_venv()/verify_and_refresh_static_models() below
+      # then true up whatever survives against this candidate's own lockfile/pin.
+      ["git", "clean", "-xdff", "-e", ".venv/", "-e", "openpilot/selfdrive/modeld/models/*.pkl*"],
       ["git", "submodule", "sync"],
       ["git", "submodule", "update", "--init", "--recursive"],
       ["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"],

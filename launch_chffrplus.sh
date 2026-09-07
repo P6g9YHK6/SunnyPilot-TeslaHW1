@@ -73,8 +73,19 @@ function launch {
   export PYTHONPATH="$PWD"
 
   # use this checkout's own venv (source builds keep their own .venv;
-  # /usr/local/venv is the shared read-only venv baked for -prebuilt deploys)
-  source "$DIR/.venv/bin/activate"
+  # /usr/local/venv is the shared read-only venv baked for -prebuilt deploys).
+  # Defense in depth only: updated.py's finalize_update() is what actually
+  # guarantees .venv survives an update intact - this just turns a missing/
+  # broken .venv into a clearly-logged warning instead of a silent, confusing
+  # crash further down (e.g. for a candidate finalized before this fix shipped).
+  if [ -f "$DIR/.venv/bin/activate" ]; then
+    source "$DIR/.venv/bin/activate"
+  elif [ -f /usr/local/venv/bin/activate ]; then
+    echo "WARNING: $DIR/.venv missing; falling back to /usr/local/venv (likely a broken/incomplete update)" | tee -a /tmp/launch_log
+    source /usr/local/venv/bin/activate
+  else
+    echo "WARNING: no venv found at $DIR/.venv or /usr/local/venv; continuing with bare python3 (this will likely fail)" | tee -a /tmp/launch_log
+  fi
 
   # submodule package symlinks for PYTHONPATH imports on device.
   # on PC these come from editable installs via pyproject.toml / uv.
