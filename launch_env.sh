@@ -20,3 +20,11 @@ if [ -z "$AGNOS_VERSION" ]; then
 fi
 
 export STAGING_ROOT="/data/safe_staging"
+
+# on AGNOS, /home is an ephemeral overlay (upperdir on tmpfs) that's wiped every
+# reboot. uv defaults its managed-Python install dir and cache under $HOME, so a
+# `uv sync` there works until the next reboot, then .venv/bin/python3 points at a
+# now-missing interpreter and everything invoking it (e.g. capnpc) fails with
+# "required file not found". Keep both on /data, which persists.
+export UV_PYTHON_INSTALL_DIR="/data/uv_python"
+export UV_CACHE_DIR="/data/uv_cache"
