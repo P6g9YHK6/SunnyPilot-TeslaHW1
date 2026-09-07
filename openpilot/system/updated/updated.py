@@ -180,13 +180,13 @@ def sync_venv(target_dir: str) -> None:
   if shutil.which("uv") is None:
     raise RuntimeError("uv not found on PATH; cannot provision venv for update candidate")
   cloudlog.info(f"syncing venv for update candidate at {target_dir}")
-  # bare `uv sync --frozen`: [tool.uv] default-groups = ["standalone"] in pyproject.toml
-  # already resolves to openpilot[submodules] - the full runtime stack (aiohttp, numpy,
-  # pycapnp, the msgq/opendbc/pandacan/rednose/teleoprtc/tinygrad path-editable installs,
-  # ...). --all-extras (used by tools/setup_dependencies.sh for dev-workstation setup)
-  # additionally pulls docs/dev/testing/tools extras that nothing at car-runtime imports;
-  # skip them so an unattended background update can't be sunk by a dev-only dependency.
-  run(["uv", "sync", "--frozen"], target_dir)
+  # --all-extras, matching tools/setup_dependencies.sh: a bare `uv sync` (just the
+  # "standalone" default group) covers the driving stack's own imports, but
+  # launch_chffrplus.sh's build.py/SConstruct step - which runs on every boot when
+  # `prebuilt` is absent - needs the "tools" extra too (comma-deps-ncurses, imgui,
+  # ...) to build at all. Confirmed on-device: a narrower sync here left the device
+  # stuck on a "failed to build" screen with ModuleNotFoundError: ncurses.
+  run(["uv", "sync", "--frozen", "--all-extras"], target_dir)
 
 
 def finalize_update() -> None:
