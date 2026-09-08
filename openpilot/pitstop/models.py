@@ -10,7 +10,8 @@ from openpilot.sunnypilot.models.helpers import get_active_bundle, bundle_artifa
 from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL
 from openpilot.common.params import Params
 from openpilot.common.hardware.hw import Paths
-from openpilot.selfdrive.modeld.helpers import chestnut_present
+from openpilot.common.hardware.usb import ChestnutState, CHESTNUT_STATE_LABELS, get_chestnut_hardware_state, get_usb_state
+from openpilot.selfdrive.modeld.helpers import chestnut_compiled, chestnut_present
 
 logger = logging.getLogger("pitstop")
 
@@ -29,6 +30,15 @@ class ModelMixin:
     source = ModelFetcher.active_source(chestnut_present())
     return fetcher.get_bundles_for_source(source), source
 
+  def _chestnut_hw(self):
+    """Current chestnut hardware state, for annotating why a chestnut-sourced
+    bundle isn't selectable right now (see openpilot.common.hardware.usb)."""
+    try:
+      usb_state = get_usb_state()
+    except Exception:
+      usb_state = []
+    return get_chestnut_hardware_state(usb_state, self._chestnut_state, chestnut_compiled(), self.params.get_bool("ChestnutActive"))
+
   async def _active_source_bundles_async(self):
     # get_bundles_for_source() does a blocking requests.get(timeout=10) on a cache miss/
     # expiry - run it off the event loop so one slow/expired fetch doesn't stall every
@@ -38,7 +48,11 @@ class ModelMixin:
 
   async def handle_models_list(self, request):
     try:
-      bundles, _ = await self._active_source_bundles_async()
+      bundles, source = await self._active_source_bundles_async()
+      hw = self._chestnut_hw() if source == "chestnut" else None
+      unavailable_reason = None
+      if hw is not None and hw.state not in (ChestnutState.READY, ChestnutState.ACTIVE, ChestnutState.DEGRADED_LINK):
+        unavailable_reason = CHESTNUT_STATE_LABELS[hw.state]
       model_dir = Paths.model_root()
       result = []
       for b in bundles:
@@ -47,6 +61,8 @@ class ModelMixin:
         cached_files = [f for f, sha in artifacts if await verify_file(os.path.join(model_dir, f), sha)]
         d['isCached'] = bool(artifacts) and len(cached_files) == len(artifacts)
         d['cachedFiles'] = cached_files
+        if unavailable_reason is not None:
+          d['unavailableReason'] = unavailable_reason
         result.append(d)
       return web.json_response(result)
     except Exception as e:
@@ -87,9 +103,23 @@ class ModelMixin:
 
   async def handle_models_active(self, request):
     active = get_active_bundle(self.params)
-    if active is not None:
-      return web.json_response(active.to_dict())
-    return web.json_response({"internalName": DEFAULT_MODEL, "displayName": DEFAULT_MODEL, "isDefault": True})
+    result = active.to_dict() if active is not None else {"internalName": DEFAULT_MODEL, "displayName": DEFAULT_MODEL, "isDefault": True}
+
+    source = ModelFetcher.active_source(chestnut_present())
+    result["activeSource"] = source
+    if source == "chestnut":
+      hw = self._chestnut_hw()
+      result["chestnutHardwareState"] = hw.state.value
+      result["chestnutHardwareLabel"] = CHESTNUT_STATE_LABELS[hw.state]
+
+    raw = self.params.get("ModelStaticProvisioningStatus")
+    if raw:
+      try:
+        result["staticProvisioning"] = json.loads(raw)
+      except (ValueError, TypeError):
+        pass
+
+    return web.json_response(result)
 
   async def handle_models_select(self, request):
     self._require_offroad()
@@ -129,6 +159,7 @@ class ModelMixin:
       "selectedBundle": state.get("selectedBundle"),
       "activeBundle": state.get("activeBundle"),
       "availableBundles": state.get("availableBundles", []),
+      "activeSource": ModelFetcher.active_source(chestnut_present()),
     })
 
   async def handle_models_cancel(self, request):

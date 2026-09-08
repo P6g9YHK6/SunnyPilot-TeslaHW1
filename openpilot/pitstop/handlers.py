@@ -9,9 +9,12 @@ import time
 
 from aiohttp import web
 
-from openpilot.common.hardware.usb import get_usb_state, is_chestnut_usb_id
+from openpilot.common.hardware.usb import (CHESTNUT_SLOW_USB_MBPS, ChestnutState, CHESTNUT_STATE_LABELS,
+                                            get_chestnut_hardware_state, get_usb_state, is_chestnut_usb_id)
 from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType, UnknownKeyName
 from openpilot.common.version import get_build_metadata
+from openpilot.selfdrive.modeld.helpers import chestnut_compiled
+from openpilot.system.hardware.chestnut.status import GPU_TEMP_LIMIT, MEMORY_TEMP_LIMIT, TEMP_HYSTERESIS
 from openpilot.sunnypilot.sunnylink.capabilities import generate_capabilities
 from openpilot.sunnypilot.sunnylink.tools.generate_settings_schema import generate_schema
 from openpilot.pitstop.schema import generate_openapi_schema
@@ -262,12 +265,8 @@ class HandlerMixin:
       return None
 
   @staticmethod
-  def _chestnut_usb_state():
-    try:
-      usb = get_usb_state()
-    except Exception:
-      return None
-    firmware = [d for d in usb if is_chestnut_usb_id(d["vendorId"], d["productId"])]
+  def _chestnut_usb_state(usb_state: list[dict]):
+    firmware = [d for d in usb_state if is_chestnut_usb_id(d["vendorId"], d["productId"])]
     if not firmware:
       return None
     device = next((d for d in firmware if d["speedMbps"]), firmware[0])
@@ -275,11 +274,20 @@ class HandlerMixin:
     return {
       "present": True,
       "speed_mbps": speed,
-      "slow": len(firmware) == 1 and speed < 5000,
+      "slow": len(firmware) == 1 and speed < CHESTNUT_SLOW_USB_MBPS,
       "usb3_lane": device.get("usb3Lane", "unknown"),
       "link_error_count": device.get("linkErrorCount", 0),
       "product": device.get("product", ""),
     }
+
+  @staticmethod
+  def _chestnut_temp_level(temp: float, limit: float, overheated_latched: bool) -> str:
+    eff_limit = limit - (TEMP_HYSTERESIS if overheated_latched else 0.)
+    if temp >= eff_limit:
+      return "critical"
+    if temp >= eff_limit - 10.:
+      return "warn"
+    return "ok"
 
   async def handle_gpu(self, request):
     ds = self._device_state
@@ -337,18 +345,33 @@ class HandlerMixin:
 
     max_gpu_clock = max((c["mhz"] for c in clocks), default=0)
 
-    chestnut = None
-    chestnut_usb = self._chestnut_usb_state()
+    try:
+      usb_state = get_usb_state()
+    except Exception:
+      usb_state = []
     cs = self._chestnut_state
-    if chestnut_usb is not None or cs is not None:
+    hw = get_chestnut_hardware_state(usb_state, cs, chestnut_compiled(), self.params.get_bool("ChestnutActive"))
+
+    chestnut = None
+    chestnut_usb = self._chestnut_usb_state(usb_state)
+    if chestnut_usb is not None or hw.state != ChestnutState.ABSENT:
       chestnut = {}
       if chestnut_usb is not None:
         chestnut["usb"] = chestnut_usb
+      chestnut["hardware_state"] = hw.state.value
+      chestnut["hardware_state_label"] = CHESTNUT_STATE_LABELS[hw.state]
+      chestnut["ready"] = hw.state in (ChestnutState.READY, ChestnutState.ACTIVE, ChestnutState.DEGRADED_LINK)
+      chestnut["powered"] = hw.powered
+      chestnut["pcie_link_up"] = hw.pcie_link_up
+      chestnut["pcie_link_label"] = hw.pcie_label
       if cs is not None:
+        overheated_latched = self.params.get_bool("ChestnutOverheated")
         chestnut.update({
           "valid": bool(cs.valid) if hasattr(cs, "valid") else True,
           "temp_c": float(cs.tempC),
           "memory_temp_c": float(cs.memoryTempC),
+          "temp_level": self._chestnut_temp_level(float(cs.tempC), GPU_TEMP_LIMIT, overheated_latched),
+          "memory_temp_level": self._chestnut_temp_level(float(cs.memoryTempC), MEMORY_TEMP_LIMIT, overheated_latched),
           "power_draw_w": float(cs.powerDrawW),
           "power_limit_w": float(cs.powerLimitW),
           "gpu_usage_percent": int(cs.gpuUsagePercent),
@@ -359,6 +382,16 @@ class HandlerMixin:
           "supply_current": int(cs.supplyCurrent),
           "supply_fault": bool(cs.supplyFault),
         })
+      raw_flash_status = self.params.get("ChestnutFlashStatus")
+      if raw_flash_status:
+        try:
+          flash_status = json.loads(raw_flash_status)
+        except (ValueError, TypeError):
+          flash_status = None
+        # only worth surfacing when there's something noteworthy - not on every
+        # healthy, up-to-date request
+        if flash_status and (flash_status.get("mismatch") or flash_status.get("in_progress") or flash_status.get("failed")):
+          chestnut["firmware"] = flash_status
 
     return web.json_response({
       "present": present,

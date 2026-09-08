@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import fcntl
+import json
 import os
 import queue
+import re
 import struct
 import subprocess
 import sys
@@ -39,6 +41,9 @@ DISCONNECT_TIMEOUT = 5.  # wait 5 seconds before going offroad after disconnect 
 PANDA_STATES_TIMEOUT = round(1000 / SERVICE_LIST['pandaStates'].frequency * 1.5)  # 1.5x the expected pandaState frequency
 ONROAD_CYCLE_TIME = 1  # seconds to wait offroad after requesting an onroad cycle
 
+_FW_VERSION_RE = re.compile(r"^custom (.+)-CLEAN$")
+
+
 class Chestnut:
   # flash offroad, modeld ignores chestnut until the product string matches
   MAX_ATTEMPTS = 3
@@ -50,6 +55,7 @@ class Chestnut:
     self.last_attempt = 0.
     self.flashed = False
     self.mismatch = False
+    self.last_error: str | None = None
 
   @property
   def failed(self) -> bool:
@@ -60,8 +66,15 @@ class Chestnut:
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False)
     cloudlog.event("chestnut flash done", returncode=ret.returncode, output=ret.stdout[-1000:], error=ret.returncode != 0)
     self.flashed = ret.returncode == 0
+    self.last_error = None if self.flashed else ret.stdout[-500:]
 
-  def update(self, offroad: bool, usb_state: list[dict]) -> None:
+  def update(self, offroad: bool, usb_state: list[dict], params: Params) -> None:
+    try:
+      self._update(offroad, usb_state)
+    finally:
+      self._write_status(params, usb_state)
+
+  def _update(self, offroad: bool, usb_state: list[dict]) -> None:
     self.mismatch = any(is_chestnut_usb_id(d["vendorId"], d["productId"], include_bootloader=True) and
                         d["product"] != CHESTNUT_USB_PRODUCT for d in usb_state)
     if not self.mismatch:
@@ -80,6 +93,31 @@ class Chestnut:
     cloudlog.warning(f"chestnut firmware out of date, flashing (attempt {self.attempts})")
     self.thread = threading.Thread(target=self.flash, daemon=True)
     self.thread.start()
+
+  def _write_status(self, params: Params, usb_state: list[dict]) -> None:
+    """Purely informational - read by pitstop to show firmware version/update
+    status in the GPU card. hardwared.py remains the only process that ever
+    touches the chestnut USB device; this is a one-way status export, not a
+    control channel."""
+    detected_version = None
+    for d in usb_state:
+      if is_chestnut_usb_id(d["vendorId"], d["productId"], include_bootloader=True):
+        m = _FW_VERSION_RE.match(d["product"])
+        detected_version = m.group(1) if m else (d["product"] or None)
+        break
+    status = {
+      "detected_version": detected_version,
+      "expected_version": CHESTNUT_FW_VERSION,
+      "mismatch": self.mismatch,
+      "in_progress": self.thread is not None and self.thread.is_alive(),
+      "attempt": self.attempts,
+      "max_attempts": self.MAX_ATTEMPTS,
+      "flashed": self.flashed,
+      "failed": self.failed,
+      "last_error": self.last_error,
+      "ts": time.time(),
+    }
+    params.put("ChestnutFlashStatus", json.dumps(status))
 
 
 ThermalBand = namedtuple("ThermalBand", ['min_temp', 'max_temp'])
@@ -306,7 +344,7 @@ def hardware_thread(end_event, hw_queue) -> None:
     msg.deviceState.screenBrightnessPercent = HARDWARE.get_screen_brightness()
 
     set_usb_state(msg.deviceState, last_hw_state.usb_state)
-    chestnut.update(started_ts is None, last_hw_state.usb_state)
+    chestnut.update(started_ts is None, last_hw_state.usb_state, params)
     chestnut_state = sm["chestnutState"]
     chestnut_valid = sm.alive["chestnutState"] and sm.valid["chestnutState"]
     chestnut_status.update(started_ts is None, branch, last_hw_state.usb_state, chestnut.failed,

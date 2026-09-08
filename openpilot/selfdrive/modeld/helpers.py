@@ -7,12 +7,11 @@ import tempfile
 from pathlib import Path
 
 from openpilot.common.file_chunker import get_manifest_path
-from openpilot.common.hardware.usb import CHESTNUT_USB_PRODUCT, USB_DEVICES_PATH, is_chestnut_usb_id
+from openpilot.common.hardware.usb import (CHESTNUT_PCIE_READY, CHESTNUT_POWERED_VOLTAGE, CHESTNUT_USB_PRODUCT,
+                                            USB_DEVICES_PATH, is_chestnut_usb_id)
 
 MODELS_DIR = Path(__file__).resolve().parent / 'models'
 TG_INPUT_DEVICES_PATH = MODELS_DIR / 'tg_input_devices.json'
-CHESTNUT_POWERED_VOLTAGE = 5000
-CHESTNUT_PCIE_READY = 0x78
 
 
 def get_tg_input_devices(process_name: str, chestnut: bool):

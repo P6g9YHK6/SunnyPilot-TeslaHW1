@@ -381,17 +381,32 @@ let chestnutHtml = '';
   if (g.chestnut) {
     const c = g.chestnut;
     const hasState = c.gpu_usage_percent !== undefined;
-    const pcieStates = { 0:'unknown', 1:'L0', 2:'L1', 3:'L2', 4:'L3', 0x10:'L0', 0x11:'L0', 0x15:'recovery', 0x16:'L1', 0x17:'L2', 0x18:'L3' };
-    let stateRows = '';
+    const stateBadgeCls = {
+      absent: 'diag-fail', bootloader: 'badge-ign-warn', firmware_mismatch: 'diag-fail',
+      uncompiled: 'badge-ign-warn', not_ready_power: 'diag-fail', not_ready_pcie: 'diag-fail',
+      not_ready: 'badge-ign-warn', degraded_link: 'badge-ign-warn',
+      ready: 'badge-ign-on', active: 'badge-ign-on',
+    };
+    const badgeCls = stateBadgeCls[c.hardware_state] || 'diag-fail';
+    // .diag-badge/.badge-ign are the (unstyled) base classes; .diag-fail/.diag-ok
+    // and .badge-ign-on/-off/-warn/-unknown are the color modifiers - both need
+    // pairing with their own base, same as every other badge in this file.
+    const stateBadge = badgeCls.startsWith('diag-')
+      ? `<span class="diag-badge ${badgeCls}">${escHtml(c.hardware_state_label || '—')}</span>`
+      : `<span class="badge-ign ${badgeCls}">${escHtml(c.hardware_state_label || '—')}</span>`;
+    const tempBadgeCls = { ok: '', warn: 'badge-ign badge-ign-warn', critical: 'diag-badge diag-fail' };
+    const tempVal = (v, level) => {
+      const cls = tempBadgeCls[level] || '';
+      return cls ? `<span class="${cls}">${fmtTemp(v)}</span>` : fmtTemp(v);
+    };
+
+    let stateRows = '<div class="row"><span class="label">Chestnut eGPU</span><span class="value">' + stateBadge + '</span></div>';
     if (hasState) {
-      const pcie = c.pcie_ltssm != null ? (pcieStates[c.pcie_ltssm] !== undefined ? pcieStates[c.pcie_ltssm] : '0x' + c.pcie_ltssm.toString(16)) : '—';
-      const faultBadge = c.supply_fault ? '<span class="badge-ign badge-ign-off">FAULT</span>' : '<span class="badge-ign badge-ign-on">OK</span>';
-      stateRows = '<div class="row"><span class="label">Chestnut eGPU</span><span class="value">' + faultBadge + '</span></div>'
-        + '<div class="row"><span class="label">GPU</span><span class="value">' + fmtPct(c.gpu_usage_percent) + ' @ ' + fmtMhz(c.gpu_clock_mhz) + '</span></div>'
-        + '<div class="row"><span class="label">Temp</span><span class="value">' + fmtTemp(c.temp_c) + (c.memory_temp_c != null ? ' (mem ' + fmtTemp(c.memory_temp_c) + ')' : '') + '</span></div>'
+      stateRows += '<div class="row"><span class="label">GPU</span><span class="value">' + fmtPct(c.gpu_usage_percent) + ' @ ' + fmtMhz(c.gpu_clock_mhz) + '</span></div>'
+        + '<div class="row"><span class="label">Temp</span><span class="value">' + tempVal(c.temp_c, c.temp_level) + (c.memory_temp_c != null ? ' (mem ' + tempVal(c.memory_temp_c, c.memory_temp_level) + ')' : '') + '</span></div>'
         + '<div class="row"><span class="label">Power</span><span class="value">' + (c.power_draw_w != null ? c.power_draw_w.toFixed(1) + ' W' : '—') + (c.power_limit_w != null ? ' / ' + c.power_limit_w.toFixed(1) + ' W' : '') + '</span></div>'
         + '<div class="row"><span class="label">Fan</span><span class="value">' + (c.fan_speed_rpm != null ? c.fan_speed_rpm + ' RPM' : '—') + '</span></div>'
-        + '<div class="row"><span class="label">PCIe Link</span><span class="value">' + pcie + '</span></div>'
+        + '<div class="row"><span class="label">PCIe Link</span><span class="value">' + escHtml(c.pcie_link_label || '—') + '</span></div>'
         + '<div class="row"><span class="label">Supply</span><span class="value">' + (c.supply_voltage != null ? (c.supply_voltage / 1000).toFixed(2) + ' V' : '—') + (c.supply_current != null ? ' @ ' + (c.supply_current / 1000).toFixed(2) + ' A' : '') + '</span></div>';
     }
     let usbRow = '<div class="row"><span class="label">USB Link</span><span class="value">' + (c.usb ? fmtMbps(c.usb.speed_mbps) + ' ' + (c.usb.slow ? '<span class="badge-ign badge-ign-warn" title="Chestnut USB link is slow. Check the USB cable.">SLOW</span>' : '<span class="badge-ign badge-ign-on">OK</span>') : '—') + '</span></div>';
@@ -399,7 +414,19 @@ let chestnutHtml = '';
       ? '<div class="row"><span class="label">USB3 Lane</span><span class="value">' + escHtml(c.usb.usb3_lane) + '</span></div>' : '';
     const usbErrors = (c.usb && c.usb.link_error_count > 0)
       ? '<div class="row"><span class="label">Link Errors</span><span class="value">' + c.usb.link_error_count + '</span></div>' : '';
-    chestnutHtml = '<hr style="margin:6px 0;border-color:var(--border)">' + stateRows + usbRow + usbExtras + usbErrors;
+    let firmwareRow = '';
+    if (c.firmware) {
+      const fw = c.firmware;
+      const fwStatus = fw.in_progress ? `Flashing… (attempt ${fw.attempt}/${fw.max_attempts})`
+        : fw.failed ? `Flash Failed (${fw.attempt}/${fw.max_attempts} attempts)`
+        : fw.mismatch ? 'Update Needed'
+        : 'Up to Date';
+      const fwCls = fw.in_progress ? 'badge-ign badge-ign-warn' : fw.failed || fw.mismatch ? 'diag-badge diag-fail' : 'badge-ign badge-ign-on';
+      firmwareRow = '<div class="row"><span class="label">Firmware</span><span class="value">'
+        + escHtml(fw.detected_version || '—') + ' (expected ' + escHtml(fw.expected_version || '—') + ') '
+        + `<span class="${fwCls}">${escHtml(fwStatus)}</span>` + '</span></div>';
+    }
+    chestnutHtml = '<hr style="margin:6px 0;border-color:var(--border)">' + stateRows + usbRow + usbExtras + usbErrors + firmwareRow;
   }
 
   el.innerHTML = rows + (histHtml ? `
@@ -1881,6 +1908,31 @@ function renderModelsOffroadBanner() {
   }
 }
 
+function renderModelsChestnutBanner(active) {
+  const toolbar = document.querySelector('#page-models .model-toolbar');
+  if (!toolbar) return;
+  let banner = document.getElementById('models-chestnut-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'models-chestnut-banner';
+    toolbar.parentElement.insertBefore(banner, toolbar);
+  }
+
+  const parts = [];
+  if (active.activeSource === 'chestnut' && active.chestnutHardwareState
+      && active.chestnutHardwareState !== 'ready' && active.chestnutHardwareState !== 'active') {
+    parts.push(`<div class="diag-alert diag-alert-warn">Chestnut models unavailable: ${escHtml(active.chestnutHardwareLabel || active.chestnutHardwareState)}</div>`);
+  }
+  const sp = active.staticProvisioning;
+  if (sp && sp.outcomes) {
+    const repaired = Object.entries(sp.outcomes).filter(([, outcome]) => outcome === 'refreshed' || outcome === 'failed');
+    if (repaired.length) {
+      parts.push(`<div class="diag-alert diag-alert-warn">Your default model was auto-repaired after the last update (${escHtml(repaired.map(([kind]) => kind).join(', '))}).</div>`);
+    }
+  }
+  banner.innerHTML = parts.join('');
+}
+
 function updateModelsToolbar() {
   const disabled = !modelsStatus.is_offroad;
   ['model-clear-cache-btn', 'model-use-default-btn'].forEach(id => {
@@ -1903,6 +1955,7 @@ async function loadModels() {
     modelsStatus = status;
 
     document.getElementById('active-model-name').textContent = active.displayName || active.internalName || '—';
+    document.getElementById('active-model-source').textContent = active.activeSource === 'chestnut' ? 'Chestnut GPU' : 'On-Device (Qualcomm)';
     document.getElementById('active-model-runner').textContent = active.runner !== undefined ? fmtRunner(active.runner) : 'Stock';
     document.getElementById('active-model-gen').textContent = active.generation !== undefined ? active.generation : '—';
     document.getElementById('active-model-env').textContent = active.environment || '—';
@@ -1910,6 +1963,7 @@ async function loadModels() {
     renderBundleList(bundles, active, favorites);
     updateModelsToolbar();
     renderModelsOffroadBanner();
+    renderModelsChestnutBanner(active);
     checkCacheSize();
     startModelsStatusPoll();
 
@@ -1964,6 +2018,11 @@ function renderBundleList(bundles, active, favorites) {
       const deleteBtn   = isCached && !isActive
         ? `<button class="btn btn-sm btn-danger model-delete-btn" ${lockedAttr} onclick="deleteModel('${safeInternalName}', '${safeDisplayName}')" title="${isOffroad ? 'Delete from disk' : 'Requires offroad mode'}">🗑</button>`
         : '';
+      const primaryAction = isActive
+        ? '<span class="model-badge active-model">Active</span>'
+        : b.unavailableReason
+          ? `<span class="badge-reason" title="${escHtml(b.unavailableReason)}">${escHtml(b.unavailableReason)}</span>`
+          : `<button class="btn btn-sm ${actionCls}" ${lockedAttr} title="${isOffroad ? '' : 'Requires offroad mode'}" onclick="selectModel(${b.index}, '${safeDisplayName}', ${isCached})">${actionLabel}</button>`;
       html += `<div class="model-item">
         <div class="model-item-info">
           <div class="model-item-name">${b.displayName || b.internalName}</div>
@@ -1971,7 +2030,7 @@ function renderBundleList(bundles, active, favorites) {
         </div>
         <div class="model-item-actions">
           <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFav('${b.ref}', this)" title="Favorite">${isFav ? '★' : '☆'}</button>
-          ${isActive ? '<span class="model-badge active-model">Active</span>' : `<button class="btn btn-sm ${actionCls}" ${lockedAttr} title="${isOffroad ? '' : 'Requires offroad mode'}" onclick="selectModel(${b.index}, '${safeDisplayName}', ${isCached})">${actionLabel}</button>`}
+          ${primaryAction}
           ${deleteBtn}
         </div>
       </div>`;

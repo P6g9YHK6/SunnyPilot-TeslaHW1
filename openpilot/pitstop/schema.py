@@ -64,6 +64,38 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
           },
         }
       },
+      "/api/gpu": {
+        "get": {
+          "tags": ["system"],
+          "summary": "On-SoC GPU and chestnut eGPU telemetry",
+          "responses": {
+            "200": {
+              "description": "GPU status",
+              "content": {"application/json": {"schema": {
+                "type": "object",
+                "properties": {
+                  "present": {"type": "boolean", "description": "on-SoC (Adreno/kgsl) GPU present"},
+                  "chestnut": {
+                    "type": "object", "nullable": True,
+                    "description": "null if chestnut has never been detected on this device",
+                    "properties": {
+                      "hardware_state": {"type": "string", "description": "see openpilot.common.hardware.usb.ChestnutState"},
+                      "hardware_state_label": {"type": "string"},
+                      "ready": {"type": "boolean"},
+                      "powered": {"type": "boolean", "nullable": True},
+                      "pcie_link_up": {"type": "boolean", "nullable": True},
+                      "pcie_link_label": {"type": "string"},
+                      "temp_level": {"type": "string", "enum": ["ok", "warn", "critical"]},
+                      "memory_temp_level": {"type": "string", "enum": ["ok", "warn", "critical"]},
+                      "firmware": {"type": "object", "nullable": True, "description": "present only when a mismatch/flash is in progress or failed"},
+                    },
+                  },
+                },
+              }}},
+            }
+          },
+        }
+      },
       "/api/params": {
         "get": {
           "tags": ["params"],
@@ -191,14 +223,17 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
         "get": {
           "tags": ["models"],
           "summary": "List available model bundles",
-          "responses": {"200": {"description": "List of bundles"}},
+          "responses": {"200": {"description": "List of bundles; a chestnut-sourced bundle that's "
+                                                "currently unselectable carries an unavailableReason string"}},
         }
       },
       "/api/models/active": {
         "get": {
           "tags": ["models"],
           "summary": "Get the active model bundle",
-          "responses": {"200": {"description": "Active bundle"}},
+          "responses": {"200": {"description": "Active bundle, plus activeSource ('chestnut'/'qcom'), "
+                                                "chestnutHardwareState/-Label when relevant, and staticProvisioning "
+                                                "(outcome of the post-update default-model self-heal, if any)"}},
         }
       },
       "/api/models/select": {
@@ -227,7 +262,7 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
         "get": {
           "tags": ["models"],
           "summary": "Get current download progress",
-          "responses": {"200": {"description": "Progress info"}},
+          "responses": {"200": {"description": "Progress info, plus activeSource ('chestnut'/'qcom')"}},
         }
       },
       "/api/models/cancel": {

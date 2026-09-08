@@ -139,6 +139,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ChestnutActive", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION | CLEAR_ON_IGNITION_ON, BOOL}},
     {"ChestnutLoading", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION | CLEAR_ON_IGNITION_ON, BOOL}},
     {"ChestnutModelError", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION | CLEAR_ON_IGNITION_ON, BOOL}},
+    // Not offroad/ignition-cleared like the three above: these represent facts
+    // (an in-progress or failed flash attempt, a computed overheat latch, a
+    // one-shot post-update model repair outcome) that should persist across an
+    // offroad cycle or ignition toggle until genuinely superseded, since pitstop
+    // reads them as point-in-time diagnostic info rather than live onroad state.
+    {"ChestnutFlashStatus", {CLEAR_ON_MANAGER_START, STRING}},
+    {"ChestnutOverheated", {CLEAR_ON_MANAGER_START, BOOL}},
+    {"ModelStaticProvisioningStatus", {CLEAR_ON_MANAGER_START, STRING}},
     {"Version", {PERSISTENT, STRING}},
 
     // --- sunnypilot params --- //
