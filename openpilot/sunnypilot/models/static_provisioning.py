@@ -13,13 +13,16 @@ See the LICENSE.md file in the root directory for more details.
 # just bumped. verify_and_refresh_static_models() checks a real load and, if that
 # fails, fetches a verified-compatible replacement from the public defaults manifest.
 
+import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import requests
 from requests.exceptions import RequestException
 
+from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.file_chunker import get_chunk_name, get_manifest_path
 from openpilot.sunnypilot.models.helpers import _verify_file
@@ -132,7 +135,14 @@ def _try_load(checkout_dir: str, pkl_path: Path, loader_snippet: str) -> str:
 def verify_and_refresh_static_models(checkout_dir: str, chestnut: bool = False) -> None:
   """Called by finalize_update() AFTER sync_venv(checkout_dir). Raises
   ModelProvisioningError on unrecoverable failure - the caller must treat that as
-  fatal for this update attempt (do not mark it ready-to-swap)."""
+  fatal for this update attempt (do not mark it ready-to-swap).
+
+  On success, records a per-source outcome ("ok" = was already fine, "refreshed" =
+  had to be re-fetched, "hardware_unavailable" = chestnut not linked, so unverified
+  either way) to the ModelStaticProvisioningStatus param, purely so pitstop can show
+  a "your default model was auto-repaired after the last update" transparency note.
+  Only written on success - a raised exception means this candidate never becomes
+  the running checkout, so there is nothing true to report yet."""
   from openpilot.selfdrive.modeld.helpers import modeld_pkl_path
   pkl_dir = Path(checkout_dir) / "openpilot/selfdrive/modeld/models"
 
@@ -141,10 +151,12 @@ def verify_and_refresh_static_models(checkout_dir: str, chestnut: bool = False) 
   if chestnut:
     targets.append((Path(modeld_pkl_path(True)).name, _LOAD_DRIVING, "big"))
 
+  outcomes: dict[str, str] = {}
   for fname, loader, kind in targets:
     pkl_path = pkl_dir / fname
     result = _try_load(checkout_dir, pkl_path, loader)
     if result in ("ok", "hardware_unavailable"):
+      outcomes[kind] = result
       continue
 
     cloudlog.warning(f"{pkl_path} missing/incompatible with new tinygrad pin; refreshing from '{kind}' manifest")
@@ -158,3 +170,6 @@ def verify_and_refresh_static_models(checkout_dir: str, chestnut: bool = False) 
     result = _try_load(checkout_dir, pkl_path, loader)
     if result == "failed":
       raise ModelProvisioningError(f"freshly-downloaded {pkl_path} still fails to load")
+    outcomes[kind] = "refreshed" if result == "ok" else result
+
+  Params().put("ModelStaticProvisioningStatus", json.dumps({"outcomes": outcomes, "ts": time.time()}))
