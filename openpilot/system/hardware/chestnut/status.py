@@ -1,13 +1,13 @@
 import time
 
-from openpilot.common.hardware.usb import CHESTNUT_USB_PRODUCT, is_chestnut_usb_id
+from openpilot.common.hardware.usb import (CHESTNUT_PCIE_READY, CHESTNUT_POWERED_VOLTAGE, CHESTNUT_SLOW_USB_MBPS,
+                                            CHESTNUT_USB_PRODUCT, is_chestnut_usb_id)
 from openpilot.common.version import get_build_metadata, CHESTNUT_BRANCHES
 from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_compiled
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 
 
 CHESTNUT_RELEASE_BRANCHES = ("release-chestnut", "release-chestnut-staging")
-CHESTNUT_POWERED_VOLTAGE = 5000
 GPU_TEMP_LIMIT = 100.
 
 
@@ -71,7 +71,7 @@ class ChestnutStatus:
       self.power_seen |= powered
 
     if not offroad and self.model_attempted and state is not None:
-      self.link_failures = self.link_failures + 1 if state.pcieLtssm != 0x78 else 0
+      self.link_failures = self.link_failures + 1 if state.pcieLtssm != CHESTNUT_PCIE_READY else 0
       self.pcie_failed |= self.link_failures >= 2 or power_lost
       self.power_lost |= power_lost
 
@@ -91,7 +91,7 @@ class ChestnutStatus:
 
     release = branch in CHESTNUT_RELEASE_BRANCHES
     missing = self.usb_failed or (offroad and release and time.monotonic() - self.started > 10. and len(detected) != 1)
-    slow_usb = offroad and len(devices) == 1 and devices[0]["speedMbps"] < 5000
+    slow_usb = offroad and len(devices) == 1 and devices[0]["speedMbps"] < CHESTNUT_SLOW_USB_MBPS
     bundle_active = chestnut_bundle_active(params, model_active, model_loading, offroad)
     big_model_available = (MODELS_DIR / 'big_driving_supercombo.onnx').is_file() or chestnut_compiled() or bundle_active
     current_channel = get_build_metadata().channel
@@ -110,4 +110,7 @@ class ChestnutStatus:
     set_alert("Offroad_ChestnutPcieUnavailable", self.pcie_failed, pcie_alert)
     set_alert("Offroad_ChestnutUncompiled", offroad and firmware_ok and not chestnut_compiled() and not bundle_active)
     set_alert("Offroad_ChestnutUpdateFailed", offroad and firmware_failed)
+    # bridges self.overheated's hysteresis-aware latch to pitstop, which otherwise
+    # has no way to apply the same GPU_TEMP_LIMIT/TEMP_HYSTERESIS logic itself
+    params.put_bool("ChestnutOverheated", self.overheated)
     self.offroad = offroad
