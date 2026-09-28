@@ -60,6 +60,7 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
     self._model_state = None
     self._device_state = None
     self._chestnut_state = None
+    self._chestnut_state_valid = None
     self._diag = None
     self._gps_location = None
     self._calibration = None

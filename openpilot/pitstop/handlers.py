@@ -9,7 +9,7 @@ import time
 
 from aiohttp import web
 
-from openpilot.common.hardware.usb import (CHESTNUT_SLOW_USB_MBPS, ChestnutState, CHESTNUT_STATE_LABELS,
+from openpilot.common.hardware.usb import (CHESTNUT_SLOW_USB_MBPS, CHESTNUT_USABLE_STATES, ChestnutState, CHESTNUT_STATE_LABELS,
                                             get_chestnut_hardware_state, get_usb_state, is_chestnut_usb_id)
 from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType, UnknownKeyName
 from openpilot.common.version import get_build_metadata
@@ -289,6 +289,29 @@ class HandlerMixin:
       return "warn"
     return "ok"
 
+  _CHESTNUT_ALERT_KEYS = (
+    "Offroad_ChestnutBranch", "Offroad_ChestnutNotDetected", "Offroad_ChestnutOverheated",
+    "Offroad_ChestnutPcieUnavailable", "Offroad_ChestnutUncompiled",
+    "Offroad_ChestnutUpdateFailed", "Offroad_ChestnutUsbSlow",
+  )
+
+  def _chestnut_offroad_alerts(self) -> list[dict]:
+    """The human-written offroad alert text ChestnutStatus.update() (system/hardware/
+    chestnut/status.py) produces - e.g. distinguishing a crank-voltage-drop power loss
+    from a plain disconnect - written to Params but never previously surfaced anywhere
+    in pitstop. These keys are ParamKeyType.JSON (params_keys.h), so Params.get()
+    already returns a decoded dict (or None if unset) - no json.loads needed/wanted
+    here, unlike ChestnutFlashStatus below which is a plain STRING param."""
+    alerts = []
+    for key in self._CHESTNUT_ALERT_KEYS:
+      a = self.params.get(key)
+      if not isinstance(a, dict):
+        continue
+      text = a.get("text", "")
+      extra = a.get("extra") or ""
+      alerts.append({"key": key, "text": text.replace("%1", extra) if extra else text, "severity": a.get("severity", 0)})
+    return alerts
+
   async def handle_gpu(self, request):
     ds = self._device_state
     kgsl = "/sys/class/kgsl/kgsl-3d0"
@@ -360,14 +383,19 @@ class HandlerMixin:
         chestnut["usb"] = chestnut_usb
       chestnut["hardware_state"] = hw.state.value
       chestnut["hardware_state_label"] = CHESTNUT_STATE_LABELS[hw.state]
-      chestnut["ready"] = hw.state in (ChestnutState.READY, ChestnutState.ACTIVE, ChestnutState.DEGRADED_LINK)
+      chestnut["ready"] = hw.state in CHESTNUT_USABLE_STATES
       chestnut["powered"] = hw.powered
       chestnut["pcie_link_up"] = hw.pcie_link_up
       chestnut["pcie_link_label"] = hw.pcie_label
+      chestnut["loading"] = self.params.get_bool("ChestnutLoading")
+      chestnut["model_error"] = self.params.get_bool("ChestnutModelError")
       if cs is not None:
         overheated_latched = self.params.get_bool("ChestnutOverheated")
         chestnut.update({
-          "valid": bool(cs.valid) if hasattr(cs, "valid") else True,
+          # None (not True/False) when no telemetry sample has ever arrived - see
+          # subscribers.py's _subscriber_loop, which now tracks Event.valid
+          # alongside the chestnutState substruct itself
+          "valid": self._chestnut_state_valid,
           "temp_c": float(cs.tempC),
           "memory_temp_c": float(cs.memoryTempC),
           "temp_level": self._chestnut_temp_level(float(cs.tempC), GPU_TEMP_LIMIT, overheated_latched),
@@ -392,6 +420,9 @@ class HandlerMixin:
         # healthy, up-to-date request
         if flash_status and (flash_status.get("mismatch") or flash_status.get("in_progress") or flash_status.get("failed")):
           chestnut["firmware"] = flash_status
+      alerts = self._chestnut_offroad_alerts()
+      if alerts:
+        chestnut["alerts"] = alerts
 
     return web.json_response({
       "present": present,

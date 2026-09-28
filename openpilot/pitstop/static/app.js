@@ -346,7 +346,8 @@ function renderGpuCard(g) {
   else if (st.present) badges.push('<span class="badge-ign badge-ign-off">IDLE</span>');
   if (st.max_mode) badges.push('<span class="badge-ign badge-ign-on" title="GPU clock set to hardware max">MAX</span>');
   if (clk.governor) badges.push('<span class="badge-ign badge-ign-unknown">' + escHtml(clk.governor) + '</span>');
-  if (st.throttled) badges.push('<span class="badge-ign badge-ign-off" title="currently throttled">THROTTLED</span>');
+  if (st.throttled) badges.push('<span class="badge-ign badge-ign-off" title="currently throttled (thermal pwrlevel)">THERMAL THROTTLED</span>');
+  if (g.power && g.power.throttling_raw) badges.push('<span class="badge-ign badge-ign-off" title="kgsl/throttling raw signal - distinct from the thermal-pwrlevel badge, can fire independently">GPU THROTTLE (raw)</span>');
 
   let rows = `
     <div class="row"><span class="label">Status</span><span class="value"><span style="display:inline-flex;gap:0.3rem;flex-wrap:wrap">${badges.join('') || '—'}</span></span></div>
@@ -357,7 +358,7 @@ function renderGpuCard(g) {
   `;
   if (g.power) {
     const pw = g.power;
-    rows += `<div class="row"><span class="label">Pwr Level</span><span class="value">${pw.min_pwrlevel != null && pw.max_pwrlevel != null ? 'L' + pw.min_pwrlevel + '..H' + pw.max_pwrlevel : '—'}${pw.default_pwrlevel != null ? ' (def ' + pw.default_pwrlevel + ')' : ''}</span></div>`;
+    rows += `<div class="row"><span class="label">Pwr Level</span><span class="value">${pw.min_pwrlevel != null && pw.max_pwrlevel != null ? 'L' + pw.min_pwrlevel + '..H' + pw.max_pwrlevel : '—'}${pw.default_pwrlevel != null ? ' (def ' + pw.default_pwrlevel + ')' : ''}${pw.num_pwrlevels != null ? ' [' + pw.num_pwrlevels + ' levels]' : ''}</span></div>`;
   }
   if (g.power && g.power.reset_count != null) {
     rows += `<div class="row"><span class="label">Resets</span><span class="value">${g.power.reset_count}</span></div>`;
@@ -387,27 +388,40 @@ let chestnutHtml = '';
       not_ready: 'badge-ign-warn', degraded_link: 'badge-ign-warn',
       ready: 'badge-ign-on', active: 'badge-ign-on',
     };
-    const badgeCls = stateBadgeCls[c.hardware_state] || 'diag-fail';
+    // ChestnutLoading is a fresher, more specific signal than hardware_state for
+    // "mid-boot" - hardware can already read READY while the big model is still
+    // being loaded, so this overrides the hardware-state badge rather than adding
+    // a second one.
+    const badgeCls = c.loading ? 'badge-ign-warn' : (stateBadgeCls[c.hardware_state] || 'diag-fail');
+    const badgeLabel = c.loading ? 'Loading' : (c.hardware_state_label || '—');
     // .diag-badge/.badge-ign are the (unstyled) base classes; .diag-fail/.diag-ok
     // and .badge-ign-on/-off/-warn/-unknown are the color modifiers - both need
     // pairing with their own base, same as every other badge in this file.
     const stateBadge = badgeCls.startsWith('diag-')
-      ? `<span class="diag-badge ${badgeCls}">${escHtml(c.hardware_state_label || '—')}</span>`
-      : `<span class="badge-ign ${badgeCls}">${escHtml(c.hardware_state_label || '—')}</span>`;
+      ? `<span class="diag-badge ${badgeCls}">${escHtml(badgeLabel)}</span>`
+      : `<span class="badge-ign ${badgeCls}">${escHtml(badgeLabel)}</span>`;
+    // distinct from hardware_state: hardware can be fully READY/ACTIVE while the
+    // model load itself still failed (BIG_MODEL_TIMEOUT exceeded, etc.)
+    const modelErrorBadge = c.model_error
+      ? '<div class="row"><span class="label"></span><span class="value"><span class="diag-badge diag-fail">Model Load Failed</span></span></div>' : '';
+    const telemetryBadge = c.valid === false
+      ? ' <span class="badge-ign badge-ign-warn" title="last telemetry sample failed/was stale">STALE</span>'
+      : c.valid == null ? ' <span class="badge-ign badge-ign-unknown" title="no telemetry sample received yet">NO SAMPLE</span>' : '';
     const tempBadgeCls = { ok: '', warn: 'badge-ign badge-ign-warn', critical: 'diag-badge diag-fail' };
     const tempVal = (v, level) => {
       const cls = tempBadgeCls[level] || '';
       return cls ? `<span class="${cls}">${fmtTemp(v)}</span>` : fmtTemp(v);
     };
 
-    let stateRows = '<div class="row"><span class="label">Chestnut eGPU</span><span class="value">' + stateBadge + '</span></div>';
+    let stateRows = '<div class="row"><span class="label">Chestnut eGPU</span><span class="value">' + stateBadge + telemetryBadge + '</span></div>' + modelErrorBadge;
     if (hasState) {
       stateRows += '<div class="row"><span class="label">GPU</span><span class="value">' + fmtPct(c.gpu_usage_percent) + ' @ ' + fmtMhz(c.gpu_clock_mhz) + '</span></div>'
         + '<div class="row"><span class="label">Temp</span><span class="value">' + tempVal(c.temp_c, c.temp_level) + (c.memory_temp_c != null ? ' (mem ' + tempVal(c.memory_temp_c, c.memory_temp_level) + ')' : '') + '</span></div>'
         + '<div class="row"><span class="label">Power</span><span class="value">' + (c.power_draw_w != null ? c.power_draw_w.toFixed(1) + ' W' : '—') + (c.power_limit_w != null ? ' / ' + c.power_limit_w.toFixed(1) + ' W' : '') + '</span></div>'
         + '<div class="row"><span class="label">Fan</span><span class="value">' + (c.fan_speed_rpm != null ? c.fan_speed_rpm + ' RPM' : '—') + '</span></div>'
         + '<div class="row"><span class="label">PCIe Link</span><span class="value">' + escHtml(c.pcie_link_label || '—') + '</span></div>'
-        + '<div class="row"><span class="label">Supply</span><span class="value">' + (c.supply_voltage != null ? (c.supply_voltage / 1000).toFixed(2) + ' V' : '—') + (c.supply_current != null ? ' @ ' + (c.supply_current / 1000).toFixed(2) + ' A' : '') + '</span></div>';
+        + '<div class="row"><span class="label">Supply</span><span class="value">' + (c.supply_voltage != null ? (c.supply_voltage / 1000).toFixed(2) + ' V' : '—') + (c.supply_current != null ? ' @ ' + (c.supply_current / 1000).toFixed(2) + ' A' : '')
+        + (c.supply_fault ? ' <span class="diag-badge diag-fail" title="supply fault reported by the ASM2464">FAULT</span>' : '') + '</span></div>';
     }
     let usbRow = '<div class="row"><span class="label">USB Link</span><span class="value">' + (c.usb ? fmtMbps(c.usb.speed_mbps) + ' ' + (c.usb.slow ? '<span class="badge-ign badge-ign-warn" title="Chestnut USB link is slow. Check the USB cable.">SLOW</span>' : '<span class="badge-ign badge-ign-on">OK</span>') : '—') + '</span></div>';
     const usbExtras = (c.usb && c.usb.usb3_lane && c.usb.usb3_lane !== 'unknown')
@@ -424,9 +438,16 @@ let chestnutHtml = '';
       const fwCls = fw.in_progress ? 'badge-ign badge-ign-warn' : fw.failed || fw.mismatch ? 'diag-badge diag-fail' : 'badge-ign badge-ign-on';
       firmwareRow = '<div class="row"><span class="label">Firmware</span><span class="value">'
         + escHtml(fw.detected_version || '—') + ' (expected ' + escHtml(fw.expected_version || '—') + ') '
-        + `<span class="${fwCls}">${escHtml(fwStatus)}</span>` + '</span></div>';
+        + `<span class="${fwCls}" title="${fw.failed && fw.last_error ? escHtml(fw.last_error) : ''}">${escHtml(fwStatus)}</span>` + '</span></div>'
+        + (fw.failed && fw.last_error ? '<div class="row"><span class="label"></span><span class="value" style="color:var(--red);font-size:0.85em">' + escHtml(fw.last_error) + '</span></div>' : '');
     }
-    chestnutHtml = '<hr style="margin:6px 0;border-color:var(--border)">' + stateRows + usbRow + usbExtras + usbErrors + firmwareRow;
+    const alertsHtml = (c.alerts && c.alerts.length)
+      ? c.alerts.map(a => {
+          const cls = a.severity >= 1 ? 'diag-alert-crit' : a.severity < 0 ? 'diag-alert-info' : 'diag-alert-warn';
+          return `<div class="diag-alert ${cls}">${escHtml(a.text)}</div>`;
+        }).join('')
+      : '';
+    chestnutHtml = '<hr style="margin:6px 0;border-color:var(--border)">' + stateRows + usbRow + usbExtras + usbErrors + firmwareRow + alertsHtml;
   }
 
   el.innerHTML = rows + (histHtml ? `
@@ -1870,17 +1891,38 @@ function stopModelsProgressPoll() {
   if (modelsProgressInterval) { clearInterval(modelsProgressInterval); modelsProgressInterval = null; }
 }
 
-/* ---- Poll offroad state while the Models page is active, same pattern as Settings ---- */
+/* ---- Poll offroad + chestnut hardware state while the Models page is active ----
+   Offroad state uses the same pattern as Settings. Chestnut hardware state is
+   checked here too (via the already-cheap /api/models/active) so a state change
+   that happens while this page is left open - e.g. PCIe link coming up, or a
+   firmware mismatch clearing - refreshes the bundle list/banner without needing
+   an unrelated action (nav away/back, delete/select, download completing) to
+   trigger it. Not folded into /api/status itself since that's polled by other
+   pages too (Settings) that don't need the extra get_usb_state() sysfs walk. */
 function startModelsStatusPoll() {
   if (modelsStatusInterval) return;
   modelsStatusInterval = setInterval(async () => {
     try {
-      const s = await api('/api/status', { silent: true });
-      if (s.is_offroad !== modelsStatus.is_offroad) {
+      const [s, active] = await Promise.all([
+        api('/api/status', { silent: true }),
+        api('/api/models/active', { silent: true }),
+      ]);
+      const offroadChanged = s.is_offroad !== modelsStatus.is_offroad;
+      const chestnutChanged = modelsData && (
+        active.activeSource !== modelsData.active.activeSource ||
+        active.chestnutHardwareState !== modelsData.active.chestnutHardwareState ||
+        active.chestnutAvailable !== modelsData.active.chestnutAvailable
+      );
+      if (offroadChanged) {
         modelsStatus = s;
-        if (modelsData) renderBundleList(modelsData.bundles, modelsData.active, modelsData.favorites);
         updateModelsToolbar();
         renderModelsOffroadBanner();
+      }
+      if (chestnutChanged) {
+        const bundles = await api('/api/models', { silent: true });
+        refreshModelsData(active, bundles, modelsData.favorites);
+      } else if (offroadChanged && modelsData) {
+        renderBundleList(modelsData.bundles, modelsData.active, modelsData.favorites);
       }
     } catch {}
   }, 3000);
@@ -1919,8 +1961,13 @@ function renderModelsChestnutBanner(active) {
   }
 
   const parts = [];
-  if (active.activeSource === 'chestnut' && active.chestnutHardwareState
-      && active.chestnutHardwareState !== 'ready' && active.chestnutHardwareState !== 'active') {
+  // chestnutAvailable is computed backend-side from the same CHESTNUT_USABLE_STATES
+  // tuple that gates per-bundle selectability (handle_models_list) - reading it
+  // here instead of re-deriving from chestnutHardwareState keeps this banner from
+  // ever drifting out of sync with the buttons again (previously this excluded
+  // 'degraded_link' while the backend treated it as usable, showing a red
+  // "unavailable" banner over fully-enabled Select/Download buttons).
+  if (active.activeSource === 'chestnut' && active.chestnutAvailable === false) {
     parts.push(`<div class="diag-alert diag-alert-warn">Chestnut models unavailable: ${escHtml(active.chestnutHardwareLabel || active.chestnutHardwareState)}</div>`);
   }
   const sp = active.staticProvisioning;
@@ -1943,6 +1990,21 @@ function updateModelsToolbar() {
   });
 }
 
+/* Shared by the initial page load and the status-poll's hardware-state-change
+   refresh, so both paths update modelsData/the DOM identically. */
+function refreshModelsData(active, bundles, favorites) {
+  modelsData = { active, bundles, favorites };
+
+  document.getElementById('active-model-name').textContent = active.displayName || active.internalName || '—';
+  document.getElementById('active-model-source').textContent = active.activeSource === 'chestnut' ? 'Chestnut GPU' : 'On-Device (Qualcomm)';
+  document.getElementById('active-model-runner').textContent = active.runner !== undefined ? fmtRunner(active.runner) : 'Stock';
+  document.getElementById('active-model-gen').textContent = active.generation !== undefined ? active.generation : '—';
+  document.getElementById('active-model-env').textContent = active.environment || '—';
+
+  renderBundleList(bundles, active, favorites);
+  renderModelsChestnutBanner(active);
+}
+
 async function loadModels() {
   try {
     const [active, bundles, favorites, status] = await Promise.all([
@@ -1951,19 +2013,11 @@ async function loadModels() {
       api('/api/models/favorites'),
       api('/api/status', { silent: true }),
     ]);
-    modelsData = { active, bundles, favorites };
     modelsStatus = status;
+    refreshModelsData(active, bundles, favorites);
 
-    document.getElementById('active-model-name').textContent = active.displayName || active.internalName || '—';
-    document.getElementById('active-model-source').textContent = active.activeSource === 'chestnut' ? 'Chestnut GPU' : 'On-Device (Qualcomm)';
-    document.getElementById('active-model-runner').textContent = active.runner !== undefined ? fmtRunner(active.runner) : 'Stock';
-    document.getElementById('active-model-gen').textContent = active.generation !== undefined ? active.generation : '—';
-    document.getElementById('active-model-env').textContent = active.environment || '—';
-
-    renderBundleList(bundles, active, favorites);
     updateModelsToolbar();
     renderModelsOffroadBanner();
-    renderModelsChestnutBanner(active);
     checkCacheSize();
     startModelsStatusPoll();
 

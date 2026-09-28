@@ -16,6 +16,10 @@ class SubscriberMixin:
         msg = messaging.recv_one(sock)
         if msg is not None:
           setattr(self, attr, getattr(msg, field))
+          # Event.valid, not a field on the substruct itself - some consumers (the
+          # GPU card's chestnut telemetry) need to know whether this sample was a
+          # real read or a stale/garbage one; msg would otherwise be discarded here.
+          setattr(self, attr + "_valid", bool(getattr(msg, "valid", True)))
     except Exception:
       logger.warning(f"{topic} subscriber not available")
     logger.info(f"[LOOP] {topic} subscriber stopped")
