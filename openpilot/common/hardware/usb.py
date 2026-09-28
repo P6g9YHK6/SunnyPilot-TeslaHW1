@@ -64,6 +64,13 @@ CHESTNUT_STATE_LABELS: dict[ChestnutState, str] = {
   ChestnutState.ACTIVE: "Active",
 }
 
+# States a chestnut-sourced model can actually be selected/run in. Shared between
+# pitstop's GPU card ("ready" badge) and Models page (bundle gating + the
+# "unavailable" banner) so the two surfaces can't independently drift on what
+# counts as usable - see the DEGRADED_LINK banner/gating mismatch this was added
+# to fix.
+CHESTNUT_USABLE_STATES = (ChestnutState.READY, ChestnutState.ACTIVE, ChestnutState.DEGRADED_LINK)
+
 
 @dataclass
 class ChestnutHardwareInfo:

@@ -1667,6 +1667,7 @@ body:has(.pending-bar:not(.hidden)) main { padding-bottom: 5.5rem; }
 }
 .diag-alert-crit { background: var(--red-dim); color: var(--red); }
 .diag-alert-warn { background: var(--orange-dim,rgba(255,152,0,.15)); color: var(--orange,#ff9800); }
+.diag-alert-info { background: var(--accent-dim); color: var(--accent); }
 
 .diag-row {
   display: flex; align-items: center; gap: 0.4rem;

@@ -10,8 +10,8 @@ from openpilot.sunnypilot.models.helpers import get_active_bundle, bundle_artifa
 from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL
 from openpilot.common.params import Params
 from openpilot.common.hardware.hw import Paths
-from openpilot.common.hardware.usb import ChestnutState, CHESTNUT_STATE_LABELS, get_chestnut_hardware_state, get_usb_state
-from openpilot.selfdrive.modeld.helpers import chestnut_compiled, chestnut_present
+from openpilot.common.hardware.usb import CHESTNUT_USABLE_STATES, ChestnutState, CHESTNUT_STATE_LABELS, get_chestnut_hardware_state, get_usb_state
+from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 
 logger = logging.getLogger("pitstop")
 
@@ -22,12 +22,22 @@ class ModelMixin:
     if not self.params.get_bool("IsOffroad"):
       raise web.HTTPConflict(text="Model changes are only allowed while the car is offroad")
 
-  @staticmethod
-  def _active_source_bundles(params):
+  def _chestnut_present(self) -> bool:
+    """VID/PID-only presence, matching deviceState.chestnutPresent - the exact
+    signal ModelManagerSP.main_thread (sunnypilot/models/manager.py) uses to pick
+    a bundle source. Using the firmware-string-strict
+    selfdrive.modeld.helpers.chestnut_present() here instead (as this file used to)
+    makes pitstop disagree with the running daemon whenever chestnut enumerates
+    with mismatched/bootloader firmware - the daemon still treats chestnut as the
+    active source, but pitstop would silently fall back to reporting qcom."""
+    ds = self._device_state
+    return bool(ds.chestnutPresent) if ds is not None else False
+
+  def _active_source_bundles(self):
     # must match main_thread's chestnut-aware fetch, or refs/indices returned here won't
     # exist in the catalog the model manager actually checks against (silent no-op select)
-    fetcher = ModelFetcher(params)
-    source = ModelFetcher.active_source(chestnut_present())
+    fetcher = ModelFetcher(self.params)
+    source = ModelFetcher.active_source(self._chestnut_present())
     return fetcher.get_bundles_for_source(source), source
 
   def _chestnut_hw(self):
@@ -44,14 +54,14 @@ class ModelMixin:
     # expiry - run it off the event loop so one slow/expired fetch doesn't stall every
     # other pitstop request for up to 10s (see dev commit history around 2026-09-07)
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, self._active_source_bundles, self.params)
+    return await loop.run_in_executor(None, self._active_source_bundles)
 
   async def handle_models_list(self, request):
     try:
       bundles, source = await self._active_source_bundles_async()
       hw = self._chestnut_hw() if source == "chestnut" else None
       unavailable_reason = None
-      if hw is not None and hw.state not in (ChestnutState.READY, ChestnutState.ACTIVE, ChestnutState.DEGRADED_LINK):
+      if hw is not None and hw.state not in CHESTNUT_USABLE_STATES:
         unavailable_reason = CHESTNUT_STATE_LABELS[hw.state]
       model_dir = Paths.model_root()
       result = []
@@ -75,12 +85,15 @@ class ModelMixin:
     if not name:
       raise web.HTTPBadRequest(text="Missing bundle name")
     try:
-      bundles, _ = await self._active_source_bundles_async()
+      bundles, source = await self._active_source_bundles_async()
     except Exception as e:
       raise web.HTTPInternalServerError(text=str(e)) from e
     bundle = next((b for b in bundles if b.internalName == name), None)
     if bundle is None:
       raise web.HTTPNotFound(text=f"Bundle '{name}' not found")
+    active = get_active_bundle(self.params, chestnut=(source == "chestnut"))
+    if active is not None and active.internalName == name:
+      raise web.HTTPConflict(text=f"Cannot delete '{name}': it is the currently active model")
     model_dir = Paths.model_root()
     deleted = []
     for fname, _ in bundle_artifacts(bundle):
@@ -102,15 +115,16 @@ class ModelMixin:
     return web.json_response({"status": "ok", "deleted": deleted, "bundle": name})
 
   async def handle_models_active(self, request):
-    active = get_active_bundle(self.params)
+    source = ModelFetcher.active_source(self._chestnut_present())
+    active = get_active_bundle(self.params, chestnut=(source == "chestnut"))
     result = active.to_dict() if active is not None else {"internalName": DEFAULT_MODEL, "displayName": DEFAULT_MODEL, "isDefault": True}
 
-    source = ModelFetcher.active_source(chestnut_present())
     result["activeSource"] = source
     if source == "chestnut":
       hw = self._chestnut_hw()
       result["chestnutHardwareState"] = hw.state.value
       result["chestnutHardwareLabel"] = CHESTNUT_STATE_LABELS[hw.state]
+      result["chestnutAvailable"] = hw.state in CHESTNUT_USABLE_STATES
 
     raw = self.params.get("ModelStaticProvisioningStatus")
     if raw:
@@ -137,7 +151,7 @@ class ModelMixin:
     bundle = next((b for b in bundles if b.index == index), None)
     if bundle is None:
       raise web.HTTPBadRequest(text=f"index {index} not in the current model catalog "
-                                     f"(chestnut_present={chestnut_present()}); refresh the list and retry")
+                                     f"(chestnut_present={self._chestnut_present()}); refresh the list and retry")
     if not bundle.ref:
       raise web.HTTPInternalServerError(text=f"Bundle '{bundle.internalName}' has no ref; cannot select")
     self.params.put("ModelManager_DownloadRef", bundle.ref)
@@ -146,7 +160,7 @@ class ModelMixin:
 
   async def handle_models_select_default(self, request):
     self._require_offroad()
-    source = ModelFetcher.active_source(chestnut_present())
+    source = ModelFetcher.active_source(self._chestnut_present())
     self.params.remove(ACTIVE_BUNDLE_KEYS[source])
     logger.info(f"[MODEL] reset to default ({source})")
     return web.json_response({"status": "ok"})
@@ -159,7 +173,7 @@ class ModelMixin:
       "selectedBundle": state.get("selectedBundle"),
       "activeBundle": state.get("activeBundle"),
       "availableBundles": state.get("availableBundles", []),
-      "activeSource": ModelFetcher.active_source(chestnut_present()),
+      "activeSource": ModelFetcher.active_source(self._chestnut_present()),
     })
 
   async def handle_models_cancel(self, request):

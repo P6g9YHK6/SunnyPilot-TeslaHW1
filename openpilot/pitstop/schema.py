@@ -75,19 +75,78 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
                 "type": "object",
                 "properties": {
                   "present": {"type": "boolean", "description": "on-SoC (Adreno/kgsl) GPU present"},
+                  "model": {"type": "string", "nullable": True, "description": "on-SoC GPU model string (kgsl gpu_model)"},
+                  "status": {
+                    "type": "object",
+                    "properties": {
+                      "present": {"type": "boolean"},
+                      "active": {"type": "boolean", "nullable": True},
+                      "max_mode": {"type": "boolean"},
+                      "throttled": {"type": "boolean", "nullable": True, "description": "thermal_pwrlevel-derived signal only - see power.throttling_raw for the separate raw kgsl/throttling signal"},
+                      "thermal_pwrlevel": {"type": "integer", "nullable": True},
+                    },
+                  },
+                  "clock": {
+                    "type": "object",
+                    "properties": {
+                      "current_mhz": {"type": "integer", "nullable": True},
+                      "min_mhz": {"type": "integer", "nullable": True},
+                      "max_mhz": {"type": "integer", "nullable": True},
+                      "governor": {"type": "string", "nullable": True},
+                    },
+                  },
+                  "busy_percent": {"type": "integer", "nullable": True},
+                  "busy": {"type": "object", "nullable": True, "properties": {"used": {"type": "integer"}, "total": {"type": "integer"}}},
+                  "power": {
+                    "type": "object",
+                    "properties": {
+                      "default_pwrlevel": {"type": "integer", "nullable": True},
+                      "min_pwrlevel": {"type": "integer", "nullable": True},
+                      "max_pwrlevel": {"type": "integer", "nullable": True},
+                      "num_pwrlevels": {"type": "integer", "nullable": True},
+                      "reset_count": {"type": "integer", "nullable": True},
+                      "throttling_raw": {"type": "integer", "nullable": True, "description": "raw kgsl/throttling sysfs value - a distinct signal from status.throttled, not cross-checked against it"},
+                    },
+                  },
+                  "clocks": {"type": "array", "items": {"type": "object", "properties": {"mhz": {"type": "integer"}, "time_ns": {"type": "integer"}, "pct": {"type": "number"}}}},
+                  "temps_c": {"type": "array", "items": {"type": "number"}},
+                  "thermal_status": {"type": "string", "nullable": True},
                   "chestnut": {
                     "type": "object", "nullable": True,
                     "description": "null if chestnut has never been detected on this device",
                     "properties": {
+                      "usb": {"type": "object", "nullable": True, "properties": {
+                        "present": {"type": "boolean"}, "speed_mbps": {"type": "integer"}, "slow": {"type": "boolean"},
+                        "usb3_lane": {"type": "string"}, "link_error_count": {"type": "integer"}, "product": {"type": "string"},
+                      }},
                       "hardware_state": {"type": "string", "description": "see openpilot.common.hardware.usb.ChestnutState"},
                       "hardware_state_label": {"type": "string"},
-                      "ready": {"type": "boolean"},
+                      "ready": {"type": "boolean", "description": "hardware_state in CHESTNUT_USABLE_STATES"},
                       "powered": {"type": "boolean", "nullable": True},
                       "pcie_link_up": {"type": "boolean", "nullable": True},
                       "pcie_link_label": {"type": "string"},
+                      "loading": {"type": "boolean", "description": "ChestnutLoading param - a fresher/more specific signal than hardware_state for mid-boot"},
+                      "model_error": {"type": "boolean", "description": "ChestnutModelError param - the big model failed to load even though hardware was ready"},
+                      "valid": {"type": "boolean", "nullable": True, "description": "Event.valid on the last chestnutState sample; null if no sample has ever arrived"},
+                      "temp_c": {"type": "number"},
+                      "memory_temp_c": {"type": "number"},
                       "temp_level": {"type": "string", "enum": ["ok", "warn", "critical"]},
                       "memory_temp_level": {"type": "string", "enum": ["ok", "warn", "critical"]},
-                      "firmware": {"type": "object", "nullable": True, "description": "present only when a mismatch/flash is in progress or failed"},
+                      "power_draw_w": {"type": "number"},
+                      "power_limit_w": {"type": "number"},
+                      "gpu_usage_percent": {"type": "integer"},
+                      "gpu_clock_mhz": {"type": "integer"},
+                      "fan_speed_rpm": {"type": "integer"},
+                      "pcie_ltssm": {"type": "integer", "description": "raw LTSSM byte; pcie_link_label is the decoded/human form"},
+                      "supply_voltage": {"type": "integer", "description": "mV"},
+                      "supply_current": {"type": "integer", "description": "mA"},
+                      "supply_fault": {"type": "boolean"},
+                      "firmware": {"type": "object", "nullable": True, "description": "present only when a mismatch/flash is in progress or failed; includes last_error when a flash attempt failed"},
+                      "alerts": {
+                        "type": "array", "nullable": True,
+                        "description": "currently-active Offroad_Chestnut* alert text (power/PCIe/USB/overheat/etc.), present only when non-empty",
+                        "items": {"type": "object", "properties": {"key": {"type": "string"}, "text": {"type": "string"}, "severity": {"type": "integer"}}},
+                      },
                     },
                   },
                 },
@@ -231,9 +290,22 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
         "get": {
           "tags": ["models"],
           "summary": "Get the active model bundle",
-          "responses": {"200": {"description": "Active bundle, plus activeSource ('chestnut'/'qcom'), "
-                                                "chestnutHardwareState/-Label when relevant, and staticProvisioning "
-                                                "(outcome of the post-update default-model self-heal, if any)"}},
+          "responses": {"200": {"description": "Active bundle, plus activeSource ('chestnut'/'qcom', from "
+                                                "deviceState.chestnutPresent - the same VID/PID-only signal the "
+                                                "model manager daemon itself uses), chestnutHardwareState/-Label/"
+                                                "-Available when relevant (chestnutAvailable mirrors the same "
+                                                "CHESTNUT_USABLE_STATES gate used for per-bundle selectability), "
+                                                "and staticProvisioning (outcome of the post-update default-model "
+                                                "self-heal, if any)"}},
+        }
+      },
+      "/api/models/{name}": {
+        "delete": {
+          "tags": ["models"],
+          "summary": "Delete a cached model bundle's files",
+          "parameters": [{"name": "name", "in": "path", "required": True, "schema": {"type": "string"}}],
+          "responses": {"200": {"description": "OK"}, "404": {"description": "Bundle not found"},
+                        "409": {"description": "Refused: offroad required, or this bundle is the currently active model"}},
         }
       },
       "/api/models/select": {
