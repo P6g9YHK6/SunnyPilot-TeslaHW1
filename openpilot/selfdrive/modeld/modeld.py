@@ -281,33 +281,33 @@ def main(demo=False):
 
   st = time.monotonic()
   cloudlog.warning("loading model")
-  model = None
+  # Always load+warm the small model synchronously first, so modeld starts publishing
+  # immediately no matter how long (or whether) the chestnut big-model attempt takes.
+  # Previously the big model was loaded - and BIG_MODEL_TIMEOUT=60s awaited via
+  # loader.join() - BEFORE the small model even started, so modeld published nothing
+  # at all (no modelV2, nothing for selfdrived to engage on) for up to a full minute
+  # whenever chestnut hung or failed (e.g. tinygrad's AMD/USB backend timing out on the
+  # VRAM copy-in - "GPU failed to drain USB copyin chunk 0 (10s, hung GPU?)"). The big
+  # model, if CHESTNUT, now loads in the background and hot-swaps in once/if it's ready.
+  small_model = ModelState(vipc_client_main.width, vipc_client_main.height, False)
+  model = small_model
+  cloudlog.warning(f"small model loaded in {time.monotonic() - st:.1f}s, modeld starting")
+
+  big_model_ready = threading.Event()
+  big_model_holder: list = [None]  # [ModelState | None] once load_big() finishes
+  load_big_start = time.monotonic()
+  big_model_checked = not CHESTNUT  # nothing to adopt/report if chestnut was never available
   if CHESTNUT:
-    big_model = None
     def load_big():
-      nonlocal big_model
       try:
         m = ModelState(vipc_client_main.width, vipc_client_main.height, True)
         m.warmup()
-        big_model = m
+        big_model_holder[0] = m
       except Exception:
         cloudlog.exception("big model load failed")
-    loader = threading.Thread(target=load_big, daemon=True)
-    loader.start()
-    loader.join(BIG_MODEL_TIMEOUT)
-    model = big_model
-    if model is None:
-      params.put_bool("ChestnutModelError", True)
-    params.put_bool("ChestnutActive", model is not None)
-    if model is not None:
-      params.remove("ChestnutModelError")
-
-  small_model = ModelState(vipc_client_main.width, vipc_client_main.height, False) if model is None or CHESTNUT else None
-  if model is None:
-    model = small_model
-  params.put_bool("ChestnutLoading", False)
-  assert model is not None
-  cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
+      finally:
+        big_model_ready.set()
+    threading.Thread(target=load_big, daemon=True).start()
 
   # messaging
   pub_socks = ["modelV2", "drivingModelData", "cameraOdometry", "modelDataV2SP"] + (["chestnutState"] if CHESTNUT else [])
@@ -316,7 +316,11 @@ def main(demo=False):
 
   publish_state = PublishState()
   params = Params()
-  chestnut_state = ChestnutState(pm, model.chestnut) if CHESTNUT else None
+  # big=False until/unless the background load succeeds and gets adopted below - the
+  # hardware telemetry (voltage/PCIe/temps) this publishes is independent of whether
+  # the big model itself has finished loading, so this starts as soon as CHESTNUT
+  # (hardware-ready) is true, same as before.
+  chestnut_state = ChestnutState(pm, False) if CHESTNUT else None
 
   # setup filter to track dropped frames
   frame_dropped_filter = FirstOrderFilter(0., 10., 1. / ModelConstants.MODEL_RUN_FREQ)
@@ -377,6 +381,19 @@ def main(demo=False):
       # Use single camera
       buf_extra = buf_main
       meta_extra = meta_main
+
+    if not big_model_checked and (big_model_ready.is_set() or time.monotonic() - load_big_start > BIG_MODEL_TIMEOUT):
+      big_model_checked = True
+      big = big_model_holder[0]
+      if big is not None:
+        model = big
+        chestnut_state.big = True
+        params.put_bool("ChestnutActive", True)
+        params.remove("ChestnutModelError")
+      else:
+        params.put_bool("ChestnutModelError", True)
+        params.put_bool("ChestnutActive", False)
+      params.put_bool("ChestnutLoading", False)
 
     sm.update(0)
     desire = DH.desire
