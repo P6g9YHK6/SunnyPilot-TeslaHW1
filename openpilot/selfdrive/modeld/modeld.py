@@ -318,10 +318,8 @@ def main(demo=False):
 
   publish_state = PublishState()
   params = Params()
-  # big=False until/unless the background load succeeds and gets adopted below - the
-  # hardware telemetry (voltage/PCIe/temps) this publishes is independent of whether
-  # the big model itself has finished loading, so this starts as soon as CHESTNUT
-  # (hardware-ready) is true, same as before.
+  # big=False until/unless the background load succeeds and gets adopted below. Not
+  # sent until that load thread finishes (see send_chestnut below) - it shares the USB link.
   chestnut_state = ChestnutState(pm, False) if CHESTNUT else None
 
   # setup filter to track dropped frames
@@ -454,7 +452,11 @@ def main(demo=False):
 
     mt1 = time.perf_counter()
     try:
-      send_chestnut = (chestnut_state is not None and
+      # Hold chestnut telemetry until the background big-model load has finished: send()
+      # reads INA/LTSSM through Device["AMD"]'s USB channel as soon as the load thread has
+      # opened it, and interleaving those reads with the load's multi-hundred-MB weight
+      # copy-in on the same (non-thread-safe) USB link hangs the copy-in indefinitely.
+      send_chestnut = (chestnut_state is not None and big_model_ready.is_set() and
                        run_count % round(ModelConstants.MODEL_RUN_FREQ / SERVICE_LIST['chestnutState'].frequency) == 0)
       model_output = model.run(bufs, transforms, inputs, chestnut_state.send if send_chestnut else None)
     except Exception:
