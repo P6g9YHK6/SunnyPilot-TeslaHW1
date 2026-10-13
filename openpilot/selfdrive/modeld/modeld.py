@@ -297,12 +297,14 @@ def main(demo=False):
   big_model_holder: list = [None]  # [ModelState | None] once load_big() finishes
   load_big_start = time.monotonic()
   big_model_checked = not CHESTNUT  # nothing to adopt/report if chestnut was never available
+  big_model_timed_out = False
   if CHESTNUT:
     def load_big():
       try:
         m = ModelState(vipc_client_main.width, vipc_client_main.height, True)
         m.warmup()
         big_model_holder[0] = m
+        cloudlog.warning(f"big model loaded in {time.monotonic() - load_big_start:.1f}s")
       except Exception:
         cloudlog.exception("big model load failed")
       finally:
@@ -382,18 +384,27 @@ def main(demo=False):
       buf_extra = buf_main
       meta_extra = meta_main
 
-    if not big_model_checked and (big_model_ready.is_set() or time.monotonic() - load_big_start > BIG_MODEL_TIMEOUT):
-      big_model_checked = True
-      big = big_model_holder[0]
-      if big is not None:
-        model = big
-        chestnut_state.big = True
-        params.put_bool("ChestnutActive", True)
-        params.remove("ChestnutModelError")
-      else:
+    if not big_model_checked:
+      if big_model_ready.is_set():
+        big_model_checked = True
+        big = big_model_holder[0]
+        if big is not None:
+          model = big
+          chestnut_state.big = True
+          params.put_bool("ChestnutActive", True)
+          params.remove("ChestnutModelError")
+        else:
+          params.put_bool("ChestnutModelError", True)
+          params.put_bool("ChestnutActive", False)
+        params.put_bool("ChestnutLoading", False)
+      elif not big_model_timed_out and time.monotonic() - load_big_start > BIG_MODEL_TIMEOUT:
+        # Report the slow/hung load to the UI, but keep watching: the small model is already
+        # driving, so there's no reason to permanently forfeit a big model that finishes late.
+        big_model_timed_out = True
+        cloudlog.error(f"big model still loading after {BIG_MODEL_TIMEOUT}s; driving on small model, will adopt big if it finishes")
         params.put_bool("ChestnutModelError", True)
         params.put_bool("ChestnutActive", False)
-      params.put_bool("ChestnutLoading", False)
+        params.put_bool("ChestnutLoading", False)
 
     sm.update(0)
     desire = DH.desire

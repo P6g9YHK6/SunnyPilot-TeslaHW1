@@ -33,9 +33,14 @@ DEFAULT_MODELS_MANIFEST_URLS = {
   "big": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/main/models/defaults/big/default_models.json",
 }
 
+# load_oob() alone succeeds on a pickle compiled by a *different* compile_modeld.py (e.g.
+# upstream's, as served by the public HF manifests) - so also assert the keys this fork's
+# modeld.ModelState actually reads, or an incompatible artifact passes as "ok".
 _LOAD_DRIVING = ("import sys; from openpilot.common.file_chunker import open_file_chunked; "
                   "from openpilot.selfdrive.modeld.helpers import load_oob; "
-                  "load_oob(open_file_chunked(sys.argv[1]))")
+                  "j = load_oob(open_file_chunked(sys.argv[1])); "
+                  "missing = [k for k in ('input_devices', 'metadata', 'run_model') if k not in j]; "
+                  "assert not missing, f'incompatible driving pkl, missing keys {missing}'")
 _LOAD_DM = ("import sys, pickle; from openpilot.common.file_chunker import open_file_chunked; "
             "pickle.load(open_file_chunked(sys.argv[1]))")
 
@@ -157,6 +162,16 @@ def verify_and_refresh_static_models(checkout_dir: str, chestnut: bool = False) 
     result = _try_load(checkout_dir, pkl_path, loader)
     if result in ("ok", "hardware_unavailable"):
       outcomes[kind] = result
+      continue
+    if kind == "big":
+      # Never "repair" the chestnut model from the public HF manifest: those artifacts are
+      # compiled by upstream's compile_modeld.py, whose pickle lacks keys this fork's modeld
+      # requires (e.g. input_devices) - installing one is exactly how a permanently
+      # unloadable big model ended up on-device. It has to be compiled locally against this
+      # checkout's tinygrad pin (SConscript, needs chestnut linked). The big model is
+      # optional (modeld falls back to small), so record it rather than failing the update.
+      cloudlog.error(f"{pkl_path} missing/incompatible; needs an on-device chestnut compile, not refreshing from manifest")
+      outcomes[kind] = "failed"
       continue
 
     cloudlog.warning(f"{pkl_path} missing/incompatible with new tinygrad pin; refreshing from '{kind}' manifest")
