@@ -1972,9 +1972,13 @@ function renderModelsChestnutBanner(active) {
   }
   const sp = active.staticProvisioning;
   if (sp && sp.outcomes) {
-    const repaired = Object.entries(sp.outcomes).filter(([, outcome]) => outcome === 'refreshed' || outcome === 'failed');
+    const repaired = Object.entries(sp.outcomes).filter(([, outcome]) => outcome === 'refreshed');
     if (repaired.length) {
       parts.push(`<div class="diag-alert diag-alert-warn">Your default model was auto-repaired after the last update (${escHtml(repaired.map(([kind]) => kind).join(', '))}).</div>`);
+    }
+    // only the optional chestnut ("big") model can end up 'failed' without blocking the update
+    if (sp.outcomes.big === 'failed') {
+      parts.push('<div class="diag-alert diag-alert-crit">Chestnut model is missing or incompatible with this build and must be compiled on-device (chestnut linked, parked). Driving uses the on-device model meanwhile.</div>');
     }
   }
   banner.innerHTML = parts.join('');
