@@ -300,8 +300,19 @@ def main(demo=False):
   big_model_timed_out = False
   if CHESTNUT:
     def load_big():
+      # This thread inherits modeld's SCHED_FIFO 54 + core-7-only pin (config_realtime_process
+      # above). In the car the load then stalls in poll() at the same early point every time,
+      # while the identical load with normal scheduling finishes in ~33s - so run the (non
+      # realtime) background load as a normal thread on any core. Linux applies these per-thread
+      # for pid 0; the driving loop keeps its realtime settings.
+      try:
+        os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
+        os.sched_setaffinity(0, range(os.cpu_count() or 1))
+      except OSError:
+        cloudlog.exception("failed to drop realtime scheduling for big model load")
       try:
         m = ModelState(vipc_client_main.width, vipc_client_main.height, True)
+        cloudlog.warning(f"big model constructed in {time.monotonic() - load_big_start:.1f}s, warming up")
         m.warmup()
         big_model_holder[0] = m
         cloudlog.warning(f"big model loaded in {time.monotonic() - load_big_start:.1f}s")
