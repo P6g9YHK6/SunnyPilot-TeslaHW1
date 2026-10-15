@@ -225,16 +225,20 @@ class UIState(UIStateSP):
                              ChestnutState.UNCOMPILED if detected else ChestnutState.DISCONNECTED)
       return
 
+    # modeld drives on the small model immediately and loads the big one in the background
+    # (ChestnutLoading=True meanwhile), hot-swapping it in ~35s later - so modelV2.big=False
+    # while loading is expected, not a failure. Loading is checked before modelV2.big, and
+    # FAILED is no longer latched: a late adoption of the big model must clear it.
     model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
     if not self.chestnut_present:
       self.chestnut_state = ChestnutState.DISCONNECTED
     elif not self.chestnut_compiled:
       self.chestnut_state = ChestnutState.UNCOMPILED
-    elif self.chestnut_state == ChestnutState.FAILED or not detected or (model_seen and (not self.sm.alive["modelV2"] or not self.sm["modelV2"].big)):
+    elif not detected:
       self.chestnut_state = ChestnutState.FAILED
     elif self.chestnut_loading or not model_seen:
       self.chestnut_state = ChestnutState.LOADING
-    elif self.chestnut_active is False:
+    elif self.chestnut_active is False or not self.sm.alive["modelV2"] or not self.sm["modelV2"].big:
       self.chestnut_state = ChestnutState.FAILED
     else:
       self.chestnut_state = ChestnutState.ACTIVE
