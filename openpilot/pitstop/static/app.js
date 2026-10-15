@@ -347,7 +347,6 @@ function renderGpuCard(g) {
   if (st.max_mode) badges.push('<span class="badge-ign badge-ign-on" title="GPU clock set to hardware max">MAX</span>');
   if (clk.governor) badges.push('<span class="badge-ign badge-ign-unknown">' + escHtml(clk.governor) + '</span>');
   if (st.throttled) badges.push('<span class="badge-ign badge-ign-off" title="currently throttled (thermal pwrlevel)">THERMAL THROTTLED</span>');
-  if (g.power && g.power.throttling_raw) badges.push('<span class="badge-ign badge-ign-off" title="kgsl/throttling raw signal - distinct from the thermal-pwrlevel badge, can fire independently">GPU THROTTLE (raw)</span>');
 
   let rows = `
     <div class="row"><span class="label">Status</span><span class="value"><span style="display:inline-flex;gap:0.3rem;flex-wrap:wrap">${badges.join('') || '—'}</span></span></div>
