@@ -2243,7 +2243,12 @@ async function checkDownloadProgress() {
       return;
     }
     const sel = progress.selectedBundle;
-    if (!sel) {
+    // selectedBundle is a plain capnp struct field, never actually null/absent in the
+    // JSON - once main_thread clears it server-side (manager.py's selected_bundle = None),
+    // it serializes as a present-but-default ModelBundle (internalName: ""), which is
+    // truthy in JS. Check internalName instead of sel itself, or this panel never hides
+    // again after the first download of the process's lifetime.
+    if (!sel || !sel.internalName) {
       document.getElementById('model-dl-progress').classList.add('hidden');
       return;
     }
